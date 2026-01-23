@@ -386,4 +386,243 @@ entities.post('/:id/restore', async (c) => {
   }
 });
 
+/**
+ * GET /api/entities/:id/versions
+ * Get all versions of an entity
+ */
+entities.get('/:id/versions', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, find the latest version to ensure the entity exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Now get all versions in the chain using recursive CTE
+    const { results } = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1 (no previous_version_id)
+        SELECT * FROM entities
+        WHERE id = (
+          SELECT id FROM entities WHERE id = ?
+          UNION
+          SELECT e1.id FROM entities e1
+          WHERE e1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM entities WHERE id = ?
+              UNION ALL
+              SELECT e2.id, e2.previous_version_id
+              FROM entities e2
+              INNER JOIN temp_chain tc ON e2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = e1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT e.* FROM entities e
+        INNER JOIN version_chain vc ON e.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain ORDER BY version ASC
+    `).bind(id, id).all();
+
+    // Parse properties for each version
+    const versions = results.map(entity => ({
+      ...entity,
+      properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+      is_deleted: entity.is_deleted === 1,
+      is_latest: entity.is_latest === 1,
+    }));
+
+    return c.json(response.success(versions));
+  } catch (error) {
+    console.error('[Entities] Error fetching entity versions:', error);
+    throw error;
+  }
+});
+
+/**
+ * GET /api/entities/:id/versions/:version
+ * Get a specific version of an entity
+ */
+entities.get('/:id/versions/:version', async (c) => {
+  const id = c.req.param('id');
+  const versionParam = c.req.param('version');
+  const db = c.env.DB;
+
+  try {
+    // Parse version number
+    const versionNumber = parseInt(versionParam, 10);
+    if (isNaN(versionNumber) || versionNumber < 1) {
+      return c.json(response.error('Invalid version number', 'INVALID_VERSION'), 400);
+    }
+
+    // First, find the latest version to ensure the entity exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Find the specific version in the chain
+    const entity = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1
+        SELECT * FROM entities
+        WHERE id = (
+          SELECT id FROM entities WHERE id = ?
+          UNION
+          SELECT e1.id FROM entities e1
+          WHERE e1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM entities WHERE id = ?
+              UNION ALL
+              SELECT e2.id, e2.previous_version_id
+              FROM entities e2
+              INNER JOIN temp_chain tc ON e2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = e1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT e.* FROM entities e
+        INNER JOIN version_chain vc ON e.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain WHERE version = ? LIMIT 1
+    `).bind(id, id, versionNumber).first();
+
+    if (!entity) {
+      return c.json(response.notFound('Version'), 404);
+    }
+
+    const result = {
+      ...entity,
+      properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+      is_deleted: entity.is_deleted === 1,
+      is_latest: entity.is_latest === 1,
+    };
+
+    return c.json(response.success(result));
+  } catch (error) {
+    console.error('[Entities] Error fetching entity version:', error);
+    throw error;
+  }
+});
+
+/**
+ * GET /api/entities/:id/history
+ * Get version history with diffs showing what changed between versions
+ */
+entities.get('/:id/history', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, find the latest version to ensure the entity exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Get all versions in order
+    const { results } = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1
+        SELECT * FROM entities
+        WHERE id = (
+          SELECT id FROM entities WHERE id = ?
+          UNION
+          SELECT e1.id FROM entities e1
+          WHERE e1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM entities WHERE id = ?
+              UNION ALL
+              SELECT e2.id, e2.previous_version_id
+              FROM entities e2
+              INNER JOIN temp_chain tc ON e2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = e1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT e.* FROM entities e
+        INNER JOIN version_chain vc ON e.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain ORDER BY version ASC
+    `).bind(id, id).all();
+
+    // Calculate diffs between consecutive versions
+    const history = results.map((entity, index) => {
+      const parsedProps = entity.properties ? JSON.parse(entity.properties as string) : {};
+
+      let diff = null;
+      if (index > 0) {
+        const prevEntity = results[index - 1];
+        const prevProps = prevEntity.properties ? JSON.parse(prevEntity.properties as string) : {};
+
+        diff = calculateDiff(prevProps, parsedProps);
+      }
+
+      return {
+        id: entity.id,
+        version: entity.version,
+        type_id: entity.type_id,
+        properties: parsedProps,
+        created_at: entity.created_at,
+        created_by: entity.created_by,
+        is_deleted: entity.is_deleted === 1,
+        is_latest: entity.is_latest === 1,
+        diff: diff,
+      };
+    });
+
+    return c.json(response.success(history));
+  } catch (error) {
+    console.error('[Entities] Error fetching entity history:', error);
+    throw error;
+  }
+});
+
+/**
+ * Helper function to calculate differences between two JSON objects
+ */
+function calculateDiff(oldObj: any, newObj: any): any {
+  const diff: any = {
+    added: {} as any,
+    removed: {} as any,
+    changed: {} as any,
+  };
+
+  // Check for added and changed properties
+  for (const key in newObj) {
+    if (!(key in oldObj)) {
+      diff.added[key] = newObj[key];
+    } else if (JSON.stringify(oldObj[key]) !== JSON.stringify(newObj[key])) {
+      diff.changed[key] = {
+        old: oldObj[key],
+        new: newObj[key],
+      };
+    }
+  }
+
+  // Check for removed properties
+  for (const key in oldObj) {
+    if (!(key in newObj)) {
+      diff.removed[key] = oldObj[key];
+    }
+  }
+
+  return diff;
+}
+
 export default entities;

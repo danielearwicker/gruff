@@ -165,7 +165,7 @@ DELETE /api/entities/{id}          # Soft delete entity
 POST   /api/entities/{id}/restore  # Restore soft-deleted entity
 ```
 
-### 🟦 Entity Version Endpoints
+### ✅ Entity Version Endpoints
 
 ```
 GET    /api/entities/{id}/versions           # Get all versions of entity

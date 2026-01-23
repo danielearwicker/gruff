@@ -1377,6 +1377,279 @@ async function testListEntitiesIncludesDeleted() {
 }
 
 // ============================================================================
+// Entity Version History Tests
+// ============================================================================
+
+async function testGetEntityVersions() {
+  logTest('Entity Versions - Get All Versions of an Entity');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'VersionTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Version 1', count: 1 }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update the entity to create version 2
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Version 2', count: 2 }
+  });
+
+  // Update again to create version 3
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Version 3', count: 3 }
+  });
+
+  // Get all versions
+  const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should have 3 versions');
+
+  // Verify versions are in order
+  assertEquals(response.data.data[0].version, 1, 'First item should be version 1');
+  assertEquals(response.data.data[1].version, 2, 'Second item should be version 2');
+  assertEquals(response.data.data[2].version, 3, 'Third item should be version 3');
+
+  // Verify properties
+  assertEquals(response.data.data[0].properties.name, 'Version 1', 'Version 1 should have correct properties');
+  assertEquals(response.data.data[1].properties.name, 'Version 2', 'Version 2 should have correct properties');
+  assertEquals(response.data.data[2].properties.name, 'Version 3', 'Version 3 should have correct properties');
+
+  // Verify is_latest flag
+  assertEquals(response.data.data[0].is_latest, false, 'Version 1 should not be latest');
+  assertEquals(response.data.data[1].is_latest, false, 'Version 2 should not be latest');
+  assertEquals(response.data.data[2].is_latest, true, 'Version 3 should be latest');
+}
+
+async function testGetEntityVersionsNotFound() {
+  logTest('Entity Versions - Get Versions of Non-existent Entity Returns 404');
+
+  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/versions');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetSpecificEntityVersion() {
+  logTest('Entity Versions - Get Specific Version by Number');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SpecificVersionType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original', value: 100 }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update twice
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Once', value: 200 }
+  });
+
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Twice', value: 300 }
+  });
+
+  // Get version 2 specifically
+  const response = await makeRequest('GET', `/api/entities/${entityId}/versions/2`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.version, 2, 'Should return version 2');
+  assertEquals(response.data.data.properties.name, 'Updated Once', 'Should have version 2 properties');
+  assertEquals(response.data.data.properties.value, 200, 'Should have version 2 value');
+  assertEquals(response.data.data.is_latest, false, 'Version 2 should not be latest');
+}
+
+async function testGetSpecificEntityVersionNotFound() {
+  logTest('Entity Versions - Get Non-existent Version Number Returns 404');
+
+  // Create a type and entity (only version 1 exists)
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NoVersionType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Try to get version 5 (doesn't exist)
+  const response = await makeRequest('GET', `/api/entities/${entityId}/versions/5`);
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetSpecificEntityVersionInvalidNumber() {
+  logTest('Entity Versions - Get Version with Invalid Number Returns 400');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidVersionType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Try to get version 0 (invalid)
+  const response = await makeRequest('GET', `/api/entities/${entityId}/versions/0`);
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'INVALID_VERSION', 'Should have INVALID_VERSION error code');
+}
+
+async function testGetEntityHistory() {
+  logTest('Entity Versions - Get Version History with Diffs');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'HistoryTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Original Name',
+      description: 'Original description',
+      count: 1
+    }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update 1: Change name and count, add new field
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: {
+      name: 'Updated Name',
+      description: 'Original description',
+      count: 2,
+      status: 'active'
+    }
+  });
+
+  // Update 2: Remove description, change status
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: {
+      name: 'Updated Name',
+      count: 2,
+      status: 'inactive'
+    }
+  });
+
+  // Get history with diffs
+  const response = await makeRequest('GET', `/api/entities/${entityId}/history`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should have 3 versions');
+
+  // Version 1 should have null diff (first version)
+  assertEquals(response.data.data[0].version, 1, 'First item should be version 1');
+  assertEquals(response.data.data[0].diff, null, 'Version 1 should have null diff');
+
+  // Version 2 should show changes from version 1
+  const v2Diff = response.data.data[1].diff;
+  assert(v2Diff, 'Version 2 should have diff object');
+  assert(v2Diff.changed, 'Should have changed properties');
+  assert(v2Diff.added, 'Should have added properties');
+  assert(v2Diff.removed, 'Should have removed properties');
+
+  assertEquals(v2Diff.changed.name.old, 'Original Name', 'Should track name change - old value');
+  assertEquals(v2Diff.changed.name.new, 'Updated Name', 'Should track name change - new value');
+  assertEquals(v2Diff.changed.count.old, 1, 'Should track count change');
+  assertEquals(v2Diff.changed.count.new, 2, 'Should track count change');
+  assertEquals(v2Diff.added.status, 'active', 'Should track added status field');
+
+  // Version 3 should show changes from version 2
+  const v3Diff = response.data.data[2].diff;
+  assert(v3Diff, 'Version 3 should have diff object');
+  assertEquals(v3Diff.changed.status.old, 'active', 'Should track status change');
+  assertEquals(v3Diff.changed.status.new, 'inactive', 'Should track status change');
+  assertEquals(v3Diff.removed.description, 'Original description', 'Should track removed description field');
+}
+
+async function testGetEntityHistoryNotFound() {
+  logTest('Entity Versions - Get History of Non-existent Entity Returns 404');
+
+  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/history');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetVersionsWithDeletedEntity() {
+  logTest('Entity Versions - Get Versions Including Deleted State');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedVersionType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated' }
+  });
+
+  // Delete
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Restore
+  await makeRequest('POST', `/api/entities/${entityId}/restore`);
+
+  // Get all versions
+  const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 4, 'Should have 4 versions (create, update, delete, restore)');
+
+  // Check deletion states
+  assertEquals(response.data.data[0].is_deleted, false, 'Version 1 should not be deleted');
+  assertEquals(response.data.data[1].is_deleted, false, 'Version 2 should not be deleted');
+  assertEquals(response.data.data[2].is_deleted, true, 'Version 3 should be deleted');
+  assertEquals(response.data.data[3].is_deleted, false, 'Version 4 should not be deleted (restored)');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -1456,6 +1729,16 @@ async function runTests() {
     testUpdateDeletedEntity,
     testListEntitiesExcludesDeleted,
     testListEntitiesIncludesDeleted,
+
+    // Entity Version History tests
+    testGetEntityVersions,
+    testGetEntityVersionsNotFound,
+    testGetSpecificEntityVersion,
+    testGetSpecificEntityVersionNotFound,
+    testGetSpecificEntityVersionInvalidNumber,
+    testGetEntityHistory,
+    testGetEntityHistoryNotFound,
+    testGetVersionsWithDeletedEntity,
 
     // Add new test functions here as features are implemented
     // Example:
