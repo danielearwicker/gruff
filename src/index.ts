@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+import { validateJson, validateQuery } from './middleware/validation.js';
+import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
+import { z } from 'zod';
 
 // Define the environment bindings type
 type Bindings = {
@@ -50,6 +53,42 @@ app.get('/', (c) => {
 app.get('/api', (c) => {
   return c.json({
     message: 'Gruff API - Entity-Relationship Database with Versioning',
+  });
+});
+
+// Validation demo endpoint - validates JSON body
+app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {
+  const validated = c.get('validated_json') as any;
+  return c.json({
+    success: true,
+    message: 'Entity schema validation passed',
+    received: validated,
+  });
+});
+
+// Validation demo endpoint - validates query parameters
+app.get('/api/validate/query', validateQuery(entityQuerySchema), (c) => {
+  const validated = c.get('validated_query') as any;
+  return c.json({
+    success: true,
+    message: 'Query parameters validation passed',
+    received: validated,
+  });
+});
+
+// Validation demo endpoint - validates with custom schema
+const testSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  age: z.number().int().min(0).max(150),
+  email: z.string().email(),
+});
+
+app.post('/api/validate/test', validateJson(testSchema), (c) => {
+  const validated = c.get('validated_json') as any;
+  return c.json({
+    success: true,
+    message: 'Custom validation passed',
+    data: validated,
   });
 });
 

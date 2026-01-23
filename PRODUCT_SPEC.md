@@ -317,7 +317,7 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 
 ### API Framework
 - ✅ Hono framework for routing (lightweight, Workers-compatible)
-- 🟦 Request validation with Zod (TypeScript-first schema validation)
+- ✅ Request validation with Zod (TypeScript-first schema validation)
 - 🟦 Error handling middleware in Hono
 - 🟦 Response formatting utilities
 - ✅ Type-safe routing with Hono's TypeScript support

@@ -349,6 +349,95 @@ async function testIsLatestFlagLinks() {
   logInfo('Expected behavior: When new version created, previous version marked is_latest=false');
 }
 
+async function testValidationSuccessEntity() {
+  logTest('Validation - Valid Entity Schema');
+
+  const response = await makeRequest('POST', '/api/validate/entity', {
+    type_id: '550e8400-e29b-41d4-a716-446655440000',
+    properties: {
+      name: 'Test Entity',
+      description: 'This is a test',
+    },
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data.success, 'Validation should succeed');
+  assert(response.data.received, 'Should return validated data');
+  assertEquals(response.data.received.type_id, '550e8400-e29b-41d4-a716-446655440000', 'Should have correct type_id');
+}
+
+async function testValidationFailureInvalidUUID() {
+  logTest('Validation - Invalid UUID Format');
+
+  const response = await makeRequest('POST', '/api/validate/entity', {
+    type_id: 'not-a-valid-uuid',
+    properties: {},
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should return error message');
+  assert(response.data.details, 'Should return validation details');
+}
+
+async function testValidationFailureMissingField() {
+  logTest('Validation - Missing Required Field');
+
+  const response = await makeRequest('POST', '/api/validate/entity', {
+    // missing type_id
+    properties: {},
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should return error message');
+  assert(response.data.details, 'Should return validation details');
+}
+
+async function testValidationCustomSchema() {
+  logTest('Validation - Custom Schema with Multiple Field Types');
+
+  const response = await makeRequest('POST', '/api/validate/test', {
+    name: 'John Doe',
+    age: 30,
+    email: 'john@example.com',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data.success, 'Validation should succeed');
+  assertEquals(response.data.data.name, 'John Doe', 'Should have correct name');
+  assertEquals(response.data.data.age, 30, 'Should have correct age');
+  assertEquals(response.data.data.email, 'john@example.com', 'Should have correct email');
+}
+
+async function testValidationCustomSchemaFailure() {
+  logTest('Validation - Custom Schema Validation Failures');
+
+  const response = await makeRequest('POST', '/api/validate/test', {
+    name: '', // Empty string should fail
+    age: -5, // Negative age should fail
+    email: 'not-an-email', // Invalid email should fail
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should return error message');
+  assert(response.data.details, 'Should return validation details');
+  assert(response.data.details.length >= 3, 'Should have at least 3 validation errors');
+}
+
+async function testValidationQueryParameters() {
+  logTest('Validation - Query Parameter Validation');
+
+  const response = await makeRequest('GET', '/api/validate/query?type_id=550e8400-e29b-41d4-a716-446655440000&include_deleted=false');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data.success, 'Validation should succeed');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -365,6 +454,14 @@ async function runTests() {
     testVersionAutoIncrementLinks,
     testIsLatestFlagEntities,
     testIsLatestFlagLinks,
+
+    // Validation tests
+    testValidationSuccessEntity,
+    testValidationFailureInvalidUUID,
+    testValidationFailureMissingField,
+    testValidationCustomSchema,
+    testValidationCustomSchemaFailure,
+    testValidationQueryParameters,
 
     // Add new test functions here as features are implemented
     // Example:
