@@ -154,7 +154,7 @@ PUT    /api/types/{id}             # Update type metadata
 DELETE /api/types/{id}             # Delete type (if unused)
 ```
 
-### 🟦 Entity CRUD Endpoints
+### ✅ Entity CRUD Endpoints
 
 ```
 POST   /api/entities               # Create new entity

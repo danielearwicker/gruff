@@ -6,6 +6,7 @@ import * as response from './utils/response.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
+import entitiesRouter from './routes/entities.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -122,6 +123,9 @@ app.get('/api', (c) => {
 
 // Mount type management routes
 app.route('/api/types', typesRouter);
+
+// Mount entity management routes
+app.route('/api/entities', entitiesRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

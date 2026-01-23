@@ -952,6 +952,431 @@ async function testDeleteTypeNotFound() {
 }
 
 // ============================================================================
+// Entity CRUD Tests
+// ============================================================================
+
+async function testCreateEntity() {
+  logTest('Entity CRUD - Create Entity');
+
+  // First, create a type to use
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'TestEntityType',
+    category: 'entity',
+    description: 'Type for entity tests'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const response = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Test Entity',
+      value: 42
+    }
+  });
+
+  if (response.status !== 201) {
+    logInfo(`Unexpected response: ${JSON.stringify(response.data, null, 2)}`);
+  }
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.id, 'Should have generated ID');
+  assertEquals(response.data.data.type_id, typeId, 'Should have correct type_id');
+  assert(response.data.data.properties, 'Should have properties');
+  assertEquals(response.data.data.properties.name, 'Test Entity', 'Should have correct property value');
+  assertEquals(response.data.data.version, 1, 'Should be version 1');
+  assertEquals(response.data.data.previous_version_id, null, 'Should have null previous_version_id for v1');
+  assertEquals(response.data.data.is_deleted, false, 'Should not be deleted');
+  assertEquals(response.data.data.is_latest, true, 'Should be latest version');
+  assert(response.data.data.created_at, 'Should have created_at timestamp');
+  assert(response.data.data.created_by, 'Should have created_by user ID');
+}
+
+async function testCreateEntityWithoutType() {
+  logTest('Entity CRUD - Create Entity with Non-existent Type Returns 404');
+
+  const response = await makeRequest('POST', '/api/entities', {
+    type_id: '00000000-0000-0000-0000-000000000000',
+    properties: { name: 'Test' }
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error code');
+}
+
+async function testCreateEntityValidation() {
+  logTest('Entity CRUD - Validate Required Fields');
+
+  const response = await makeRequest('POST', '/api/entities', {
+    // missing type_id
+    properties: {}
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testListEntities() {
+  logTest('Entity CRUD - List All Entities');
+
+  const response = await makeRequest('GET', '/api/entities');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+}
+
+async function testListEntitiesFilterByType() {
+  logTest('Entity CRUD - Filter Entities by Type');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { test: 'value' }
+  });
+
+  // Filter by type_id
+  const response = await makeRequest('GET', `/api/entities?type_id=${typeId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Verify all returned entities have the correct type_id
+  response.data.data.forEach(entity => {
+    assertEquals(entity.type_id, typeId, 'All entities should have the filtered type_id');
+  });
+}
+
+async function testGetEntityById() {
+  logTest('Entity CRUD - Get Entity by ID');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'GetTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Get Test Entity' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Retrieve the entity
+  const response = await makeRequest('GET', `/api/entities/${entityId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.id, entityId, 'Should return the correct entity');
+  assertEquals(response.data.data.properties.name, 'Get Test Entity', 'Should have correct properties');
+}
+
+async function testGetEntityByIdNotFound() {
+  logTest('Entity CRUD - Get Non-existent Entity Returns 404');
+
+  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testUpdateEntity() {
+  logTest('Entity CRUD - Update Entity (Creates New Version)');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original Name', value: 1 }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update the entity
+  const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Name', value: 2, newField: 'added' }
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  // Note: The ID changes with each version in our implementation
+  assert(response.data.data.id, 'Should have an ID');
+  assertEquals(response.data.data.previous_version_id, entityId, 'Should reference previous version');
+  assertEquals(response.data.data.version, 2, 'Should be version 2');
+  assertEquals(response.data.data.properties.name, 'Updated Name', 'Properties should be updated');
+  assertEquals(response.data.data.properties.value, 2, 'Properties should be updated');
+  assertEquals(response.data.data.properties.newField, 'added', 'New properties should be added');
+  assertEquals(response.data.data.is_latest, true, 'Should be marked as latest');
+
+  // Verify we can still retrieve the entity using the original ID
+  const getResponse = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(getResponse.status, 200, 'Should be able to get entity by original ID');
+  assertEquals(getResponse.data.data.version, 2, 'Should return the latest version');
+}
+
+async function testUpdateEntityNotFound() {
+  logTest('Entity CRUD - Update Non-existent Entity Returns 404');
+
+  const response = await makeRequest('PUT', '/api/entities/00000000-0000-0000-0000-000000000000', {
+    properties: { name: 'Test' }
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testDeleteEntity() {
+  logTest('Entity CRUD - Soft Delete Entity');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeleteTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'To Be Deleted' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Delete the entity
+  const response = await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+
+  // Verify the entity is soft-deleted (still exists but marked deleted)
+  const getResponse = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(getResponse.status, 200, 'Entity should still be retrievable');
+  assertEquals(getResponse.data.data.is_deleted, true, 'Entity should be marked as deleted');
+  assertEquals(getResponse.data.data.version, 2, 'Should have created a new version for deletion');
+}
+
+async function testDeleteEntityNotFound() {
+  logTest('Entity CRUD - Delete Non-existent Entity Returns 404');
+
+  const response = await makeRequest('DELETE', '/api/entities/00000000-0000-0000-0000-000000000000');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testDeleteEntityAlreadyDeleted() {
+  logTest('Entity CRUD - Delete Already Deleted Entity Returns 409');
+
+  // Create and delete an entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DoubleDeleteType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Try to delete again
+  const response = await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'ALREADY_DELETED', 'Should have ALREADY_DELETED error code');
+}
+
+async function testRestoreEntity() {
+  logTest('Entity CRUD - Restore Soft-Deleted Entity');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'RestoreTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Restored Entity' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Delete the entity
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Restore the entity
+  const response = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  // Note: The ID changes with each version in our implementation
+  assert(response.data.data.id, 'Should have an ID');
+  assertEquals(response.data.data.is_deleted, false, 'Entity should no longer be deleted');
+  assertEquals(response.data.data.version, 3, 'Should be version 3 (create, delete, restore)');
+
+  // Verify we can still retrieve the entity using the original ID
+  const getResponse = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(getResponse.status, 200, 'Should be able to get entity by original ID');
+  assertEquals(getResponse.data.data.is_deleted, false, 'Should return the restored (not deleted) version');
+}
+
+async function testRestoreEntityNotDeleted() {
+  logTest('Entity CRUD - Restore Non-Deleted Entity Returns 409');
+
+  // Create an entity (not deleted)
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NotDeletedType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Try to restore (not deleted)
+  const response = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'NOT_DELETED', 'Should have NOT_DELETED error code');
+}
+
+async function testRestoreEntityNotFound() {
+  logTest('Entity CRUD - Restore Non-existent Entity Returns 404');
+
+  const response = await makeRequest('POST', '/api/entities/00000000-0000-0000-0000-000000000000/restore');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testUpdateDeletedEntity() {
+  logTest('Entity CRUD - Cannot Update Deleted Entity');
+
+  // Create and delete an entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateDeletedType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Try to update deleted entity
+  const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated' }
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'ENTITY_DELETED', 'Should have ENTITY_DELETED error code');
+}
+
+async function testListEntitiesExcludesDeleted() {
+  logTest('Entity CRUD - List Entities Excludes Soft-Deleted by Default');
+
+  // Create a type and two entities
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ListDeletedType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Active Entity' }
+  });
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Deleted Entity' }
+  });
+
+  const entity2Id = entity2.data.data.id;
+
+  // Delete second entity
+  await makeRequest('DELETE', `/api/entities/${entity2Id}`);
+
+  // List entities without include_deleted
+  const response = await makeRequest('GET', `/api/entities?type_id=${typeId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Should only include the active entity
+  const deletedEntities = response.data.data.filter(e => e.is_deleted === true);
+  assertEquals(deletedEntities.length, 0, 'Should not include deleted entities by default');
+}
+
+async function testListEntitiesIncludesDeleted() {
+  logTest('Entity CRUD - List Entities Includes Soft-Deleted with Flag');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'IncludeDeletedType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Will Be Deleted' }
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Delete the entity
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // List entities with include_deleted=true
+  const response = await makeRequest('GET', `/api/entities?type_id=${typeId}&include_deleted=true`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Should include the deleted entity (note: the entity has a new ID for the deleted version)
+  // We need to find it by checking the version chain or properties
+  const deletedEntity = response.data.data.find(e =>
+    e.type_id === typeId &&
+    e.is_deleted === true &&
+    e.properties.name === 'Will Be Deleted'
+  );
+  assert(deletedEntity, 'Should find the deleted entity');
+  assertEquals(deletedEntity.is_deleted, true, 'Entity should be marked as deleted');
+  assertEquals(deletedEntity.previous_version_id, entityId, 'Should reference the original entity as previous version');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -1012,11 +1437,30 @@ async function runTests() {
     testDeleteType,
     testDeleteTypeNotFound,
 
+    // Entity CRUD tests
+    testCreateEntity,
+    testCreateEntityWithoutType,
+    testCreateEntityValidation,
+    testListEntities,
+    testListEntitiesFilterByType,
+    testGetEntityById,
+    testGetEntityByIdNotFound,
+    testUpdateEntity,
+    testUpdateEntityNotFound,
+    testDeleteEntity,
+    testDeleteEntityNotFound,
+    testDeleteEntityAlreadyDeleted,
+    testRestoreEntity,
+    testRestoreEntityNotDeleted,
+    testRestoreEntityNotFound,
+    testUpdateDeletedEntity,
+    testListEntitiesExcludesDeleted,
+    testListEntitiesIncludesDeleted,
+
     // Add new test functions here as features are implemented
     // Example:
     // testUserRegistration,
     // testUserLogin,
-    // testCreateEntity,
     // testCreateLink,
     // etc.
   ];
