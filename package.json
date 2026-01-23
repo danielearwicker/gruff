@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
-    "migrate:local": "wrangler d1 execute gruff-db --local --file=./migrations/0001_initial_schema.sql",
-    "migrate:remote": "wrangler d1 execute gruff-db --remote --file=./migrations/0001_initial_schema.sql",
+    "migrate:local": "wrangler d1 execute gruff-db --local --file=./migrations/0001_initial_schema.sql && wrangler d1 execute gruff-db --local --file=./migrations/0002_version_triggers.sql",
+    "migrate:remote": "wrangler d1 execute gruff-db --remote --file=./migrations/0001_initial_schema.sql && wrangler d1 execute gruff-db --remote --file=./migrations/0002_version_triggers.sql",
     "db:create:local": "wrangler d1 execute gruff-db --local --command='SELECT 1'",
     "test": "node test-runner.js",
     "test:watch": "nodemon test-runner.js"
