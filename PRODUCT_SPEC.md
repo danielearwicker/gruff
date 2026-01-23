@@ -144,7 +144,7 @@ GET    /api/auth/{provider}/callback # OAuth callback handler
 GET    /api/auth/me                # Get current user info
 ```
 
-### 🟦 Type Management Endpoints
+### ✅ Type Management Endpoints
 
 ```
 POST   /api/types                  # Create a new type

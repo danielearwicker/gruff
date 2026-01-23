@@ -5,6 +5,7 @@ import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
+import typesRouter from './routes/types.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -112,12 +113,15 @@ app.get('/', (c) => {
   });
 });
 
-// API routes will go here
+// API routes
 app.get('/api', (c) => {
   return c.json({
     message: 'Gruff API - Entity-Relationship Database with Versioning',
   });
 });
+
+// Mount type management routes
+app.route('/api/types', typesRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

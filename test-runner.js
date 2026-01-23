@@ -641,6 +641,317 @@ async function testResponseFormattingForbidden() {
 }
 
 // ============================================================================
+// Type Management Tests
+// ============================================================================
+
+async function testCreateTypeEntity() {
+  logTest('Type Management - Create Entity Type');
+
+  const response = await makeRequest('POST', '/api/types', {
+    name: 'Product',
+    category: 'entity',
+    description: 'A product entity type',
+    json_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        price: { type: 'number' },
+        sku: { type: 'string' }
+      },
+      required: ['name', 'price']
+    }
+  });
+
+  if (response.status !== 201) {
+    logInfo(`Unexpected response: ${JSON.stringify(response.data, null, 2)}`);
+  }
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.id, 'Should have generated ID');
+  assertEquals(response.data.data.name, 'Product', 'Should have correct name');
+  assertEquals(response.data.data.category, 'entity', 'Should have correct category');
+  assertEquals(response.data.data.description, 'A product entity type', 'Should have description');
+  assert(response.data.data.json_schema, 'Should have json_schema');
+  assert(response.data.data.created_at, 'Should have created_at timestamp');
+  assert(response.data.data.created_by, 'Should have created_by user ID');
+}
+
+async function testCreateTypeLink() {
+  logTest('Type Management - Create Link Type');
+
+  const response = await makeRequest('POST', '/api/types', {
+    name: 'Purchased',
+    category: 'link',
+    description: 'A relationship indicating one person purchased a product'
+  });
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.name, 'Purchased', 'Should have correct name');
+  assertEquals(response.data.data.category, 'link', 'Should have correct category');
+  assertEquals(response.data.data.json_schema, null, 'Should have null json_schema when not provided');
+}
+
+async function testCreateTypeDuplicateName() {
+  logTest('Type Management - Reject Duplicate Type Name');
+
+  // First, create a type
+  await makeRequest('POST', '/api/types', {
+    name: 'UniqueType',
+    category: 'entity'
+  });
+
+  // Try to create another type with the same name
+  const response = await makeRequest('POST', '/api/types', {
+    name: 'UniqueType',
+    category: 'link'
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'DUPLICATE_NAME', 'Should have DUPLICATE_NAME error code');
+}
+
+async function testCreateTypeValidation() {
+  logTest('Type Management - Validate Required Fields');
+
+  const response = await makeRequest('POST', '/api/types', {
+    // missing name
+    category: 'entity'
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testListTypes() {
+  logTest('Type Management - List All Types');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assert(response.data.data.length > 0, 'Should have at least one type from seed data or previous tests');
+}
+
+async function testListTypesFilterByCategory() {
+  logTest('Type Management - Filter Types by Category');
+
+  // Test entity category filter
+  const entityResponse = await makeRequest('GET', '/api/types?category=entity');
+  assertEquals(entityResponse.status, 200, 'Status code should be 200');
+  assert(Array.isArray(entityResponse.data.data), 'Data should be an array');
+
+  // Verify all returned types are entity types
+  entityResponse.data.data.forEach(type => {
+    assertEquals(type.category, 'entity', 'All types should be entity category');
+  });
+
+  // Test link category filter
+  const linkResponse = await makeRequest('GET', '/api/types?category=link');
+  assertEquals(linkResponse.status, 200, 'Status code should be 200');
+  assert(Array.isArray(linkResponse.data.data), 'Data should be an array');
+
+  linkResponse.data.data.forEach(type => {
+    assertEquals(type.category, 'link', 'All types should be link category');
+  });
+}
+
+async function testListTypesFilterByName() {
+  logTest('Type Management - Filter Types by Name');
+
+  const response = await makeRequest('GET', '/api/types?name=Person');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Each result should contain "Person" in the name
+  response.data.data.forEach(type => {
+    assert(type.name.includes('Person'), `Type name should contain "Person", got "${type.name}"`);
+  });
+}
+
+async function testGetTypeById() {
+  logTest('Type Management - Get Type by ID');
+
+  // First create a type to retrieve
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'Company',
+    category: 'entity',
+    description: 'A business organization'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // Now retrieve it
+  const response = await makeRequest('GET', `/api/types/${typeId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.id, typeId, 'Should return the correct type');
+  assertEquals(response.data.data.name, 'Company', 'Should have correct name');
+  assertEquals(response.data.data.category, 'entity', 'Should have correct category');
+}
+
+async function testGetTypeByIdNotFound() {
+  logTest('Type Management - Get Non-existent Type Returns 404');
+
+  const response = await makeRequest('GET', '/api/types/00000000-0000-0000-0000-000000000000');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testUpdateTypeName() {
+  logTest('Type Management - Update Type Name');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'OriginalName',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // Update the name
+  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+    name: 'UpdatedName'
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.name, 'UpdatedName', 'Name should be updated');
+  assertEquals(response.data.data.category, 'entity', 'Category should remain unchanged');
+}
+
+async function testUpdateTypeDescription() {
+  logTest('Type Management - Update Type Description');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'DescTest',
+    category: 'entity',
+    description: 'Original description'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // Update the description
+  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+    description: 'Updated description'
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.description, 'Updated description', 'Description should be updated');
+}
+
+async function testUpdateTypeJsonSchema() {
+  logTest('Type Management - Update Type JSON Schema');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'SchemaTest',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // Update the JSON schema
+  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+    json_schema: {
+      type: 'object',
+      properties: {
+        newField: { type: 'string' }
+      }
+    }
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.json_schema, 'Should have json_schema');
+  assert(response.data.data.json_schema.properties, 'Should have properties');
+  assert(response.data.data.json_schema.properties.newField, 'Should have new field');
+}
+
+async function testUpdateTypeNotFound() {
+  logTest('Type Management - Update Non-existent Type Returns 404');
+
+  const response = await makeRequest('PUT', '/api/types/00000000-0000-0000-0000-000000000000', {
+    name: 'NewName'
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testUpdateTypeDuplicateName() {
+  logTest('Type Management - Update to Duplicate Name Should Fail');
+
+  // Create two types
+  await makeRequest('POST', '/api/types', {
+    name: 'Type1',
+    category: 'entity'
+  });
+
+  const response2 = await makeRequest('POST', '/api/types', {
+    name: 'Type2',
+    category: 'entity'
+  });
+
+  const type2Id = response2.data.data.id;
+
+  // Try to rename Type2 to Type1
+  const updateResponse = await makeRequest('PUT', `/api/types/${type2Id}`, {
+    name: 'Type1'
+  });
+
+  assertEquals(updateResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(updateResponse.data.code, 'DUPLICATE_NAME', 'Should have DUPLICATE_NAME error code');
+}
+
+async function testDeleteType() {
+  logTest('Type Management - Delete Unused Type');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'TypeToDelete',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // Delete it
+  const response = await makeRequest('DELETE', `/api/types/${typeId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+
+  // Verify it's deleted
+  const getResponse = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(getResponse.status, 404, 'Deleted type should return 404');
+}
+
+async function testDeleteTypeNotFound() {
+  logTest('Type Management - Delete Non-existent Type Returns 404');
+
+  const response = await makeRequest('DELETE', '/api/types/00000000-0000-0000-0000-000000000000');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -682,6 +993,24 @@ async function runTests() {
     testResponseFormattingValidationError,
     testResponseFormattingUnauthorized,
     testResponseFormattingForbidden,
+
+    // Type Management tests
+    testCreateTypeEntity,
+    testCreateTypeLink,
+    testCreateTypeDuplicateName,
+    testCreateTypeValidation,
+    testListTypes,
+    testListTypesFilterByCategory,
+    testListTypesFilterByName,
+    testGetTypeById,
+    testGetTypeByIdNotFound,
+    testUpdateTypeName,
+    testUpdateTypeDescription,
+    testUpdateTypeJsonSchema,
+    testUpdateTypeNotFound,
+    testUpdateTypeDuplicateName,
+    testDeleteType,
+    testDeleteTypeNotFound,
 
     // Add new test functions here as features are implemented
     // Example:
