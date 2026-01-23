@@ -494,6 +494,152 @@ async function testErrorHandlerValidationWithDetails() {
   assert(response.data.requestId, 'Should have request ID');
 }
 
+async function testResponseFormattingSuccess() {
+  logTest('Response Formatting - Success Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/success');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assertEquals(response.data.data.id, '123', 'Should have correct data');
+  assertEquals(response.data.message, 'Operation successful', 'Should have message');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingCreated() {
+  logTest('Response Formatting - Created Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/created');
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assertEquals(response.data.data.id, '456', 'Should have correct data');
+  assert(response.data.message, 'Should have creation message');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingUpdated() {
+  logTest('Response Formatting - Updated Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/updated');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assertEquals(response.data.data.id, '789', 'Should have correct data');
+  assert(response.data.message, 'Should have update message');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingDeleted() {
+  logTest('Response Formatting - Deleted Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/deleted');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.message, 'Should have deletion message');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingPaginated() {
+  logTest('Response Formatting - Paginated Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/paginated');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should have 3 items');
+  assert(response.data.metadata, 'Should have metadata');
+  assertEquals(response.data.metadata.page, 1, 'Should have page number');
+  assertEquals(response.data.metadata.pageSize, 3, 'Should have page size');
+  assertEquals(response.data.metadata.total, 10, 'Should have total count');
+  assertEquals(response.data.metadata.hasMore, true, 'Should indicate more pages available');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingCursorPaginated() {
+  logTest('Response Formatting - Cursor Paginated Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/cursor-paginated');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 2, 'Should have 2 items');
+  assert(response.data.metadata, 'Should have metadata');
+  assertEquals(response.data.metadata.cursor, 'next-cursor-token', 'Should have cursor token');
+  assertEquals(response.data.metadata.hasMore, true, 'Should indicate more items available');
+  assertEquals(response.data.metadata.total, 5, 'Should have total count');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingNotFound() {
+  logTest('Response Formatting - Not Found Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/not-found');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assert(response.data.error, 'Should have error message');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND code');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingError() {
+  logTest('Response Formatting - Generic Error Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/error');
+
+  assertEquals(response.status, 500, 'Status code should be 500');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.error, 'Something went wrong', 'Should have error message');
+  assertEquals(response.data.code, 'DEMO_ERROR', 'Should have error code');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingValidationError() {
+  logTest('Response Formatting - Validation Error Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/validation-error');
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assert(response.data.error, 'Should have error message');
+  assertEquals(response.data.code, 'VALIDATION_ERROR', 'Should have VALIDATION_ERROR code');
+  assert(response.data.data, 'Should have validation details in data field');
+  assert(Array.isArray(response.data.data), 'Validation details should be an array');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingUnauthorized() {
+  logTest('Response Formatting - Unauthorized Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/unauthorized');
+
+  assertEquals(response.status, 401, 'Status code should be 401');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.error, 'Invalid credentials', 'Should have error message');
+  assertEquals(response.data.code, 'UNAUTHORIZED', 'Should have UNAUTHORIZED code');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
+async function testResponseFormattingForbidden() {
+  logTest('Response Formatting - Forbidden Response');
+
+  const response = await makeRequest('GET', '/api/demo/response/forbidden');
+
+  assertEquals(response.status, 403, 'Status code should be 403');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.error, 'Access denied', 'Should have error message');
+  assertEquals(response.data.code, 'FORBIDDEN', 'Should have FORBIDDEN code');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -523,6 +669,19 @@ async function runTests() {
     testErrorHandler404,
     testErrorHandlerInvalidJSON,
     testErrorHandlerValidationWithDetails,
+
+    // Response formatting tests
+    testResponseFormattingSuccess,
+    testResponseFormattingCreated,
+    testResponseFormattingUpdated,
+    testResponseFormattingDeleted,
+    testResponseFormattingPaginated,
+    testResponseFormattingCursorPaginated,
+    testResponseFormattingNotFound,
+    testResponseFormattingError,
+    testResponseFormattingValidationError,
+    testResponseFormattingUnauthorized,
+    testResponseFormattingForbidden,
 
     // Add new test functions here as features are implemented
     // Example:

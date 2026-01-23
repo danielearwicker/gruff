@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
+import * as response from './utils/response.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 
@@ -152,6 +153,63 @@ app.post('/api/validate/test', validateJson(testSchema), (c) => {
     message: 'Custom validation passed',
     data: validated,
   });
+});
+
+// Response formatting demo endpoints
+app.get('/api/demo/response/success', (c) => {
+  return c.json(response.success({ id: '123', name: 'Example' }, 'Operation successful'));
+});
+
+app.get('/api/demo/response/created', (c) => {
+  return c.json(response.created({ id: '456', name: 'New Resource' }), 201);
+});
+
+app.get('/api/demo/response/updated', (c) => {
+  return c.json(response.updated({ id: '789', name: 'Updated Resource' }));
+});
+
+app.get('/api/demo/response/deleted', (c) => {
+  return c.json(response.deleted());
+});
+
+app.get('/api/demo/response/paginated', (c) => {
+  const items = [
+    { id: '1', name: 'Item 1' },
+    { id: '2', name: 'Item 2' },
+    { id: '3', name: 'Item 3' },
+  ];
+  return c.json(response.paginated(items, 10, 1, 3, true));
+});
+
+app.get('/api/demo/response/cursor-paginated', (c) => {
+  const items = [
+    { id: '1', name: 'Item 1' },
+    { id: '2', name: 'Item 2' },
+  ];
+  return c.json(response.cursorPaginated(items, 'next-cursor-token', true, 5));
+});
+
+app.get('/api/demo/response/not-found', (c) => {
+  return c.json(response.notFound('User'), 404);
+});
+
+app.get('/api/demo/response/error', (c) => {
+  return c.json(response.error('Something went wrong', 'DEMO_ERROR'), 500);
+});
+
+app.get('/api/demo/response/validation-error', (c) => {
+  return c.json(response.validationError([
+    { field: 'email', message: 'Invalid email format' },
+    { field: 'age', message: 'Must be a positive number' },
+  ]), 400);
+});
+
+app.get('/api/demo/response/unauthorized', (c) => {
+  return c.json(response.unauthorized('Invalid credentials'), 401);
+});
+
+app.get('/api/demo/response/forbidden', (c) => {
+  return c.json(response.forbidden('Access denied'), 403);
 });
 
 // 404 handler - must be last
