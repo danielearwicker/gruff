@@ -438,6 +438,62 @@ async function testValidationQueryParameters() {
   assert(response.data.success, 'Validation should succeed');
 }
 
+async function testErrorHandler404() {
+  logTest('Error Handler - 404 Not Found with Formatted Response');
+
+  const response = await makeRequest('GET', '/api/this-does-not-exist');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+  assert(response.data.code, 'Should have error code');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Error code should be NOT_FOUND');
+  assert(response.data.timestamp, 'Should have timestamp');
+  assert(response.data.path, 'Should have request path');
+  assertEquals(response.data.path, '/api/this-does-not-exist', 'Path should match request');
+}
+
+async function testErrorHandlerInvalidJSON() {
+  logTest('Error Handler - Invalid JSON in Request Body');
+
+  // Make a request with malformed JSON
+  const response = await fetch(`${DEV_SERVER_URL}/api/validate/test`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: '{invalid json}',
+  });
+
+  const data = await response.json().catch(() => null);
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assert(data.code, 'Should have error code');
+  assert(data.timestamp, 'Should have timestamp');
+  assert(data.requestId, 'Should have request ID for tracking');
+}
+
+async function testErrorHandlerValidationWithDetails() {
+  logTest('Error Handler - Validation Errors Include Details');
+
+  const response = await makeRequest('POST', '/api/validate/test', {
+    name: '',
+    age: -1,
+    email: 'invalid',
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(response.data.error, 'Should have error message');
+  assert(response.data.code, 'Should have error code');
+  assert(response.data.details, 'Should have validation details');
+  assert(Array.isArray(response.data.details), 'Details should be an array');
+  assert(response.data.details.length > 0, 'Should have at least one validation error');
+  assert(response.data.timestamp, 'Should have timestamp');
+  assert(response.data.requestId, 'Should have request ID');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -462,6 +518,11 @@ async function runTests() {
     testValidationCustomSchema,
     testValidationCustomSchemaFailure,
     testValidationQueryParameters,
+
+    // Error handler tests
+    testErrorHandler404,
+    testErrorHandlerInvalidJSON,
+    testErrorHandlerValidationWithDetails,
 
     // Add new test functions here as features are implemented
     // Example:

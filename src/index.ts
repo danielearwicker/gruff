@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from './middleware/validation.js';
+import { notFoundHandler } from './middleware/error-handler.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import { z } from 'zod';
+import { ZodError } from 'zod';
 
 // Define the environment bindings type
 type Bindings = {
@@ -11,6 +13,66 @@ type Bindings = {
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+// Global error handler using Hono's onError
+app.onError((err, c) => {
+  console.error('[Error Handler] Error occurred:', err);
+  console.error('[Error Handler] Error type:', err?.constructor?.name);
+
+  const requestId = crypto.randomUUID();
+  let statusCode = 500;
+  let errorResponse: any = {
+    error: 'Internal server error',
+    code: 'INTERNAL_SERVER_ERROR',
+    timestamp: new Date().toISOString(),
+    path: c.req.path,
+    requestId,
+  };
+
+  // Handle Zod validation errors
+  if (err instanceof ZodError || (err as any)?.name === 'ZodError') {
+    const zodError = err as ZodError;
+    statusCode = 400;
+    errorResponse = {
+      error: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      details: zodError.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+        code: issue.code,
+      })),
+      timestamp: new Date().toISOString(),
+      path: c.req.path,
+      requestId,
+    };
+  }
+  // Handle JSON parse errors
+  else if (err instanceof SyntaxError && err.message.includes('JSON')) {
+    statusCode = 400;
+    errorResponse = {
+      error: 'Invalid JSON in request body',
+      code: 'INVALID_JSON',
+      details: err.message,
+      timestamp: new Date().toISOString(),
+      path: c.req.path,
+      requestId,
+    };
+  }
+  // Handle generic errors
+  else if (err instanceof Error) {
+    const isDevelopment = c.env?.ENVIRONMENT !== 'production';
+    errorResponse = {
+      error: isDevelopment ? err.message : 'Internal server error',
+      code: 'INTERNAL_SERVER_ERROR',
+      details: isDevelopment ? { stack: err.stack } : undefined,
+      timestamp: new Date().toISOString(),
+      path: c.req.path,
+      requestId,
+    };
+  }
+
+  return c.json(errorResponse, statusCode);
+});
 
 // Health check endpoint
 app.get('/health', async (c) => {
@@ -91,5 +153,8 @@ app.post('/api/validate/test', validateJson(testSchema), (c) => {
     data: validated,
   });
 });
+
+// 404 handler - must be last
+app.notFound(notFoundHandler);
 
 export default app;

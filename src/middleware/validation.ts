@@ -43,32 +43,7 @@ export function validate<T extends z.ZodTypeAny>(
 
       await next();
     } catch (error) {
-      if (error instanceof ZodError) {
-        return c.json(
-          {
-            error: 'Validation failed',
-            details: error.issues.map((err: any) => ({
-              path: err.path.join('.'),
-              message: err.message,
-              code: err.code,
-            })),
-          },
-          400
-        );
-      }
-
-      // Handle JSON parsing errors
-      if (error instanceof SyntaxError) {
-        return c.json(
-          {
-            error: 'Invalid JSON in request body',
-            details: error.message,
-          },
-          400
-        );
-      }
-
-      // Re-throw other errors
+      // Re-throw all errors so they can be handled by the global error handler
       throw error;
     }
   };
