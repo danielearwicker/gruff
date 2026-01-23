@@ -1,0 +1,18 @@
+name = "gruff"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding (local development uses automatic local DB)
+[[d1_databases]]
+binding = "DB"
+database_name = "gruff-db"
+database_id = "local-db" # For local dev, Wrangler creates this automatically
+
+# KV namespace for caching and sessions (local development uses automatic local KV)
+[[kv_namespaces]]
+binding = "KV"
+id = "local-kv"
+
+[vars]
+# Environment variables (non-secret)
+ENVIRONMENT = "development"

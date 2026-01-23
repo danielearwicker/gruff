@@ -1,0 +1,28 @@
+{
+  "name": "gruff",
+  "version": "1.0.0",
+  "description": "Entity-Relationship Graph Database with Versioning on Cloudflare Workers + D1",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 execute gruff-db --local --file=./migrations/0001_initial_schema.sql",
+    "migrate:remote": "wrangler d1 execute gruff-db --remote --file=./migrations/0001_initial_schema.sql",
+    "db:create:local": "wrangler d1 execute gruff-db --local --command='SELECT 1'",
+    "test": "node test-runner.js",
+    "test:watch": "nodemon test-runner.js"
+  },
+  "keywords": ["graph-database", "cloudflare-workers", "d1", "versioning"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260123.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.60.0"
+  },
+  "dependencies": {
+    "hono": "^4.11.5",
+    "zod": "^4.3.6"
+  }
+}
