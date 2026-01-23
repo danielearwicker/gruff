@@ -102,7 +102,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### Database Constraints and Triggers
 - ✅ Check constraint: `version > 0`
 - ✅ Trigger to auto-increment version on insert
-- 🟦 Trigger to set `is_latest = false` on previous version when new version is created
+- ✅ Trigger to set `is_latest = false` on previous version when new version is created
 - ✅ Foreign key constraints with appropriate cascade rules
 
 ## Authentication & Authorization

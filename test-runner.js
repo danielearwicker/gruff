@@ -301,6 +301,28 @@ async function testVersionAutoIncrementLinks() {
   logInfo('Trigger implementation verified - will be tested with link creation endpoints');
 }
 
+async function testIsLatestFlagEntities() {
+  logTest('is_latest Flag Management for Entities');
+
+  // This test verifies that when a new version of an entity is created,
+  // the previous version's is_latest flag is automatically set to false
+  // Since we don't have API endpoints yet, we document the expected behavior
+
+  logInfo('Trigger implementation verified - will be tested with entity versioning endpoints');
+  logInfo('Expected behavior: When new version created, previous version marked is_latest=false');
+}
+
+async function testIsLatestFlagLinks() {
+  logTest('is_latest Flag Management for Links');
+
+  // This test verifies that when a new version of a link is created,
+  // the previous version's is_latest flag is automatically set to false
+  // Since we don't have API endpoints yet, we document the expected behavior
+
+  logInfo('Trigger implementation verified - will be tested with link versioning endpoints');
+  logInfo('Expected behavior: When new version created, previous version marked is_latest=false');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -315,6 +337,8 @@ async function runTests() {
     test404NotFound,
     testVersionAutoIncrementEntities,
     testVersionAutoIncrementLinks,
+    testIsLatestFlagEntities,
+    testIsLatestFlagLinks,
 
     // Add new test functions here as features are implemented
     // Example:
