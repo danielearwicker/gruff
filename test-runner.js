@@ -1650,6 +1650,464 @@ async function testGetVersionsWithDeletedEntity() {
 }
 
 // ============================================================================
+// Link CRUD Tests
+// ============================================================================
+
+async function testCreateLink() {
+  logTest('Link CRUD - Create Link');
+
+  // First, create types and entities to link
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkTestLinkType',
+    category: 'link',
+    description: 'Type for link tests'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities to link
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Create a link
+  const response = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: {
+      strength: 'strong',
+      weight: 10
+    }
+  });
+
+  if (response.status !== 201) {
+    logInfo(`Unexpected response: ${JSON.stringify(response.data, null, 2)}`);
+  }
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.id, 'Should have generated ID');
+  assertEquals(response.data.data.type_id, linkTypeId, 'Should have correct type_id');
+  assertEquals(response.data.data.source_entity_id, entity1Id, 'Should have correct source_entity_id');
+  assertEquals(response.data.data.target_entity_id, entity2Id, 'Should have correct target_entity_id');
+  assert(response.data.data.properties, 'Should have properties');
+  assertEquals(response.data.data.properties.strength, 'strong', 'Should have correct property value');
+  assertEquals(response.data.data.version, 1, 'Should be version 1');
+  assertEquals(response.data.data.previous_version_id, null, 'Should have null previous_version_id for v1');
+  assertEquals(response.data.data.is_deleted, false, 'Should not be deleted');
+  assertEquals(response.data.data.is_latest, true, 'Should be latest version');
+  assert(response.data.data.created_at, 'Should have created_at timestamp');
+  assert(response.data.data.created_by, 'Should have created_by user ID');
+}
+
+async function testCreateLinkWithInvalidType() {
+  logTest('Link CRUD - Create Link with Non-existent Type Returns 404');
+
+  // Create entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidLinkTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const response = await makeRequest('POST', '/api/links', {
+    type_id: '00000000-0000-0000-0000-000000000000',
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: {}
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error code');
+}
+
+async function testCreateLinkWithInvalidSourceEntity() {
+  logTest('Link CRUD - Create Link with Non-existent Source Entity Returns 404');
+
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidSourceEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidSourceLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target Entity' }
+  });
+  const entityId = entity.data.data.id;
+
+  const response = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: '00000000-0000-0000-0000-000000000000',
+    target_entity_id: entityId,
+    properties: {}
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'SOURCE_ENTITY_NOT_FOUND', 'Should have SOURCE_ENTITY_NOT_FOUND error code');
+}
+
+async function testListLinks() {
+  logTest('Link CRUD - List All Links');
+
+  const response = await makeRequest('GET', '/api/links');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+}
+
+async function testListLinksFilterByType() {
+  logTest('Link CRUD - Filter Links by Type');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Create a link
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { test: 'value' }
+  });
+
+  // Filter by type_id
+  const response = await makeRequest('GET', `/api/links?type_id=${linkTypeId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Verify all returned links have the correct type_id
+  response.data.data.forEach(link => {
+    assertEquals(link.type_id, linkTypeId, 'All links should have the filtered type_id');
+  });
+}
+
+async function testGetLinkById() {
+  logTest('Link CRUD - Get Link by ID');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'GetLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'GetLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Test Link' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Retrieve the link
+  const response = await makeRequest('GET', `/api/links/${linkId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.id, linkId, 'Should return the correct link');
+  assertEquals(response.data.data.properties.name, 'Test Link', 'Should have correct properties');
+}
+
+async function testGetLinkByIdNotFound() {
+  logTest('Link CRUD - Get Non-existent Link Returns 404');
+
+  const response = await makeRequest('GET', '/api/links/00000000-0000-0000-0000-000000000000');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testUpdateLink() {
+  logTest('Link CRUD - Update Link (Creates New Version)');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { strength: 'weak', weight: 1 }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Update the link
+  const response = await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { strength: 'strong', weight: 10, newField: 'added' }
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data.id, 'Should have an ID');
+  assertEquals(response.data.data.previous_version_id, linkId, 'Should reference previous version');
+  assertEquals(response.data.data.version, 2, 'Should be version 2');
+  assertEquals(response.data.data.properties.strength, 'strong', 'Properties should be updated');
+  assertEquals(response.data.data.properties.weight, 10, 'Properties should be updated');
+  assertEquals(response.data.data.properties.newField, 'added', 'New properties should be added');
+  assertEquals(response.data.data.is_latest, true, 'Should be marked as latest');
+
+  // Verify we can still retrieve the link using the original ID
+  const getResponse = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(getResponse.status, 200, 'Should be able to get link by original ID');
+  assertEquals(getResponse.data.data.version, 2, 'Should return the latest version');
+}
+
+async function testDeleteLink() {
+  logTest('Link CRUD - Soft Delete Link');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeleteLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeleteLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'To Be Deleted' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Delete the link
+  const response = await makeRequest('DELETE', `/api/links/${linkId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+
+  // Verify the link is soft-deleted
+  const getResponse = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(getResponse.status, 200, 'Link should still be retrievable');
+  assertEquals(getResponse.data.data.is_deleted, true, 'Link should be marked as deleted');
+  assertEquals(getResponse.data.data.version, 2, 'Should have created a new version for deletion');
+}
+
+async function testRestoreLink() {
+  logTest('Link CRUD - Restore Soft-Deleted Link');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'RestoreLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'RestoreLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Restored Link' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Delete the link
+  await makeRequest('DELETE', `/api/links/${linkId}`);
+
+  // Restore the link
+  const response = await makeRequest('POST', `/api/links/${linkId}/restore`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data.id, 'Should have an ID');
+  assertEquals(response.data.data.is_deleted, false, 'Link should no longer be deleted');
+  assertEquals(response.data.data.version, 3, 'Should be version 3 (create, delete, restore)');
+
+  // Verify we can still retrieve the link using the original ID
+  const getResponse = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(getResponse.status, 200, 'Should be able to get link by original ID');
+  assertEquals(getResponse.data.data.is_deleted, false, 'Should return the restored (not deleted) version');
+}
+
+async function testUpdateDeletedLink() {
+  logTest('Link CRUD - Cannot Update Deleted Link');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateDeletedLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UpdateDeletedLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Test' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  await makeRequest('DELETE', `/api/links/${linkId}`);
+
+  // Try to update deleted link
+  const response = await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { name: 'Updated' }
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'LINK_DELETED', 'Should have LINK_DELETED error code');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -1740,11 +2198,24 @@ async function runTests() {
     testGetEntityHistoryNotFound,
     testGetVersionsWithDeletedEntity,
 
+    // Link CRUD tests
+    testCreateLink,
+    testCreateLinkWithInvalidType,
+    testCreateLinkWithInvalidSourceEntity,
+    testListLinks,
+    testListLinksFilterByType,
+    testGetLinkById,
+    testGetLinkByIdNotFound,
+    testUpdateLink,
+    testDeleteLink,
+    testRestoreLink,
+    testUpdateDeletedLink,
+
     // Add new test functions here as features are implemented
     // Example:
     // testUserRegistration,
     // testUserLogin,
-    // testCreateLink,
+    // testLinkVersionHistory,
     // etc.
   ];
 

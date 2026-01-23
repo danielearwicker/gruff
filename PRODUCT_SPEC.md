@@ -173,7 +173,7 @@ GET    /api/entities/{id}/versions/{version} # Get specific version
 GET    /api/entities/{id}/history            # Get version history with diffs
 ```
 
-### 🟦 Link CRUD Endpoints
+### ✅ Link CRUD Endpoints
 
 ```
 POST   /api/links                  # Create new link
