@@ -144,7 +144,33 @@ async function resetDatabase() {
     migration.on('close', (code) => {
       if (code === 0) {
         logSuccess('Database migrated successfully');
-        resolve();
+
+        // Now load seed data
+        log('Loading seed data...', colors.yellow);
+        const seed = spawn('npm', ['run', 'seed:local'], {
+          stdio: 'pipe',
+        });
+
+        let seedOutput = '';
+
+        seed.stdout.on('data', (data) => {
+          seedOutput += data.toString();
+        });
+
+        seed.stderr.on('data', (data) => {
+          seedOutput += data.toString();
+        });
+
+        seed.on('close', (seedCode) => {
+          if (seedCode === 0) {
+            logSuccess('Seed data loaded successfully');
+            resolve();
+          } else {
+            logFailure('Seed data loading failed');
+            console.log(seedOutput);
+            reject(new Error('Seed data loading failed'));
+          }
+        });
       } else {
         logFailure('Database migration failed');
         console.log(output);
