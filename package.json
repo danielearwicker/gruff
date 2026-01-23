@@ -11,14 +11,28 @@
     "migrate:remote": "wrangler d1 execute gruff-db --remote --file=./migrations/0001_initial_schema.sql && wrangler d1 execute gruff-db --remote --file=./migrations/0002_version_triggers.sql && wrangler d1 execute gruff-db --remote --file=./migrations/0003_is_latest_triggers.sql",
     "db:create:local": "wrangler d1 execute gruff-db --local --command='SELECT 1'",
     "test": "node test-runner.js",
-    "test:watch": "nodemon test-runner.js"
+    "test:watch": "nodemon test-runner.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
-  "keywords": ["graph-database", "cloudflare-workers", "d1", "versioning"],
+  "keywords": [
+    "graph-database",
+    "cloudflare-workers",
+    "d1",
+    "versioning"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260123.0",
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.53.1",
     "wrangler": "^4.60.0"
   },
   "dependencies": {

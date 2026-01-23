@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+coverage/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+*.min.js
+eslint.config.js
