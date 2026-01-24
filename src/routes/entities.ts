@@ -698,4 +698,77 @@ entities.get('/:id/outbound', async (c) => {
   }
 });
 
+/**
+ * GET /api/entities/:id/inbound
+ * Get all inbound links to an entity
+ */
+entities.get('/:id/inbound', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  // Optional query parameters for filtering
+  const typeId = c.req.query('type_id'); // Filter by link type
+  const includeDeleted = c.req.query('include_deleted') === 'true';
+
+  try {
+    // First, verify the entity exists
+    const entity = await findLatestVersion(db, id);
+
+    if (!entity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Build query to find all inbound links
+    let sql = `
+      SELECT l.*, e.type_id as source_type_id, e.properties as source_properties
+      FROM links l
+      INNER JOIN entities e ON l.source_entity_id = e.id
+      WHERE l.target_entity_id = ?
+      AND l.is_latest = 1
+      AND e.is_latest = 1
+    `;
+    const bindings: any[] = [entity.id];
+
+    // Filter out deleted links and entities by default
+    if (!includeDeleted) {
+      sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+    }
+
+    // Filter by link type if provided
+    if (typeId) {
+      sql += ' AND l.type_id = ?';
+      bindings.push(typeId);
+    }
+
+    sql += ' ORDER BY l.created_at DESC';
+
+    const { results } = await db.prepare(sql).bind(...bindings).all();
+
+    // Parse properties for each link and source entity
+    const linksData = results.map(link => ({
+      id: link.id,
+      type_id: link.type_id,
+      source_entity_id: link.source_entity_id,
+      target_entity_id: link.target_entity_id,
+      properties: link.properties ? JSON.parse(link.properties as string) : {},
+      version: link.version,
+      previous_version_id: link.previous_version_id,
+      created_at: link.created_at,
+      created_by: link.created_by,
+      is_deleted: link.is_deleted === 1,
+      is_latest: link.is_latest === 1,
+      source_entity: {
+        id: link.source_entity_id,
+        type_id: link.source_type_id,
+        properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
+      }
+    }));
+
+    return c.json(response.success(linksData));
+  } catch (error) {
+    console.error('[Entities] Error fetching inbound links:', error);
+    throw error;
+  }
+});
+
 export default entities;

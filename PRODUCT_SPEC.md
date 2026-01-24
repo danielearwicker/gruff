@@ -200,7 +200,7 @@ GET    /api/entities/{id}/outbound        # Get outbound links from an entity
 ```
 Returns all links where the specified entity is the source, with optional filtering by link type.
 
-#### 🟦 Basic Graph Navigation - Inbound Links
+#### ✅ Basic Graph Navigation - Inbound Links
 ```
 GET    /api/entities/{id}/inbound         # Get inbound links to an entity
 ```

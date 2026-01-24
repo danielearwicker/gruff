@@ -2744,6 +2744,250 @@ async function testGetOutboundLinksExcludesDeleted() {
   assertEquals(responseWithDeleted.data.data.length, 2, 'Should have 2 links when including deleted');
 }
 
+async function testGetInboundLinks() {
+  logTest('Graph Navigation - Get Inbound Links to Entity');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InboundTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'InboundTestLinkType1',
+    category: 'link',
+    description: 'First link type for inbound tests'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'InboundTestLinkType2',
+    category: 'link',
+    description: 'Second link type for inbound tests'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create three entities: target and two sources
+  const targetEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target Entity' }
+  });
+  const targetEntityId = targetEntity.data.data.id;
+
+  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source Entity 1' }
+  });
+  const sourceEntity1Id = sourceEntity1.data.data.id;
+
+  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source Entity 2' }
+  });
+  const sourceEntity2Id = sourceEntity2.data.data.id;
+
+  // Create two inbound links to target entity
+  const link1Response = await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: sourceEntity1Id,
+    target_entity_id: targetEntityId,
+    properties: { relationship: 'follows' }
+  });
+  const link1Id = link1Response.data.data.id;
+
+  const link2Response = await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: sourceEntity2Id,
+    target_entity_id: targetEntityId,
+    properties: { relationship: 'subscribes' }
+  });
+  const link2Id = link2Response.data.data.id;
+
+  // Create an outbound link (should NOT appear in inbound results)
+  const outboundEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Outbound Target' }
+  });
+  const outboundEntityId = outboundEntity.data.data.id;
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: targetEntityId,
+    target_entity_id: outboundEntityId,
+    properties: { relationship: 'mentions' }
+  });
+
+  // Test: Get all inbound links
+  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data array');
+  assertEquals(response.data.data.length, 2, 'Should have 2 inbound links');
+
+  // Verify first link
+  const inboundLink1 = response.data.data.find(l => l.id === link1Id);
+  assert(inboundLink1, 'Should include first inbound link');
+  assertEquals(inboundLink1.type_id, linkType1Id, 'Should have correct link type');
+  assertEquals(inboundLink1.source_entity_id, sourceEntity1Id, 'Should have correct source entity');
+  assertEquals(inboundLink1.target_entity_id, targetEntityId, 'Should have correct target entity');
+  assertEquals(inboundLink1.properties.relationship, 'follows', 'Should have correct link properties');
+  assert(inboundLink1.source_entity, 'Should include source entity information');
+  assertEquals(inboundLink1.source_entity.id, sourceEntity1Id, 'Source entity should have correct ID');
+  assertEquals(inboundLink1.source_entity.properties.name, 'Source Entity 1', 'Source entity should have correct properties');
+
+  // Verify second link
+  const inboundLink2 = response.data.data.find(l => l.id === link2Id);
+  assert(inboundLink2, 'Should include second inbound link');
+  assertEquals(inboundLink2.type_id, linkType2Id, 'Should have correct link type');
+  assertEquals(inboundLink2.source_entity_id, sourceEntity2Id, 'Should have correct source entity');
+  assertEquals(inboundLink2.properties.relationship, 'subscribes', 'Should have correct link properties');
+}
+
+async function testGetInboundLinksFilterByType() {
+  logTest('Graph Navigation - Get Inbound Links Filtered by Type');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilteredInboundTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'FilteredInboundTestLinkType1',
+    category: 'link'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'FilteredInboundTestLinkType2',
+    category: 'link'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create entities
+  const targetEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target' }
+  });
+  const targetEntityId = targetEntity.data.data.id;
+
+  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source 1' }
+  });
+  const sourceEntity1Id = sourceEntity1.data.data.id;
+
+  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source 2' }
+  });
+  const sourceEntity2Id = sourceEntity2.data.data.id;
+
+  // Create links of different types
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: sourceEntity1Id,
+    target_entity_id: targetEntityId,
+    properties: { type: 'type1' }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: sourceEntity2Id,
+    target_entity_id: targetEntityId,
+    properties: { type: 'type2' }
+  });
+
+  // Test: Get inbound links filtered by type
+  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound?type_id=${linkType1Id}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 1, 'Should have 1 link of the specified type');
+  assertEquals(response.data.data[0].type_id, linkType1Id, 'Should have correct link type');
+  assertEquals(response.data.data[0].source_entity_id, sourceEntity1Id, 'Should have correct source entity');
+}
+
+async function testGetInboundLinksEntityNotFound() {
+  logTest('Graph Navigation - Get Inbound Links for Non-existent Entity Returns 404');
+
+  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/inbound');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testGetInboundLinksExcludesDeleted() {
+  logTest('Graph Navigation - Get Inbound Links Excludes Deleted Links by Default');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedInboundTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedInboundTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const targetEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target' }
+  });
+  const targetEntityId = targetEntity.data.data.id;
+
+  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source 1' }
+  });
+  const sourceEntity1Id = sourceEntity1.data.data.id;
+
+  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source 2' }
+  });
+  const sourceEntity2Id = sourceEntity2.data.data.id;
+
+  // Create two links
+  const link1Response = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: sourceEntity1Id,
+    target_entity_id: targetEntityId,
+    properties: { status: 'active' }
+  });
+  const link1Id = link1Response.data.data.id;
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: sourceEntity2Id,
+    target_entity_id: targetEntityId,
+    properties: { status: 'active' }
+  });
+
+  // Delete the first link
+  await makeRequest('DELETE', `/api/links/${link1Id}`);
+
+  // Test: Get inbound links (should exclude deleted)
+  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 1, 'Should have 1 non-deleted link');
+  assertEquals(response.data.data[0].source_entity_id, sourceEntity2Id, 'Should only include non-deleted link');
+
+  // Test: Get inbound links including deleted
+  const responseWithDeleted = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound?include_deleted=true`);
+
+  assertEquals(responseWithDeleted.status, 200, 'Status code should be 200');
+  assertEquals(responseWithDeleted.data.data.length, 2, 'Should have 2 links when including deleted');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -2863,6 +3107,10 @@ async function runTests() {
     testGetOutboundLinksFilterByType,
     testGetOutboundLinksEntityNotFound,
     testGetOutboundLinksExcludesDeleted,
+    testGetInboundLinks,
+    testGetInboundLinksFilterByType,
+    testGetInboundLinksEntityNotFound,
+    testGetInboundLinksExcludesDeleted,
 
     // Add new test functions here as features are implemented
     // Example:
