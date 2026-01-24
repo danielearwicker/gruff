@@ -422,4 +422,245 @@ links.post('/:id/restore', async (c) => {
   }
 });
 
+/**
+ * GET /api/links/:id/versions
+ * Get all versions of a link
+ */
+links.get('/:id/versions', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, find the latest version to ensure the link exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Now get all versions in the chain using recursive CTE
+    const { results } = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1 (no previous_version_id)
+        SELECT * FROM links
+        WHERE id = (
+          SELECT id FROM links WHERE id = ?
+          UNION
+          SELECT l1.id FROM links l1
+          WHERE l1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM links WHERE id = ?
+              UNION ALL
+              SELECT l2.id, l2.previous_version_id
+              FROM links l2
+              INNER JOIN temp_chain tc ON l2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = l1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT l.* FROM links l
+        INNER JOIN version_chain vc ON l.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain ORDER BY version ASC
+    `).bind(id, id).all();
+
+    // Parse properties for each version
+    const versions = results.map(link => ({
+      ...link,
+      properties: link.properties ? JSON.parse(link.properties as string) : {},
+      is_deleted: link.is_deleted === 1,
+      is_latest: link.is_latest === 1,
+    }));
+
+    return c.json(response.success(versions));
+  } catch (error) {
+    console.error('[Links] Error fetching link versions:', error);
+    throw error;
+  }
+});
+
+/**
+ * GET /api/links/:id/versions/:version
+ * Get a specific version of a link
+ */
+links.get('/:id/versions/:version', async (c) => {
+  const id = c.req.param('id');
+  const versionParam = c.req.param('version');
+  const db = c.env.DB;
+
+  try {
+    // Parse version number
+    const versionNumber = parseInt(versionParam, 10);
+    if (isNaN(versionNumber) || versionNumber < 1) {
+      return c.json(response.error('Invalid version number', 'INVALID_VERSION'), 400);
+    }
+
+    // First, find the latest version to ensure the link exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Find the specific version in the chain
+    const link = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1
+        SELECT * FROM links
+        WHERE id = (
+          SELECT id FROM links WHERE id = ?
+          UNION
+          SELECT l1.id FROM links l1
+          WHERE l1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM links WHERE id = ?
+              UNION ALL
+              SELECT l2.id, l2.previous_version_id
+              FROM links l2
+              INNER JOIN temp_chain tc ON l2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = l1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT l.* FROM links l
+        INNER JOIN version_chain vc ON l.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain WHERE version = ? LIMIT 1
+    `).bind(id, id, versionNumber).first();
+
+    if (!link) {
+      return c.json(response.notFound('Version'), 404);
+    }
+
+    const result = {
+      ...link,
+      properties: link.properties ? JSON.parse(link.properties as string) : {},
+      is_deleted: link.is_deleted === 1,
+      is_latest: link.is_latest === 1,
+    };
+
+    return c.json(response.success(result));
+  } catch (error) {
+    console.error('[Links] Error fetching link version:', error);
+    throw error;
+  }
+});
+
+/**
+ * GET /api/links/:id/history
+ * Get version history with diffs showing what changed between versions
+ */
+links.get('/:id/history', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, find the latest version to ensure the link exists
+    const latestVersion = await findLatestVersion(db, id);
+
+    if (!latestVersion) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Get all versions in order
+    const { results } = await db.prepare(`
+      WITH RECURSIVE version_chain AS (
+        -- Start with version 1
+        SELECT * FROM links
+        WHERE id = (
+          SELECT id FROM links WHERE id = ?
+          UNION
+          SELECT l1.id FROM links l1
+          WHERE l1.previous_version_id IS NULL
+          AND EXISTS (
+            WITH RECURSIVE temp_chain AS (
+              SELECT id, previous_version_id FROM links WHERE id = ?
+              UNION ALL
+              SELECT l2.id, l2.previous_version_id
+              FROM links l2
+              INNER JOIN temp_chain tc ON l2.id = tc.previous_version_id
+            )
+            SELECT 1 FROM temp_chain WHERE temp_chain.id = l1.id
+          )
+        )
+        UNION ALL
+        -- Follow the chain forward
+        SELECT l.* FROM links l
+        INNER JOIN version_chain vc ON l.previous_version_id = vc.id
+      )
+      SELECT * FROM version_chain ORDER BY version ASC
+    `).bind(id, id).all();
+
+    // Calculate diffs between consecutive versions
+    const history = results.map((link, index) => {
+      const parsedProps = link.properties ? JSON.parse(link.properties as string) : {};
+
+      let diff = null;
+      if (index > 0) {
+        const prevLink = results[index - 1];
+        const prevProps = prevLink.properties ? JSON.parse(prevLink.properties as string) : {};
+
+        diff = calculateDiff(prevProps, parsedProps);
+      }
+
+      return {
+        id: link.id,
+        version: link.version,
+        type_id: link.type_id,
+        source_entity_id: link.source_entity_id,
+        target_entity_id: link.target_entity_id,
+        properties: parsedProps,
+        created_at: link.created_at,
+        created_by: link.created_by,
+        is_deleted: link.is_deleted === 1,
+        is_latest: link.is_latest === 1,
+        diff: diff,
+      };
+    });
+
+    return c.json(response.success(history));
+  } catch (error) {
+    console.error('[Links] Error fetching link history:', error);
+    throw error;
+  }
+});
+
+/**
+ * Helper function to calculate differences between two JSON objects
+ */
+function calculateDiff(oldObj: any, newObj: any): any {
+  const diff: any = {
+    added: {} as any,
+    removed: {} as any,
+    changed: {} as any,
+  };
+
+  // Check for added and changed properties
+  for (const key in newObj) {
+    if (!(key in oldObj)) {
+      diff.added[key] = newObj[key];
+    } else if (JSON.stringify(oldObj[key]) !== JSON.stringify(newObj[key])) {
+      diff.changed[key] = {
+        old: oldObj[key],
+        new: newObj[key],
+      };
+    }
+  }
+
+  // Check for removed properties
+  for (const key in oldObj) {
+    if (!(key in newObj)) {
+      diff.removed[key] = oldObj[key];
+    }
+  }
+
+  return diff;
+}
+
 export default links;

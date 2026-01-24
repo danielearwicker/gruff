@@ -184,7 +184,7 @@ DELETE /api/links/{id}             # Soft delete link
 POST   /api/links/{id}/restore     # Restore soft-deleted link
 ```
 
-### 🟦 Link Version Endpoints
+### ✅ Link Version Endpoints
 
 ```
 GET    /api/links/{id}/versions           # Get all versions of link

@@ -2108,6 +2108,399 @@ async function testUpdateDeletedLink() {
 }
 
 // ============================================================================
+// Link Version History Tests
+// ============================================================================
+
+async function testGetLinkVersions() {
+  logTest('Link Versions - Get All Versions of a Link');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkVersionTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkVersionTestType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Create a link
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { strength: 'weak', version: 1 }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Update the link to create version 2
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { strength: 'medium', version: 2 }
+  });
+
+  // Update again to create version 3
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { strength: 'strong', version: 3 }
+  });
+
+  // Get all versions
+  const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should have 3 versions');
+
+  // Verify versions are in order
+  assertEquals(response.data.data[0].version, 1, 'First item should be version 1');
+  assertEquals(response.data.data[1].version, 2, 'Second item should be version 2');
+  assertEquals(response.data.data[2].version, 3, 'Third item should be version 3');
+
+  // Verify properties
+  assertEquals(response.data.data[0].properties.strength, 'weak', 'Version 1 should have correct properties');
+  assertEquals(response.data.data[1].properties.strength, 'medium', 'Version 2 should have correct properties');
+  assertEquals(response.data.data[2].properties.strength, 'strong', 'Version 3 should have correct properties');
+
+  // Verify is_latest flag
+  assertEquals(response.data.data[0].is_latest, false, 'Version 1 should not be latest');
+  assertEquals(response.data.data[1].is_latest, false, 'Version 2 should not be latest');
+  assertEquals(response.data.data[2].is_latest, true, 'Version 3 should be latest');
+}
+
+async function testGetLinkVersionsNotFound() {
+  logTest('Link Versions - Get Versions of Non-existent Link Returns 404');
+
+  const response = await makeRequest('GET', '/api/links/00000000-0000-0000-0000-000000000000/versions');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetSpecificLinkVersion() {
+  logTest('Link Versions - Get Specific Version by Number');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SpecificLinkVersionEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SpecificLinkVersionType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { weight: 100 }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Update twice
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { weight: 200 }
+  });
+
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { weight: 300 }
+  });
+
+  // Get version 2 specifically
+  const response = await makeRequest('GET', `/api/links/${linkId}/versions/2`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assertEquals(response.data.data.version, 2, 'Should return version 2');
+  assertEquals(response.data.data.properties.weight, 200, 'Should have version 2 properties');
+  assertEquals(response.data.data.is_latest, false, 'Version 2 should not be latest');
+}
+
+async function testGetSpecificLinkVersionNotFound() {
+  logTest('Link Versions - Get Non-existent Version Number Returns 404');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NoLinkVersionEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NoLinkVersionType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Test' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Try to get version 5 (doesn't exist)
+  const response = await makeRequest('GET', `/api/links/${linkId}/versions/5`);
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetSpecificLinkVersionInvalidNumber() {
+  logTest('Link Versions - Get Version with Invalid Number Returns 400');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidLinkVersionEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidLinkVersionType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Test' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Try to get version 0 (invalid)
+  const response = await makeRequest('GET', `/api/links/${linkId}/versions/0`);
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'INVALID_VERSION', 'Should have INVALID_VERSION error code');
+}
+
+async function testGetLinkHistory() {
+  logTest('Link Versions - Get Version History with Diffs');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkHistoryTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkHistoryTestType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: {
+      strength: 'weak',
+      description: 'Original description',
+      weight: 1
+    }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Update 1: Change strength and weight, add new field
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: {
+      strength: 'medium',
+      description: 'Original description',
+      weight: 5,
+      status: 'active'
+    }
+  });
+
+  // Update 2: Remove description, change status
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: {
+      strength: 'medium',
+      weight: 5,
+      status: 'inactive'
+    }
+  });
+
+  // Get history with diffs
+  const response = await makeRequest('GET', `/api/links/${linkId}/history`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should have 3 versions');
+
+  // Version 1 should have null diff (first version)
+  assertEquals(response.data.data[0].version, 1, 'First item should be version 1');
+  assertEquals(response.data.data[0].diff, null, 'Version 1 should have null diff');
+
+  // Version 2 should show changes from version 1
+  const v2Diff = response.data.data[1].diff;
+  assert(v2Diff, 'Version 2 should have diff object');
+  assert(v2Diff.changed, 'Should have changed properties');
+  assert(v2Diff.added, 'Should have added properties');
+  assert(v2Diff.removed, 'Should have removed properties');
+
+  assertEquals(v2Diff.changed.strength.old, 'weak', 'Should track strength change - old value');
+  assertEquals(v2Diff.changed.strength.new, 'medium', 'Should track strength change - new value');
+  assertEquals(v2Diff.changed.weight.old, 1, 'Should track weight change');
+  assertEquals(v2Diff.changed.weight.new, 5, 'Should track weight change');
+  assertEquals(v2Diff.added.status, 'active', 'Should track added status field');
+
+  // Version 3 should show changes from version 2
+  const v3Diff = response.data.data[2].diff;
+  assert(v3Diff, 'Version 3 should have diff object');
+  assertEquals(v3Diff.changed.status.old, 'active', 'Should track status change');
+  assertEquals(v3Diff.changed.status.new, 'inactive', 'Should track status change');
+  assertEquals(v3Diff.removed.description, 'Original description', 'Should track removed description field');
+}
+
+async function testGetLinkHistoryNotFound() {
+  logTest('Link Versions - Get History of Non-existent Link Returns 404');
+
+  const response = await makeRequest('GET', '/api/links/00000000-0000-0000-0000-000000000000/history');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testGetLinkVersionsWithDeletedLink() {
+  logTest('Link Versions - Get Versions Including Deleted State');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedLinkVersionEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedLinkVersionType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { name: 'Test' }
+  });
+  const linkId = createResponse.data.data.id;
+
+  // Update
+  await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { name: 'Updated' }
+  });
+
+  // Delete
+  await makeRequest('DELETE', `/api/links/${linkId}`);
+
+  // Restore
+  await makeRequest('POST', `/api/links/${linkId}/restore`);
+
+  // Get all versions
+  const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 4, 'Should have 4 versions (create, update, delete, restore)');
+
+  // Check deletion states
+  assertEquals(response.data.data[0].is_deleted, false, 'Version 1 should not be deleted');
+  assertEquals(response.data.data[1].is_deleted, false, 'Version 2 should not be deleted');
+  assertEquals(response.data.data[2].is_deleted, true, 'Version 3 should be deleted');
+  assertEquals(response.data.data[3].is_deleted, false, 'Version 4 should not be deleted (restored)');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -2210,6 +2603,16 @@ async function runTests() {
     testDeleteLink,
     testRestoreLink,
     testUpdateDeletedLink,
+
+    // Link Version History tests
+    testGetLinkVersions,
+    testGetLinkVersionsNotFound,
+    testGetSpecificLinkVersion,
+    testGetSpecificLinkVersionNotFound,
+    testGetSpecificLinkVersionInvalidNumber,
+    testGetLinkHistory,
+    testGetLinkHistoryNotFound,
+    testGetLinkVersionsWithDeletedLink,
 
     // Add new test functions here as features are implemented
     // Example:
