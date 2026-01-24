@@ -273,6 +273,17 @@ async function testHealthEndpoint() {
   assert(response.data.database, 'Should have database status');
   assert(response.data.kv, 'Should have KV status');
   assert(response.data.timestamp, 'Should have timestamp');
+
+  // Verify Workers runtime status
+  assert(response.data.runtime, 'Should have runtime status');
+  assertEquals(response.data.runtime.platform, 'cloudflare-workers', 'Platform should be cloudflare-workers');
+  assert(response.data.runtime.mode, 'Should have runtime mode (local or edge)');
+  assert(response.data.runtime.context, 'Should have runtime context');
+  assert(response.data.runtime.capabilities, 'Should have runtime capabilities');
+  assert(response.data.runtime.capabilities.crypto, 'Should have crypto capability');
+  assert(response.data.runtime.capabilities.cryptoSubtle, 'Should have cryptoSubtle capability');
+  assert(response.data.runtime.capabilities.fetch, 'Should have fetch capability');
+  assert(response.data.runtime.memory, 'Should have memory information');
 }
 
 async function testRootEndpoint() {

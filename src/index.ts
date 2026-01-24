@@ -88,11 +88,44 @@ app.get('/health', async (c) => {
     await c.env.KV.put('health-check', Date.now().toString(), { expirationTtl: 60 });
     const kvValue = await c.env.KV.get('health-check');
 
+    // Gather Workers runtime status
+    const runtimeStatus = {
+      platform: 'cloudflare-workers',
+      // Check if we're running in local dev mode (Miniflare/Wrangler)
+      mode: c.env.ENVIRONMENT === 'development' ? 'local' : 'edge',
+      // Request context information
+      context: {
+        // The colo (data center) where the request is being processed
+        // This is available via cf object in production but not in local dev
+        colo: (c.req.raw as any).cf?.colo || 'local',
+        // Country of request origin
+        country: (c.req.raw as any).cf?.country || 'unknown',
+      },
+      // Runtime capabilities
+      capabilities: {
+        // Check if Web Crypto API is available
+        crypto: typeof crypto !== 'undefined',
+        // Check if crypto.subtle is available (for JWT operations, etc.)
+        cryptoSubtle: typeof crypto?.subtle !== 'undefined',
+        // Check if fetch API is available
+        fetch: typeof fetch !== 'undefined',
+        // Check if WebSocket API is available (for potential future use)
+        webSocket: typeof WebSocket !== 'undefined',
+      },
+      // Memory usage information (not available in Workers but we can include the check)
+      memory: {
+        // Workers don't expose memory metrics but we indicate the limit
+        limit: '128MB',
+        note: 'Workers runtime enforces automatic memory management',
+      },
+    };
+
     return c.json({
       status: 'healthy',
       environment: c.env.ENVIRONMENT,
       database: dbResult ? 'connected' : 'disconnected',
       kv: kvValue ? 'connected' : 'disconnected',
+      runtime: runtimeStatus,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
