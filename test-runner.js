@@ -6250,6 +6250,268 @@ async function testNestedPropertyPathOnLinks() {
 }
 
 // ============================================================================
+// Logical Operators for Filter Expression Tests
+// ============================================================================
+
+async function testFilterExpressionSimple() {
+  logTest('Filter Expression - Simple Property Filter');
+
+  // Use existing entity type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterExprTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create test entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Alice', status: 'active', age: 25 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Bob', status: 'active', age: 30 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Charlie', status: 'inactive', age: 35 }
+  });
+
+  // Test simple filter expression (just a property filter)
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 1, 'Should return 1 entity');
+  assertEquals(response.data.data[0].properties.name, 'Alice', 'Should return Alice');
+}
+
+async function testFilterExpressionAndGroup() {
+  logTest('Filter Expression - AND Group');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=FilterExprTestType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Test AND group: status = 'active' AND age >= 30
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: {
+      and: [
+        { path: 'status', operator: 'eq', value: 'active' },
+        { path: 'age', operator: 'gte', value: 30 }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 1, 'Should return 1 entity');
+  assertEquals(response.data.data[0].properties.name, 'Bob', 'Should return Bob');
+}
+
+async function testFilterExpressionOrGroup() {
+  logTest('Filter Expression - OR Group');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=FilterExprTestType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Test OR group: name = 'Alice' OR name = 'Charlie'
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: {
+      or: [
+        { path: 'name', operator: 'eq', value: 'Alice' },
+        { path: 'name', operator: 'eq', value: 'Charlie' }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 2, 'Should return 2 entities');
+  const names = response.data.data.map(e => e.properties.name).sort();
+  assert(names.includes('Alice') && names.includes('Charlie'), 'Should return Alice and Charlie');
+}
+
+async function testFilterExpressionNestedAndOrGroups() {
+  logTest('Filter Expression - Nested AND/OR Groups');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=FilterExprTestType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Test nested: status = 'active' AND (name = 'Alice' OR name = 'Bob')
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: {
+      and: [
+        { path: 'status', operator: 'eq', value: 'active' },
+        {
+          or: [
+            { path: 'name', operator: 'eq', value: 'Alice' },
+            { path: 'name', operator: 'eq', value: 'Bob' }
+          ]
+        }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 2, 'Should return 2 entities');
+  const names = response.data.data.map(e => e.properties.name).sort();
+  assert(names.includes('Alice') && names.includes('Bob'), 'Should return Alice and Bob');
+}
+
+async function testFilterExpressionComplexConditions() {
+  logTest('Filter Expression - Complex Nested Conditions');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=FilterExprTestType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Test: (status = 'active' AND age < 30) OR (status = 'inactive')
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: {
+      or: [
+        {
+          and: [
+            { path: 'status', operator: 'eq', value: 'active' },
+            { path: 'age', operator: 'lt', value: 30 }
+          ]
+        },
+        { path: 'status', operator: 'eq', value: 'inactive' }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 2, 'Should return 2 entities');
+  const names = response.data.data.map(e => e.properties.name).sort();
+  assert(names.includes('Alice') && names.includes('Charlie'), 'Should return Alice and Charlie');
+}
+
+async function testFilterExpressionWithExistsOperator() {
+  logTest('Filter Expression - With Exists Operator');
+
+  // Create entities with optional fields
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterExprExistsType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'WithEmail', email: 'test@example.com' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'WithoutEmail' }
+  });
+
+  // Test: email exists OR name = 'WithoutEmail'
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    filter_expression: {
+      or: [
+        { path: 'email', operator: 'exists' },
+        { path: 'name', operator: 'eq', value: 'WithoutEmail' }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 2, 'Should return 2 entities');
+}
+
+async function testFilterExpressionOnLinks() {
+  logTest('Filter Expression - Apply to Link Search');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterExprLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterExprLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+
+  // Create links with different properties
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity2.data.data.id,
+    properties: { type: 'friend', strength: 10 }
+  });
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity2.data.data.id,
+    target_entity_id: entity1.data.data.id,
+    properties: { type: 'colleague', strength: 5 }
+  });
+
+  // Test: type = 'friend' OR strength >= 8
+  const response = await makeRequest('POST', '/api/search/links', {
+    type_id: linkTypeId,
+    filter_expression: {
+      or: [
+        { path: 'type', operator: 'eq', value: 'friend' },
+        { path: 'strength', operator: 'gte', value: 8 }
+      ]
+    }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 1, 'Should return 1 link');
+  assertEquals(response.data.data[0].properties.type, 'friend', 'Should return friend link');
+}
+
+async function testFilterExpressionPrecedenceOverPropertyFilters() {
+  logTest('Filter Expression - Takes Precedence Over property_filters');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=FilterExprTestType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Provide both filter_expression and property_filters
+  // filter_expression should take precedence
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'name', operator: 'eq', value: 'Charlie' }
+    ],
+    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' }
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.length, 1, 'Should return 1 entity');
+  assertEquals(response.data.data[0].properties.name, 'Alice', 'Should return Alice (filter_expression takes precedence)');
+}
+
+async function testFilterExpressionInvalidPath() {
+  logTest('Filter Expression - Invalid Path Error');
+
+  const response = await makeRequest('POST', '/api/search/entities', {
+    filter_expression: { path: 'data[[invalid]]', operator: 'eq', value: 'test' }
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for invalid path');
+  assert(response.data.error, 'Should return error message');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -6481,6 +6743,17 @@ async function runTests() {
     testNestedPropertyPathInvalidNestedBrackets,
     testNestedPropertyPathInvalidEmptyBrackets,
     testNestedPropertyPathOnLinks,
+
+    // Filter Expression with Logical Operators tests
+    testFilterExpressionSimple,
+    testFilterExpressionAndGroup,
+    testFilterExpressionOrGroup,
+    testFilterExpressionNestedAndOrGroups,
+    testFilterExpressionComplexConditions,
+    testFilterExpressionWithExistsOperator,
+    testFilterExpressionOnLinks,
+    testFilterExpressionPrecedenceOverPropertyFilters,
+    testFilterExpressionInvalidPath,
   ];
 
   for (const test of tests) {

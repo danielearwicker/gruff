@@ -3,9 +3,15 @@
  *
  * This module provides functions to convert property filter objects into SQL WHERE clauses
  * for querying JSON properties in SQLite using the JSON1 extension.
+ *
+ * Supports:
+ * - Simple property filters with comparison operators
+ * - Logical operators (AND/OR) for combining filters
+ * - Nested filter groups for complex query expressions
  */
 
-import type { PropertyFilter } from '../schemas/search.js';
+import type { PropertyFilter, FilterExpressionType } from '../schemas/search.js';
+import { isAndGroup, isOrGroup, isPropertyFilter } from '../schemas/search.js';
 
 /**
  * Result of building a property filter SQL clause
@@ -538,4 +544,109 @@ export function buildPropertyFilters(filters: PropertyFilter[], tableAlias: stri
   const bindings = results.flatMap(r => r.bindings);
 
   return { sql, bindings };
+}
+
+/**
+ * Maximum nesting depth for filter expressions to prevent stack overflow
+ */
+const MAX_FILTER_EXPRESSION_DEPTH = 5;
+
+/**
+ * Build SQL WHERE clause for a filter expression with AND/OR logic
+ *
+ * Supports:
+ * - Simple property filters: { path: "name", operator: "eq", value: "John" }
+ * - AND groups: { and: [filter1, filter2, ...] }
+ * - OR groups: { or: [filter1, filter2, ...] }
+ * - Nested groups: { and: [filter1, { or: [filter2, filter3] }] }
+ *
+ * @param expression The filter expression (can be a simple filter, AND group, or OR group)
+ * @param tableAlias The table alias to use in the SQL
+ * @param depth Current nesting depth (for preventing infinite recursion)
+ * @returns SQL clause and bindings
+ * @throws Error if the expression is invalid or exceeds maximum depth
+ */
+export function buildFilterExpression(
+  expression: FilterExpressionType,
+  tableAlias: string = 'e',
+  depth: number = 0
+): PropertyFilterResult {
+  // Check for maximum depth
+  if (depth > MAX_FILTER_EXPRESSION_DEPTH) {
+    throw new Error(`Filter expression exceeds maximum nesting depth of ${MAX_FILTER_EXPRESSION_DEPTH}`);
+  }
+
+  // Handle simple property filter
+  if (isPropertyFilter(expression)) {
+    return buildPropertyFilter(expression, tableAlias);
+  }
+
+  // Handle AND group
+  if (isAndGroup(expression)) {
+    if (expression.and.length === 0) {
+      return { sql: '', bindings: [] };
+    }
+
+    if (expression.and.length === 1) {
+      // Single item in AND, just return it directly
+      return buildFilterExpression(expression.and[0], tableAlias, depth + 1);
+    }
+
+    const results = expression.and.map(expr =>
+      buildFilterExpression(expr, tableAlias, depth + 1)
+    );
+
+    // Filter out empty results
+    const nonEmptyResults = results.filter(r => r.sql !== '');
+
+    if (nonEmptyResults.length === 0) {
+      return { sql: '', bindings: [] };
+    }
+
+    if (nonEmptyResults.length === 1) {
+      return nonEmptyResults[0];
+    }
+
+    // Combine with AND
+    const sql = nonEmptyResults.map(r => `(${r.sql})`).join(' AND ');
+    const bindings = nonEmptyResults.flatMap(r => r.bindings);
+
+    return { sql, bindings };
+  }
+
+  // Handle OR group
+  if (isOrGroup(expression)) {
+    if (expression.or.length === 0) {
+      return { sql: '', bindings: [] };
+    }
+
+    if (expression.or.length === 1) {
+      // Single item in OR, just return it directly
+      return buildFilterExpression(expression.or[0], tableAlias, depth + 1);
+    }
+
+    const results = expression.or.map(expr =>
+      buildFilterExpression(expr, tableAlias, depth + 1)
+    );
+
+    // Filter out empty results
+    const nonEmptyResults = results.filter(r => r.sql !== '');
+
+    if (nonEmptyResults.length === 0) {
+      return { sql: '', bindings: [] };
+    }
+
+    if (nonEmptyResults.length === 1) {
+      return nonEmptyResults[0];
+    }
+
+    // Combine with OR
+    const sql = nonEmptyResults.map(r => `(${r.sql})`).join(' OR ');
+    const bindings = nonEmptyResults.flatMap(r => r.bindings);
+
+    return { sql, bindings };
+  }
+
+  // If we get here, the expression is invalid
+  throw new Error('Invalid filter expression: must be a property filter, AND group, or OR group');
 }

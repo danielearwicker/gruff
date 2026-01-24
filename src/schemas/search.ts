@@ -58,17 +58,86 @@ export const propertyFilterSchema = z.object({
 
 export type PropertyFilter = z.infer<typeof propertyFilterSchema>;
 
+/**
+ * Filter expression schema with logical operators (AND/OR)
+ *
+ * Supports:
+ * - Simple filter: A single PropertyFilter object
+ * - AND groups: { and: [filter1, filter2, ...] }
+ * - OR groups: { or: [filter1, filter2, ...] }
+ * - Nested groups: { or: [{ and: [filter1, filter2] }, filter3] }
+ *
+ * Maximum nesting depth: 5 levels
+ *
+ * Examples:
+ * - Simple AND (array): [{ path: "status", operator: "eq", value: "active" }, { path: "age", operator: "gt", value: 18 }]
+ * - Explicit AND: { and: [{ path: "status", operator: "eq", value: "active" }, { path: "age", operator: "gt", value: 18 }] }
+ * - OR group: { or: [{ path: "role", operator: "eq", value: "admin" }, { path: "role", operator: "eq", value: "moderator" }] }
+ * - Mixed: { and: [{ path: "status", operator: "eq", value: "active" }, { or: [{ path: "role", operator: "eq", value: "admin" }, { path: "role", operator: "eq", value: "mod" }] }] }
+ */
+
+// Forward declaration for recursive schema
+type FilterExpression =
+  | z.infer<typeof propertyFilterSchema>
+  | { and: FilterExpression[] }
+  | { or: FilterExpression[] };
+
+// Create the recursive filter expression schema with Zod lazy
+// We need to build this carefully to allow PropertyFilter objects, and/or groups, and nested groups
+const baseFilterExpressionSchema: z.ZodType<FilterExpression> = z.lazy(() =>
+  z.union([
+    propertyFilterSchema,
+    z.object({
+      and: z.array(baseFilterExpressionSchema).min(1).max(50),
+    }),
+    z.object({
+      or: z.array(baseFilterExpressionSchema).min(1).max(50),
+    }),
+  ])
+);
+
+export const filterExpressionSchema = baseFilterExpressionSchema;
+
+export type FilterExpressionType = FilterExpression;
+
+/**
+ * Type guard to check if an expression is an AND group
+ */
+export function isAndGroup(expr: FilterExpression): expr is { and: FilterExpression[] } {
+  return typeof expr === 'object' && expr !== null && 'and' in expr;
+}
+
+/**
+ * Type guard to check if an expression is an OR group
+ */
+export function isOrGroup(expr: FilterExpression): expr is { or: FilterExpression[] } {
+  return typeof expr === 'object' && expr !== null && 'or' in expr;
+}
+
+/**
+ * Type guard to check if an expression is a simple PropertyFilter
+ */
+export function isPropertyFilter(expr: FilterExpression): expr is PropertyFilter {
+  return typeof expr === 'object' && expr !== null && 'path' in expr && 'operator' in expr;
+}
+
 // Entity search request schema
 export const searchEntitiesSchema = z.object({
   // Type filter
   type_id: uuidSchema.optional(),
 
-  // Property filters - DEPRECATED: Use property_filters instead
+  // Property filters - DEPRECATED: Use property_filters or filter_expression instead
   // Kept for backward compatibility with simple equality matching
   properties: z.record(z.string(), z.any()).optional(),
 
-  // Advanced property filters with comparison operators
+  // Advanced property filters with comparison operators (combined with AND)
+  // DEPRECATED: Use filter_expression for complex logic with AND/OR
   property_filters: z.array(propertyFilterSchema).optional(),
+
+  // Filter expression with AND/OR logical operators
+  // Allows complex filter combinations: { and: [...] }, { or: [...] }, or nested expressions
+  // Takes precedence over property_filters if both are provided
+  filter_expression: filterExpressionSchema.optional(),
 
   // Date range filters (Unix timestamps)
   created_after: z.number().int().positive().optional(),
@@ -94,12 +163,18 @@ export const searchLinksSchema = z.object({
   source_entity_id: uuidSchema.optional(),
   target_entity_id: uuidSchema.optional(),
 
-  // Property filters - DEPRECATED: Use property_filters instead
+  // Property filters - DEPRECATED: Use property_filters or filter_expression instead
   // Kept for backward compatibility with simple equality matching
   properties: z.record(z.string(), z.any()).optional(),
 
-  // Advanced property filters with comparison operators
+  // Advanced property filters with comparison operators (combined with AND)
+  // DEPRECATED: Use filter_expression for complex logic with AND/OR
   property_filters: z.array(propertyFilterSchema).optional(),
+
+  // Filter expression with AND/OR logical operators
+  // Allows complex filter combinations: { and: [...] }, { or: [...] }, or nested expressions
+  // Takes precedence over property_filters if both are provided
+  filter_expression: filterExpressionSchema.optional(),
 
   // Date range filters (Unix timestamps)
   created_after: z.number().int().positive().optional(),

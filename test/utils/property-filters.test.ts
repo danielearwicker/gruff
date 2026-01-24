@@ -3,6 +3,7 @@ import {
   parseJsonPath,
   buildPropertyFilter,
   buildPropertyFilters,
+  buildFilterExpression,
   type ParsedJsonPath,
 } from '../../src/utils/property-filters.js';
 
@@ -305,5 +306,333 @@ describe('buildPropertyFilters', () => {
     );
     expect(result.sql).toContain(' AND ');
     expect(result.bindings).toEqual(['$.address.city', 'NYC', '$.profile.age', 18]);
+  });
+});
+
+describe('buildFilterExpression', () => {
+  describe('simple property filters', () => {
+    it('should handle a simple property filter', () => {
+      const result = buildFilterExpression(
+        { path: 'name', operator: 'eq', value: 'John' },
+        'e'
+      );
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
+      expect(result.bindings).toEqual(['$.name', 'John']);
+    });
+
+    it('should handle different operators', () => {
+      const result = buildFilterExpression(
+        { path: 'age', operator: 'gt', value: 18 },
+        'e'
+      );
+      expect(result.sql).toBe('CAST(json_extract(e.properties, ?) AS REAL) > ?');
+      expect(result.bindings).toEqual(['$.age', 18]);
+    });
+  });
+
+  describe('AND groups', () => {
+    it('should combine filters with AND', () => {
+      const result = buildFilterExpression(
+        {
+          and: [
+            { path: 'status', operator: 'eq', value: 'active' },
+            { path: 'age', operator: 'gte', value: 18 },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toBe(
+        '(json_extract(e.properties, ?) = ?) AND (CAST(json_extract(e.properties, ?) AS REAL) >= ?)'
+      );
+      expect(result.bindings).toEqual(['$.status', 'active', '$.age', 18]);
+    });
+
+    it('should handle single item AND group', () => {
+      const result = buildFilterExpression(
+        {
+          and: [{ path: 'name', operator: 'eq', value: 'John' }],
+        },
+        'e'
+      );
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
+      expect(result.bindings).toEqual(['$.name', 'John']);
+    });
+
+    it('should handle empty AND group', () => {
+      const result = buildFilterExpression(
+        { and: [] },
+        'e'
+      );
+      expect(result.sql).toBe('');
+      expect(result.bindings).toEqual([]);
+    });
+  });
+
+  describe('OR groups', () => {
+    it('should combine filters with OR', () => {
+      const result = buildFilterExpression(
+        {
+          or: [
+            { path: 'role', operator: 'eq', value: 'admin' },
+            { path: 'role', operator: 'eq', value: 'moderator' },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toBe(
+        '(json_extract(e.properties, ?) = ?) OR (json_extract(e.properties, ?) = ?)'
+      );
+      expect(result.bindings).toEqual(['$.role', 'admin', '$.role', 'moderator']);
+    });
+
+    it('should handle single item OR group', () => {
+      const result = buildFilterExpression(
+        {
+          or: [{ path: 'name', operator: 'eq', value: 'John' }],
+        },
+        'e'
+      );
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
+      expect(result.bindings).toEqual(['$.name', 'John']);
+    });
+
+    it('should handle empty OR group', () => {
+      const result = buildFilterExpression(
+        { or: [] },
+        'e'
+      );
+      expect(result.sql).toBe('');
+      expect(result.bindings).toEqual([]);
+    });
+  });
+
+  describe('nested groups', () => {
+    it('should handle OR inside AND', () => {
+      // status = 'active' AND (role = 'admin' OR role = 'moderator')
+      const result = buildFilterExpression(
+        {
+          and: [
+            { path: 'status', operator: 'eq', value: 'active' },
+            {
+              or: [
+                { path: 'role', operator: 'eq', value: 'admin' },
+                { path: 'role', operator: 'eq', value: 'moderator' },
+              ],
+            },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toBe(
+        '(json_extract(e.properties, ?) = ?) AND ((json_extract(e.properties, ?) = ?) OR (json_extract(e.properties, ?) = ?))'
+      );
+      expect(result.bindings).toEqual([
+        '$.status',
+        'active',
+        '$.role',
+        'admin',
+        '$.role',
+        'moderator',
+      ]);
+    });
+
+    it('should handle AND inside OR', () => {
+      // (status = 'active' AND age >= 18) OR (status = 'vip')
+      const result = buildFilterExpression(
+        {
+          or: [
+            {
+              and: [
+                { path: 'status', operator: 'eq', value: 'active' },
+                { path: 'age', operator: 'gte', value: 18 },
+              ],
+            },
+            { path: 'status', operator: 'eq', value: 'vip' },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toBe(
+        '((json_extract(e.properties, ?) = ?) AND (CAST(json_extract(e.properties, ?) AS REAL) >= ?)) OR (json_extract(e.properties, ?) = ?)'
+      );
+      expect(result.bindings).toEqual([
+        '$.status',
+        'active',
+        '$.age',
+        18,
+        '$.status',
+        'vip',
+      ]);
+    });
+
+    it('should handle deeply nested groups', () => {
+      // (a = 1 AND (b = 2 OR (c = 3 AND d = 4)))
+      const result = buildFilterExpression(
+        {
+          and: [
+            { path: 'a', operator: 'eq', value: 1 },
+            {
+              or: [
+                { path: 'b', operator: 'eq', value: 2 },
+                {
+                  and: [
+                    { path: 'c', operator: 'eq', value: 3 },
+                    { path: 'd', operator: 'eq', value: 4 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toContain(' AND ');
+      expect(result.sql).toContain(' OR ');
+      expect(result.bindings).toEqual([
+        '$.a',
+        1,
+        '$.b',
+        2,
+        '$.c',
+        3,
+        '$.d',
+        4,
+      ]);
+    });
+  });
+
+  describe('table alias', () => {
+    it('should use custom table alias', () => {
+      const result = buildFilterExpression(
+        { path: 'name', operator: 'eq', value: 'John' },
+        'l'
+      );
+      expect(result.sql).toBe('json_extract(l.properties, ?) = ?');
+    });
+
+    it('should use custom table alias in nested groups', () => {
+      const result = buildFilterExpression(
+        {
+          or: [
+            { path: 'a', operator: 'eq', value: 'x' },
+            { path: 'b', operator: 'eq', value: 'y' },
+          ],
+        },
+        'links'
+      );
+      expect(result.sql).toContain('json_extract(links.properties, ?)');
+    });
+  });
+
+  describe('error handling', () => {
+    it('should throw for invalid path in nested expression', () => {
+      expect(() =>
+        buildFilterExpression(
+          {
+            and: [
+              { path: 'name', operator: 'eq', value: 'John' },
+              { path: 'data[[0]]', operator: 'eq', value: 'test' },
+            ],
+          },
+          'e'
+        )
+      ).toThrow('nested brackets');
+    });
+
+    it('should throw for exceeding maximum depth', () => {
+      // Create a deeply nested structure (6 levels)
+      const deeplyNested: any = {
+        and: [
+          {
+            or: [
+              {
+                and: [
+                  {
+                    or: [
+                      {
+                        and: [
+                          {
+                            or: [{ path: 'a', operator: 'eq', value: 1 }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(() => buildFilterExpression(deeplyNested, 'e')).toThrow(
+        'maximum nesting depth'
+      );
+    });
+  });
+
+  describe('complex real-world examples', () => {
+    it('should handle user search with role and status filters', () => {
+      // Find active users who are either admins or have premium subscription
+      const result = buildFilterExpression(
+        {
+          and: [
+            { path: 'status', operator: 'eq', value: 'active' },
+            { path: 'email_verified', operator: 'eq', value: true },
+            {
+              or: [
+                { path: 'role', operator: 'eq', value: 'admin' },
+                { path: 'subscription.type', operator: 'eq', value: 'premium' },
+              ],
+            },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toContain(' AND ');
+      expect(result.sql).toContain(' OR ');
+      expect(result.bindings).toHaveLength(6);
+    });
+
+    it('should handle product search with multiple criteria', () => {
+      // Find products: (in_stock AND price < 100) OR (featured)
+      const result = buildFilterExpression(
+        {
+          or: [
+            {
+              and: [
+                { path: 'inventory.in_stock', operator: 'eq', value: true },
+                { path: 'price', operator: 'lt', value: 100 },
+              ],
+            },
+            { path: 'featured', operator: 'eq', value: true },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toContain(' AND ');
+      expect(result.sql).toContain(' OR ');
+    });
+
+    it('should handle search with existence checks', () => {
+      // Find entities that have a profile AND (name exists OR nickname exists)
+      const result = buildFilterExpression(
+        {
+          and: [
+            { path: 'profile', operator: 'exists' },
+            {
+              or: [
+                { path: 'name', operator: 'exists' },
+                { path: 'nickname', operator: 'exists' },
+              ],
+            },
+          ],
+        },
+        'e'
+      );
+      expect(result.sql).toContain('IS NOT NULL');
+      expect(result.sql).toContain(' AND ');
+      expect(result.sql).toContain(' OR ');
+    });
   });
 });

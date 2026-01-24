@@ -3,7 +3,7 @@ import { validateJson, validateQuery } from '../middleware/validation.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
-import { buildPropertyFilters } from '../utils/property-filters.js';
+import { buildPropertyFilters, buildFilterExpression } from '../utils/property-filters.js';
 
 type Bindings = {
   DB: D1Database;
@@ -78,8 +78,22 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
       }
     }
 
-    // Advanced property filters with comparison operators
-    if (criteria.property_filters && criteria.property_filters.length > 0) {
+    // Filter expression with AND/OR logical operators (takes precedence)
+    if (criteria.filter_expression) {
+      try {
+        const filterResult = buildFilterExpression(criteria.filter_expression, 'e');
+        if (filterResult.sql) {
+          whereClauses.push(filterResult.sql);
+          bindings.push(...filterResult.bindings);
+        }
+      } catch (error) {
+        logger.error('Invalid filter expression', error as Error);
+        return c.json(response.error(`Invalid filter expression: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+      }
+    }
+    // Advanced property filters with comparison operators (combined with AND)
+    // Only used if filter_expression is not provided
+    else if (criteria.property_filters && criteria.property_filters.length > 0) {
       try {
         const filterResult = buildPropertyFilters(criteria.property_filters, 'e');
         if (filterResult.sql) {
@@ -241,8 +255,22 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
       }
     }
 
-    // Advanced property filters with comparison operators
-    if (criteria.property_filters && criteria.property_filters.length > 0) {
+    // Filter expression with AND/OR logical operators (takes precedence)
+    if (criteria.filter_expression) {
+      try {
+        const filterResult = buildFilterExpression(criteria.filter_expression, 'l');
+        if (filterResult.sql) {
+          whereClauses.push(filterResult.sql);
+          bindings.push(...filterResult.bindings);
+        }
+      } catch (error) {
+        logger.error('Invalid filter expression', error as Error);
+        return c.json(response.error(`Invalid filter expression: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+      }
+    }
+    // Advanced property filters with comparison operators (combined with AND)
+    // Only used if filter_expression is not provided
+    else if (criteria.property_filters && criteria.property_filters.length > 0) {
       try {
         const filterResult = buildPropertyFilters(criteria.property_filters, 'l');
         if (filterResult.sql) {

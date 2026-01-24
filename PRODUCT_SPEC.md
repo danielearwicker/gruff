@@ -375,11 +375,13 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Property names must start with a letter or underscore, followed by letters, digits, or underscores
 - Implemented via `parseJsonPath()` function that converts user paths to SQLite-compatible JSON paths
 
-#### 🟦 Logical Operators for Property Filters
-- Support AND/OR logic for combining multiple property filters
-- Implement filter groups with nested conditions
-- Define JSON schema for filter expressions (e.g., `{"and": [filter1, filter2]}`, `{"or": [filter1, filter2]}`)
-- Apply to both entity and link search endpoints
+#### ✅ Logical Operators for Property Filters
+- Support AND/OR logic for combining multiple property filters via `filter_expression` field
+- Implement filter groups with nested conditions (maximum depth of 5 levels)
+- JSON schema for filter expressions: `{"and": [filter1, filter2]}`, `{"or": [filter1, filter2]}`, or nested `{"and": [filter1, {"or": [filter2, filter3]}]}`
+- Apply to both entity and link search endpoints (takes precedence over `property_filters`)
+- Type guards: `isAndGroup()`, `isOrGroup()`, `isPropertyFilter()` for type-safe expression handling
+- Implemented via `buildFilterExpression()` function with recursive processing
 
 #### 🟦 Generated Columns and Indexes
 - Add migration to create generated columns for frequently queried properties
