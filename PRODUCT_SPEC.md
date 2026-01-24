@@ -121,7 +121,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Include user ID and metadata in token payload
 - Token expiration and renewal logic
 
-#### 🟦 KV-based Session Store
+#### ✅ KV-based Session Store
 - Set up Cloudflare KV binding for session management
 - Store refresh tokens with TTL in KV
 - Implement token invalidation (logout) functionality
