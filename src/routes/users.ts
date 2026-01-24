@@ -11,6 +11,11 @@ import { updateUserSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { z } from 'zod';
+import {
+  applyFieldSelection,
+  applyFieldSelectionToArray,
+  USER_ALLOWED_FIELDS,
+} from '../utils/field-selection.js';
 
 type Bindings = {
   DB: D1Database;
@@ -30,6 +35,8 @@ const listUsersQuerySchema = z.object({
     return val === 'true' || val === '1';
   }),
   provider: z.enum(['google', 'github', 'local', 'microsoft', 'apple']).optional(),
+  // Field selection: comma-separated list of fields to include in response
+  fields: z.string().optional(),
 });
 
 /**
@@ -98,13 +105,31 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
       is_active: !!user.is_active,
     }));
 
+    // Apply field selection if requested
+    const fieldSelection = applyFieldSelectionToArray(
+      users as Record<string, unknown>[],
+      validated.fields,
+      USER_ALLOWED_FIELDS
+    );
+
+    if (!fieldSelection.success) {
+      return c.json(
+        response.error(
+          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          'INVALID_FIELDS',
+          { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
+        ),
+        400
+      );
+    }
+
     // Calculate pagination metadata
     const page = Math.floor(offset / limit) + 1;
     const totalPages = Math.ceil(total / limit);
     const hasMore = offset + limit < total;
 
     return c.json(
-      response.paginated(users, limit, page, total, hasMore)
+      response.paginated(fieldSelection.data, limit, page, total, hasMore)
     );
   } catch (error) {
     logger.error('Error listing users', error as Error);
@@ -119,12 +144,16 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
  * GET /api/users/{id}
  *
  * Get details for a specific user
+ * Supports field selection via the `fields` query parameter.
+ * Example: GET /api/users/123?fields=id,email,display_name
+ *
  * Users can view their own profile, or any authenticated user can view others
  * (in production, you might want to restrict this)
  */
 usersRouter.get('/:id', requireAuth(), async (c) => {
   const logger = getLogger(c);
   const userId = c.req.param('id');
+  const fieldsParam = c.req.query('fields');
 
   try {
     // Fetch the user from the database
@@ -144,18 +173,39 @@ usersRouter.get('/:id', requireAuth(), async (c) => {
 
     logger.info('User details retrieved', { userId });
 
-    // Return user details (excluding sensitive data)
-    return c.json(
-      response.success({
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        provider: user.provider,
-        created_at: user.created_at,
-        updated_at: user.updated_at,
-        is_active: !!user.is_active,
-      })
-    );
+    // Format user details (excluding sensitive data)
+    const userData = {
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      provider: user.provider,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      is_active: !!user.is_active,
+    };
+
+    // Apply field selection if requested
+    if (fieldsParam) {
+      const fieldSelection = applyFieldSelection(
+        userData as Record<string, unknown>,
+        fieldsParam,
+        USER_ALLOWED_FIELDS
+      );
+      if (!fieldSelection.success) {
+        return c.json(
+          response.error(
+            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            'INVALID_FIELDS',
+            { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
+          ),
+          400
+        );
+      }
+      return c.json(response.success(fieldSelection.data));
+    }
+
+    // Return user details
+    return c.json(response.success(userData));
   } catch (error) {
     logger.error('Error retrieving user details', error as Error, { userId });
     return c.json(

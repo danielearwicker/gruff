@@ -52,6 +52,9 @@ export const paginationQuerySchema = z.object({
     .default('false')
     .transform((val) => val === 'true')
     .pipe(z.boolean()),
+  // Field selection: comma-separated list of fields to include in response
+  // Example: fields=id,type_id,properties
+  fields: z.string().optional(),
   // JSON property filters in format: property_<key>=<value>
   // Example: property_name=John or property_age=25
   // This will be parsed dynamically in the route handlers

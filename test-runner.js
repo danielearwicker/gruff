@@ -9653,6 +9653,229 @@ async function testGeneratedColumnsQueryPerformance() {
 }
 
 // ============================================================================
+// Field Selection Tests
+// ============================================================================
+
+async function testFieldSelectionEntityGet() {
+  logTest('Field Selection - Entity GET with specific fields');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Field Selection Test Entity' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Get entity with field selection
+  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,type_id,properties`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.id, 'Response should include id');
+  assert(response.data.data.type_id, 'Response should include type_id');
+  assert(response.data.data.properties, 'Response should include properties');
+  assert(!response.data.data.version, 'Response should NOT include version');
+  assert(!response.data.data.created_at, 'Response should NOT include created_at');
+  assert(!response.data.data.created_by, 'Response should NOT include created_by');
+}
+
+async function testFieldSelectionEntityList() {
+  logTest('Field Selection - Entity list with specific fields');
+
+  // List entities with field selection
+  const response = await makeRequest('GET', '/api/entities?fields=id,type_id');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.items.length > 0, 'Should return at least one entity');
+
+  const firstItem = response.data.data.items[0];
+  assert(firstItem.id, 'Item should include id');
+  assert(firstItem.type_id, 'Item should include type_id');
+  assert(!firstItem.properties, 'Item should NOT include properties');
+  assert(!firstItem.version, 'Item should NOT include version');
+}
+
+async function testFieldSelectionEntityInvalidField() {
+  logTest('Field Selection - Entity GET with invalid field returns error');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Invalid Field Test Entity' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Try to get entity with invalid field
+  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,invalid_field,another_bad_field`);
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(response.data.error, 'Response should include error');
+  assertEquals(response.data.code, 'INVALID_FIELDS', 'Error code should be INVALID_FIELDS');
+  assert(response.data.details.allowed_fields, 'Response should include allowed_fields');
+}
+
+async function testFieldSelectionTypeGet() {
+  logTest('Field Selection - Type GET with specific fields');
+
+  // Get types list
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const typeId = typesResponse.data.data.items[0].id;
+
+  // Get type with field selection
+  const response = await makeRequest('GET', `/api/types/${typeId}?fields=id,name,category`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.id, 'Response should include id');
+  assert(response.data.data.name, 'Response should include name');
+  assert(response.data.data.category, 'Response should include category');
+  assert(!response.data.data.description, 'Response should NOT include description');
+  assert(!response.data.data.json_schema, 'Response should NOT include json_schema');
+  assert(!response.data.data.created_at, 'Response should NOT include created_at');
+}
+
+async function testFieldSelectionTypeList() {
+  logTest('Field Selection - Type list with specific fields');
+
+  // List types with field selection
+  const response = await makeRequest('GET', '/api/types?fields=id,name');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.items.length > 0, 'Should return at least one type');
+
+  const firstItem = response.data.data.items[0];
+  assert(firstItem.id, 'Item should include id');
+  assert(firstItem.name, 'Item should include name');
+  assert(!firstItem.category, 'Item should NOT include category');
+  assert(!firstItem.description, 'Item should NOT include description');
+}
+
+async function testFieldSelectionLinkGet() {
+  logTest('Field Selection - Link GET with specific fields');
+
+  // Create entity type
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FieldSelectionLinkTestEntityType',
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  // Create link type
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FieldSelectionLinkTestLinkType',
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Test Entity 1' },
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Test Entity 2' },
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  // Create a link
+  const linkResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { weight: 5 },
+  });
+  const linkId = linkResponse.data.data.id;
+
+  // Get link with field selection
+  const response = await makeRequest('GET', `/api/links/${linkId}?fields=id,type_id,source_entity_id,target_entity_id`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.id, 'Response should include id');
+  assert(response.data.data.type_id, 'Response should include type_id');
+  assert(response.data.data.source_entity_id, 'Response should include source_entity_id');
+  assert(response.data.data.target_entity_id, 'Response should include target_entity_id');
+  assert(!response.data.data.properties, 'Response should NOT include properties');
+  assert(!response.data.data.version, 'Response should NOT include version');
+}
+
+async function testFieldSelectionLinkList() {
+  logTest('Field Selection - Link list with specific fields');
+
+  // List links with field selection
+  const response = await makeRequest('GET', '/api/links?fields=id,type_id,source_entity_id');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  if (response.data.data.items.length > 0) {
+    const firstItem = response.data.data.items[0];
+    assert(firstItem.id, 'Item should include id');
+    assert(firstItem.type_id, 'Item should include type_id');
+    assert(firstItem.source_entity_id, 'Item should include source_entity_id');
+    assert(!firstItem.target_entity_id, 'Item should NOT include target_entity_id');
+    assert(!firstItem.properties, 'Item should NOT include properties');
+  }
+}
+
+async function testFieldSelectionEmptyFieldsReturnsAll() {
+  logTest('Field Selection - Empty fields parameter returns all fields');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Empty Fields Test Entity' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Get entity without fields parameter
+  const response = await makeRequest('GET', `/api/entities/${entityId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.id, 'Response should include id');
+  assert(response.data.data.type_id, 'Response should include type_id');
+  assert(response.data.data.properties, 'Response should include properties');
+  assert(response.data.data.version, 'Response should include version');
+  assert(response.data.data.created_at, 'Response should include created_at');
+  assert(response.data.data.created_by, 'Response should include created_by');
+}
+
+async function testFieldSelectionWithWhitespace() {
+  logTest('Field Selection - Fields with whitespace are trimmed');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Whitespace Fields Test Entity' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Get entity with whitespace in fields
+  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,%20type_id%20,%20properties`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.id, 'Response should include id');
+  assert(response.data.data.type_id, 'Response should include type_id');
+  assert(response.data.data.properties, 'Response should include properties');
+  assert(!response.data.data.version, 'Response should NOT include version');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -10030,6 +10253,17 @@ async function runTests() {
     testGeneratedColumnsAnalyzeMissingParams,
     testGeneratedColumnsMappings,
     testGeneratedColumnsQueryPerformance,
+
+    // Field Selection tests
+    testFieldSelectionEntityGet,
+    testFieldSelectionEntityList,
+    testFieldSelectionEntityInvalidField,
+    testFieldSelectionTypeGet,
+    testFieldSelectionTypeList,
+    testFieldSelectionLinkGet,
+    testFieldSelectionLinkList,
+    testFieldSelectionEmptyFieldsReturnsAll,
+    testFieldSelectionWithWhitespace,
   ];
 
   for (const test of tests) {

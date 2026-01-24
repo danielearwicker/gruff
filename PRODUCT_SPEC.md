@@ -696,11 +696,14 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Support multiple ETags and wildcard (*) in If-None-Match header
 - Weak ETags (W/"...") by default for semantic equivalence
 
-#### 🟦 Partial Response / Field Selection
+#### ✅ Partial Response / Field Selection
 - Support `fields` query parameter on GET endpoints
 - Allow comma-separated list of fields to include in response
 - Reduce payload size for bandwidth-constrained clients
 - Apply to entities, links, types, and users endpoints
+- Validation of requested fields against allowed fields per resource type
+- Returns 400 error with list of allowed fields when invalid fields requested
+- Implemented via utility module with consistent behavior across all endpoints
 
 #### 🟦 Response Time Monitoring via Workers Analytics
 - Track response times for all API endpoints

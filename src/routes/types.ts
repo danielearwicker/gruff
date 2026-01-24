@@ -11,6 +11,11 @@ import {
   invalidateTypeCache,
   CACHE_TTL,
 } from '../utils/cache.js';
+import {
+  applyFieldSelection,
+  applyFieldSelectionToArray,
+  TYPE_ALLOWED_FIELDS,
+} from '../utils/field-selection.js';
 
 type Bindings = {
   DB: D1Database;
@@ -176,6 +181,24 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
       json_schema: type.json_schema ? JSON.parse(type.json_schema as string) : null,
     }));
 
+    // Apply field selection if requested
+    const fieldSelection = applyFieldSelectionToArray(
+      typesData as Record<string, unknown>[],
+      query.fields,
+      TYPE_ALLOWED_FIELDS
+    );
+
+    if (!fieldSelection.success) {
+      return c.json(
+        response.error(
+          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          'INVALID_FIELDS',
+          { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
+        ),
+        400
+      );
+    }
+
     // Generate next cursor from the last item
     let nextCursor: string | null = null;
     if (hasMore && items.length > 0) {
@@ -183,10 +206,11 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
       nextCursor = `${lastItem.created_at}:${lastItem.id}`;
     }
 
-    const responseData = response.cursorPaginated(typesData, nextCursor, hasMore);
+    const responseData = response.cursorPaginated(fieldSelection.data, nextCursor, hasMore);
 
-    // Cache the response (first page only)
-    if (canCache && cacheKey) {
+    // Cache the response (first page only, with full data - field selection not cached)
+    // We only cache the full response to avoid caching different field combinations
+    if (canCache && cacheKey && !query.fields) {
       setCache(kv, cacheKey, responseData, CACHE_TTL.TYPES_LIST).catch(() => {
         // Silently ignore cache write errors
       });
@@ -204,18 +228,42 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
  * GET /api/types/:id
  * Get a specific type by ID
  *
+ * Supports field selection via the `fields` query parameter.
+ * Example: GET /api/types/123?fields=id,name,category
+ *
  * Caching: Individual type lookups are cached for fast repeated access.
+ * Note: Field selection is applied after cache retrieval for consistency.
  */
 types.get('/:id', async (c) => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
+  const fieldsParam = c.req.query('fields');
 
   try {
     // Try to get from cache first
     const cacheKey = getTypeCacheKey(id);
     const cached = await getCache<any>(kv, cacheKey);
     if (cached) {
+      // Apply field selection to cached response
+      if (fieldsParam && cached.data) {
+        const fieldSelection = applyFieldSelection(
+          cached.data as Record<string, unknown>,
+          fieldsParam,
+          TYPE_ALLOWED_FIELDS
+        );
+        if (!fieldSelection.success) {
+          return c.json(
+            response.error(
+              `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+              'INVALID_FIELDS',
+              { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
+            ),
+            400
+          );
+        }
+        return c.json(response.success(fieldSelection.data));
+      }
       return c.json(cached);
     }
 
@@ -235,10 +283,30 @@ types.get('/:id', async (c) => {
 
     const responseData = response.success(result);
 
-    // Cache the successful response
+    // Cache the successful response (full data, field selection applied on retrieval)
     setCache(kv, cacheKey, responseData, CACHE_TTL.TYPES).catch(() => {
       // Silently ignore cache write errors
     });
+
+    // Apply field selection if requested
+    if (fieldsParam) {
+      const fieldSelection = applyFieldSelection(
+        result as Record<string, unknown>,
+        fieldsParam,
+        TYPE_ALLOWED_FIELDS
+      );
+      if (!fieldSelection.success) {
+        return c.json(
+          response.error(
+            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            'INVALID_FIELDS',
+            { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
+          ),
+          400
+        );
+      }
+      return c.json(response.success(fieldSelection.data));
+    }
 
     return c.json(responseData);
   } catch (error) {
