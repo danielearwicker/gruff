@@ -13,6 +13,11 @@ import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
 import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
+import {
+  createErrorTracker,
+  ErrorTracker,
+  AnalyticsEngineDataset,
+} from './utils/error-tracking.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
@@ -34,6 +39,7 @@ type Bindings = {
   JWT_SECRET: string;
   ENVIRONMENT: string;
   ALLOWED_ORIGINS?: string; // Comma-separated list of allowed origins for CORS (production)
+  ANALYTICS?: AnalyticsEngineDataset; // Analytics Engine for error tracking
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -184,6 +190,20 @@ app.onError((err, c) => {
     }
   );
 
+  // Track error in Analytics Engine for monitoring and metrics
+  const errorTracker = createErrorTracker(c.env?.ANALYTICS, {
+    environment: c.env?.ENVIRONMENT || 'development',
+  });
+  errorTracker.track(err, {
+    requestId,
+    path: c.req.path,
+    method: c.req.method,
+    statusCode,
+    userId: c.get('user')?.id,
+    userAgent: c.req.header('user-agent'),
+    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
+  }, statusCode);
+
   return c.json(errorResponse, statusCode);
 });
 
@@ -229,11 +249,15 @@ app.get('/health', async (c) => {
       },
     };
 
+    // Check Analytics Engine availability
+    const analyticsAvailable = !!c.env.ANALYTICS;
+
     return c.json({
       status: 'healthy',
       environment: c.env.ENVIRONMENT,
       database: dbResult ? 'connected' : 'disconnected',
       kv: kvValue ? 'connected' : 'disconnected',
+      analytics: analyticsAvailable ? 'available' : 'not_configured',
       runtime: runtimeStatus,
       timestamp: new Date().toISOString(),
     });

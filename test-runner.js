@@ -272,6 +272,7 @@ async function testHealthEndpoint() {
   assertEquals(response.data.status, 'healthy', 'Status should be "healthy"');
   assert(response.data.database, 'Should have database status');
   assert(response.data.kv, 'Should have KV status');
+  assert(response.data.analytics, 'Should have analytics status');
   assert(response.data.timestamp, 'Should have timestamp');
 
   // Verify Workers runtime status

@@ -523,10 +523,21 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Capture request metadata (method, path, user, duration)
 - Correlation ID support for distributed tracing
 
-#### 🟦 Error Tracking Integration
+#### ✅ Error Tracking Integration
 - Integration with Workers Analytics Engine for error tracking
+  - `AnalyticsEngineDataset` binding configured in wrangler.toml for all environments
+  - Error data points written with blobs (error name, category, severity, code, method, path, userId, message, environment) and doubles (status code, timestamp)
+  - Index-based partitioning by environment for efficient querying
 - Structured error logging with stack traces
+  - `ErrorTracker` class with automatic error categorization (validation, authentication, authorization, database, rate_limit, not_found, internal, external, unknown)
+  - Error severity levels (low, medium, high, critical) with appropriate log level routing
+  - Automatic redaction of sensitive data from error messages and stack traces
+  - Convenience methods: `trackValidation()`, `trackAuth()`, `trackDatabase()`
 - Error rate monitoring setup
+  - Configurable minimum severity threshold for tracking
+  - Custom categorizer function support for domain-specific error classification
+  - Analytics Engine writes with graceful failure handling (won't affect application on write errors)
+  - Health endpoint reports analytics availability status
 
 #### 🟦 External Logging Service Integration
 - Integration with external logging services (Datadog, Sentry, etc.)

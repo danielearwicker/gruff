@@ -14,6 +14,13 @@ migrations_dir = "migrations"
 binding = "KV"
 id = "local-kv"
 
+# Analytics Engine for error tracking and metrics
+# Note: In local development, Analytics Engine is simulated
+# For production, create via: wrangler analytics-engine create gruff-errors
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "gruff_errors"
+
 [vars]
 # Environment variables (non-secret)
 ENVIRONMENT = "development"
@@ -50,6 +57,10 @@ migrations_dir = "migrations"
 binding = "KV"
 id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
 
+[[env.preview.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "gruff_errors_preview"
+
 # =============================================================================
 # Environment: Production
 # =============================================================================
@@ -75,3 +86,7 @@ migrations_dir = "migrations"
 [[env.production.kv_namespaces]]
 binding = "KV"
 id = "REPLACE_WITH_PRODUCTION_KV_NAMESPACE_ID"
+
+[[env.production.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "gruff_errors"
