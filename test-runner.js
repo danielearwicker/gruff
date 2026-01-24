@@ -5229,6 +5229,289 @@ async function testTypeAheadSuggestionsCustomProperty() {
 }
 
 // ============================================================================
+// User Management Tests
+// ============================================================================
+
+async function testListUsers() {
+  logTest('User Management - List Users');
+
+  // First register a couple of users to ensure we have data
+  await makeRequest('POST', '/api/auth/register', {
+    email: 'user1@example.com',
+    password: 'password123',
+    display_name: 'User One'
+  });
+
+  const user2Response = await makeRequest('POST', '/api/auth/register', {
+    email: 'user2@example.com',
+    password: 'password123',
+    display_name: 'User Two'
+  });
+
+  const token = user2Response.data.data.access_token;
+
+  // List users
+  const response = await fetch(`${DEV_SERVER_URL}/api/users`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data, 'Should have data field');
+  assert(Array.isArray(data.data), 'Data should be an array');
+  assert(data.data.length >= 2, 'Should have at least 2 users');
+  assert(data.pagination, 'Should include pagination metadata');
+
+  // Verify user structure (no password hash exposed)
+  const user = data.data[0];
+  assert(user.id, 'User should have id');
+  assert(user.email, 'User should have email');
+  assert(!user.password_hash, 'Password hash should not be exposed');
+}
+
+async function testListUsersWithFilters() {
+  logTest('User Management - List Users With Filters');
+
+  // Register a user to get a token
+  const userResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'filtertest@example.com',
+    password: 'password123'
+  });
+  const token = userResponse.data.data.access_token;
+
+  // Test filtering by provider
+  const response = await fetch(`${DEV_SERVER_URL}/api/users?provider=local&limit=5`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data, 'Should have data field');
+
+  // Verify all users have local provider
+  const allLocal = data.data.every(user => user.provider === 'local');
+  assert(allLocal, 'All users should have local provider');
+}
+
+async function testGetUserDetails() {
+  logTest('User Management - Get User Details');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'details@example.com',
+    password: 'password123',
+    display_name: 'Details User'
+  });
+  const token = registerResponse.data.data.access_token;
+  const userId = registerResponse.data.data.user.id;
+
+  // Get user details
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data, 'Should have data field');
+  assertEquals(data.data.id, userId, 'Should return correct user ID');
+  assertEquals(data.data.email, 'details@example.com', 'Should return correct email');
+  assertEquals(data.data.display_name, 'Details User', 'Should return correct display name');
+  assert(!data.data.password_hash, 'Password hash should not be exposed');
+}
+
+async function testGetUserDetailsNotFound() {
+  logTest('User Management - Get User Details Not Found');
+
+  // Register a user to get a token
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'notfound@example.com',
+    password: 'password123'
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Try to get non-existent user
+  const fakeUserId = '00000000-0000-0000-0000-000000000000';
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${fakeUserId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  assertEquals(response.status, 404, 'Should return 404');
+}
+
+async function testUpdateUserProfile() {
+  logTest('User Management - Update User Profile');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'update@example.com',
+    password: 'password123',
+    display_name: 'Original Name'
+  });
+  const token = registerResponse.data.data.access_token;
+  const userId = registerResponse.data.data.user.id;
+
+  // Update user profile
+  const updateResponse = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      display_name: 'Updated Name'
+    })
+  });
+  const updateData = await updateResponse.json();
+
+  assertEquals(updateResponse.status, 200, 'Should return 200');
+  assertEquals(updateData.data.display_name, 'Updated Name', 'Display name should be updated');
+  assert(updateData.data.updated_at, 'Should have updated_at timestamp');
+}
+
+async function testUpdateUserProfileForbidden() {
+  logTest('User Management - Update Other User Profile Forbidden');
+
+  // Register two users
+  const user1Response = await makeRequest('POST', '/api/auth/register', {
+    email: 'user1forbidden@example.com',
+    password: 'password123'
+  });
+  const user2Response = await makeRequest('POST', '/api/auth/register', {
+    email: 'user2forbidden@example.com',
+    password: 'password123'
+  });
+
+  const user1Token = user1Response.data.data.access_token;
+  const user2Id = user2Response.data.data.user.id;
+
+  // Try to update user2 with user1's token
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${user2Id}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${user1Token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      display_name: 'Hacked Name'
+    })
+  });
+
+  assertEquals(response.status, 403, 'Should return 403 Forbidden');
+}
+
+async function testUpdateUserEmailDuplicate() {
+  logTest('User Management - Update Email to Duplicate');
+
+  // Register two users
+  const user1Response = await makeRequest('POST', '/api/auth/register', {
+    email: 'user1dup@example.com',
+    password: 'password123'
+  });
+  await makeRequest('POST', '/api/auth/register', {
+    email: 'user2dup@example.com',
+    password: 'password123'
+  });
+
+  const token = user1Response.data.data.access_token;
+  const userId = user1Response.data.data.user.id;
+
+  // Try to update email to an existing email
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: 'user2dup@example.com'
+    })
+  });
+
+  assertEquals(response.status, 409, 'Should return 409 Conflict');
+}
+
+async function testGetUserActivity() {
+  logTest('User Management - Get User Activity');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'activity@example.com',
+    password: 'password123'
+  });
+  const token = registerResponse.data.data.access_token;
+  const userId = registerResponse.data.data.user.id;
+
+  // Create some test data
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ActivityTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities
+  await fetch(`${DEV_SERVER_URL}/api/entities`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      type_id: typeId,
+      properties: { name: 'Test Entity 1' }
+    })
+  });
+
+  await fetch(`${DEV_SERVER_URL}/api/entities`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      type_id: typeId,
+      properties: { name: 'Test Entity 2' }
+    })
+  });
+
+  // Get user activity
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}/activity`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data, 'Should have data field');
+  assert(data.data.activity, 'Should have activity array');
+  assert(Array.isArray(data.data.activity), 'Activity should be an array');
+  assert(data.data.activity.length >= 2, 'Should have at least 2 activity items');
+
+  // Verify activity structure
+  const activity = data.data.activity[0];
+  assert(activity.type === 'entity' || activity.type === 'link', 'Activity should have type');
+  assert(activity.id, 'Activity should have id');
+  assert(activity.created_at, 'Activity should have created_at');
+}
+
+async function testGetUserActivityNotFound() {
+  logTest('User Management - Get Activity for Non-existent User');
+
+  // Register a user to get a token
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'activitynotfound@example.com',
+    password: 'password123'
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Try to get activity for non-existent user
+  const fakeUserId = '00000000-0000-0000-0000-000000000000';
+  const response = await fetch(`${DEV_SERVER_URL}/api/users/${fakeUserId}/activity`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  assertEquals(response.status, 404, 'Should return 404');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -5290,6 +5573,17 @@ async function runTests() {
     testGetCurrentUserNoAuth,
     testGetCurrentUserInvalidToken,
     testGetCurrentUserExpiredToken,
+
+    // User Management tests
+    testListUsers,
+    testListUsersWithFilters,
+    testGetUserDetails,
+    testGetUserDetailsNotFound,
+    testUpdateUserProfile,
+    testUpdateUserProfileForbidden,
+    testUpdateUserEmailDuplicate,
+    testGetUserActivity,
+    testGetUserActivityNotFound,
 
     // Type Management tests
     testCreateTypeEntity,

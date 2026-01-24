@@ -13,6 +13,7 @@ import linksRouter from './routes/links.js';
 import authRouter from './routes/auth.js';
 import graphRouter from './routes/graph.js';
 import searchRouter from './routes/search.js';
+import usersRouter from './routes/users.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -204,6 +205,9 @@ app.get('/api', (c) => {
 
 // Mount authentication routes
 app.route('/api/auth', authRouter);
+
+// Mount user management routes
+app.route('/api/users', usersRouter);
 
 // Mount type management routes
 app.route('/api/types', typesRouter);

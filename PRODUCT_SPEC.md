@@ -328,7 +328,7 @@ Implement type-ahead suggestion endpoint:
 - Support configurable property path for searching (e.g., "name", "title")
 - Include entity type and ID in results
 
-### 🟦 User Management Endpoints
+### ✅ User Management Endpoints
 
 ```
 GET    /api/users                  # List users (admin)
