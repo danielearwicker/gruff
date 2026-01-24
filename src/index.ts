@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { requestContextMiddleware, getLogger, getRequestId } from './middleware/request-context.js';
+import { rateLimit } from './middleware/rate-limit.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger } from './utils/logger.js';
@@ -29,6 +30,19 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Request context middleware - must be first to add requestId and logger to all requests
 app.use('*', requestContextMiddleware);
+
+// Rate limiting middleware - applied to all /api/* routes
+// Automatically categorizes requests based on path and method
+// Skip health and version endpoints for operational monitoring
+app.use('/api/*', rateLimit({
+  skip: (c) => {
+    // Skip rate limiting for version endpoint (lightweight, informational)
+    if (c.req.path === '/api/version') {
+      return true;
+    }
+    return false;
+  },
+}));
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {

@@ -463,12 +463,21 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Query audit logs by user, entity, date range
 - Compliance and security tracking
 
-### 🟦 Rate Limiting
-- Per-user rate limits on API endpoints
-- Configurable limits per endpoint category
-- Cloudflare KV-based rate limiting for distributed tracking
-- Consider Durable Objects for precise rate limiting
-- Cloudflare's built-in rate limiting rules as additional protection
+### ✅ Rate Limiting
+- Per-user rate limits on API endpoints (using user ID when authenticated, IP address otherwise)
+- Configurable limits per endpoint category:
+  - `auth`: 20 requests/minute (authentication endpoints)
+  - `read`: 100 requests/minute (GET operations)
+  - `write`: 60 requests/minute (POST, PUT, PATCH, DELETE operations)
+  - `bulk`: 20 requests/minute (batch operations)
+  - `search`: 60 requests/minute (search endpoints)
+  - `graph`: 40 requests/minute (graph traversal operations)
+  - `default`: 60 requests/minute (fallback)
+- Cloudflare KV-based rate limiting for distributed tracking with sliding window algorithm
+- Rate limit headers on all API responses: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- Returns 429 Too Many Requests with `Retry-After` header when limit exceeded
+- Automatic endpoint category detection based on request path and method
+- Cloudflare's built-in rate limiting rules available as additional protection layer
 
 ### 🟦 API Documentation
 - OpenAPI 3.0 specification (generated from Zod schemas)
