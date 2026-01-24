@@ -15,13 +15,23 @@ import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
   GoogleOAuthConfig,
-  generateOAuthState,
-  parseOAuthState,
-  buildAuthorizationUrl,
-  exchangeCodeForTokens,
-  fetchUserProfile,
+  generateOAuthState as generateGoogleOAuthState,
+  parseOAuthState as parseGoogleOAuthState,
+  buildAuthorizationUrl as buildGoogleAuthorizationUrl,
+  exchangeCodeForTokens as exchangeGoogleCodeForTokens,
+  fetchUserProfile as fetchGoogleUserProfile,
   validateGoogleProfile,
 } from '../services/google-oauth.js';
+import {
+  GitHubOAuthConfig,
+  generateOAuthState as generateGitHubOAuthState,
+  parseOAuthState as parseGitHubOAuthState,
+  buildAuthorizationUrl as buildGitHubAuthorizationUrl,
+  exchangeCodeForTokens as exchangeGitHubCodeForTokens,
+  fetchUserProfile as fetchGitHubUserProfile,
+  fetchUserPrimaryEmail as fetchGitHubUserPrimaryEmail,
+  validateGitHubProfile,
+} from '../services/github-oauth.js';
 
 type Bindings = {
   DB: D1Database;
@@ -31,6 +41,9 @@ type Bindings = {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  GITHUB_REDIRECT_URI?: string;
 };
 
 const authRouter = new Hono<{ Bindings: Bindings }>();
@@ -464,7 +477,7 @@ authRouter.get('/google', async (c) => {
     };
 
     // Generate state and PKCE code verifier
-    const { state, stateData } = generateOAuthState();
+    const { state, stateData } = generateGoogleOAuthState();
 
     // Store state in KV for validation during callback
     await c.env.KV.put(
@@ -474,7 +487,7 @@ authRouter.get('/google', async (c) => {
     );
 
     // Build authorization URL
-    const authUrl = await buildAuthorizationUrl(
+    const authUrl = await buildGoogleAuthorizationUrl(
       config,
       state,
       stateData.codeVerifier || ''
@@ -557,7 +570,7 @@ authRouter.get('/google/callback', async (c) => {
 
     // Parse stored state
     const storedState = JSON.parse(storedStateJson);
-    const parsedState = parseOAuthState(state);
+    const parsedState = parseGoogleOAuthState(state);
 
     if (!parsedState || !storedState.codeVerifier) {
       logger.warn('Invalid OAuth state data');
@@ -578,7 +591,7 @@ authRouter.get('/google/callback', async (c) => {
 
     // Exchange authorization code for tokens
     logger.info('Exchanging authorization code for tokens');
-    const tokenResponse = await exchangeCodeForTokens(
+    const tokenResponse = await exchangeGoogleCodeForTokens(
       config,
       code,
       storedState.codeVerifier
@@ -586,7 +599,7 @@ authRouter.get('/google/callback', async (c) => {
 
     // Fetch user profile from Google
     logger.info('Fetching Google user profile');
-    const googleProfile = await fetchUserProfile(tokenResponse.access_token);
+    const googleProfile = await fetchGoogleUserProfile(tokenResponse.access_token);
 
     // Validate Google profile
     const profileValidation = validateGoogleProfile(googleProfile);
@@ -713,6 +726,290 @@ authRouter.get('/google/callback', async (c) => {
     logger.error('Error during Google OAuth callback', error as Error);
     return c.json(
       response.error('Failed to complete Google sign-in', 'OAUTH_CALLBACK_FAILED'),
+      500
+    );
+  }
+});
+
+// =============================================================================
+// GitHub OAuth2 Routes
+// =============================================================================
+
+/**
+ * GET /api/auth/github
+ *
+ * Initiates GitHub OAuth2 sign-in flow
+ * Returns authorization URL for redirect
+ */
+authRouter.get('/github', async (c) => {
+  const logger = getLogger(c);
+
+  // Check if GitHub OAuth is configured
+  if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_REDIRECT_URI) {
+    logger.warn('GitHub OAuth not configured');
+    return c.json(
+      response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
+      501
+    );
+  }
+
+  try {
+    const config: GitHubOAuthConfig = {
+      clientId: c.env.GITHUB_CLIENT_ID,
+      clientSecret: c.env.GITHUB_CLIENT_SECRET || '',
+      redirectUri: c.env.GITHUB_REDIRECT_URI,
+    };
+
+    // Generate state for CSRF protection
+    const { state, stateData } = generateGitHubOAuthState();
+
+    // Store state in KV for validation during callback
+    await c.env.KV.put(
+      `${OAUTH_STATE_PREFIX}github:${state}`,
+      JSON.stringify(stateData),
+      { expirationTtl: OAUTH_STATE_TTL }
+    );
+
+    // Build authorization URL
+    const authUrl = buildGitHubAuthorizationUrl(config, state);
+
+    logger.info('GitHub OAuth authorization URL generated', { state: stateData.nonce });
+
+    return c.json(
+      response.success({
+        authorization_url: authUrl,
+        state: state,
+      })
+    );
+  } catch (error) {
+    logger.error('Error generating GitHub OAuth URL', error as Error);
+    return c.json(
+      response.error('Failed to initiate GitHub sign-in', 'OAUTH_INIT_FAILED'),
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/auth/github/callback
+ *
+ * Handles GitHub OAuth2 callback with authorization code
+ * Creates or links user account and returns tokens
+ */
+authRouter.get('/github/callback', async (c) => {
+  const logger = getLogger(c);
+
+  // Check if GitHub OAuth is configured
+  if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET || !c.env.GITHUB_REDIRECT_URI) {
+    logger.warn('GitHub OAuth not fully configured');
+    return c.json(
+      response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
+      501
+    );
+  }
+
+  // Parse query parameters
+  const query = c.req.query();
+
+  // Check for OAuth error response
+  if (query.error) {
+    logger.warn('GitHub OAuth error response', {
+      error: query.error,
+      description: query.error_description,
+    });
+    return c.json(
+      response.error(
+        query.error_description || 'OAuth authentication failed',
+        'OAUTH_ERROR'
+      ),
+      400
+    );
+  }
+
+  // Validate required parameters
+  if (!query.code || !query.state) {
+    logger.warn('Missing OAuth callback parameters');
+    return c.json(
+      response.error('Missing authorization code or state', 'INVALID_CALLBACK'),
+      400
+    );
+  }
+
+  const { code, state } = query;
+
+  try {
+    // Retrieve and validate state from KV
+    const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}github:${state}`);
+    if (!storedStateJson) {
+      logger.warn('OAuth state not found or expired', { state });
+      return c.json(
+        response.error('Invalid or expired state parameter', 'INVALID_STATE'),
+        400
+      );
+    }
+
+    // Parse stored state
+    const storedState = JSON.parse(storedStateJson);
+    const parsedState = parseGitHubOAuthState(state);
+
+    if (!parsedState) {
+      logger.warn('Invalid OAuth state data');
+      return c.json(
+        response.error('Invalid state data', 'INVALID_STATE'),
+        400
+      );
+    }
+
+    // Delete state from KV (one-time use)
+    await c.env.KV.delete(`${OAUTH_STATE_PREFIX}github:${state}`);
+
+    const config: GitHubOAuthConfig = {
+      clientId: c.env.GITHUB_CLIENT_ID,
+      clientSecret: c.env.GITHUB_CLIENT_SECRET,
+      redirectUri: c.env.GITHUB_REDIRECT_URI,
+    };
+
+    // Exchange authorization code for tokens
+    logger.info('Exchanging authorization code for tokens');
+    const tokenResponse = await exchangeGitHubCodeForTokens(config, code);
+
+    // Fetch user profile from GitHub
+    logger.info('Fetching GitHub user profile');
+    const githubProfile = await fetchGitHubUserProfile(tokenResponse.access_token);
+
+    // Fetch primary email if not in profile
+    let email = githubProfile.email;
+    if (!email) {
+      logger.info('Fetching GitHub user primary email');
+      email = await fetchGitHubUserPrimaryEmail(tokenResponse.access_token);
+    }
+
+    // Validate GitHub profile
+    const profileValidation = validateGitHubProfile(githubProfile, email);
+    if (!profileValidation.valid) {
+      logger.warn('Invalid GitHub profile', { error: profileValidation.error });
+      return c.json(
+        response.error(profileValidation.error || 'Invalid profile', 'INVALID_PROFILE'),
+        400
+      );
+    }
+
+    logger.info('GitHub profile retrieved', {
+      githubId: githubProfile.id,
+      login: githubProfile.login,
+      email: email,
+    });
+
+    // Check if user already exists by email
+    const existingUser = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active FROM users WHERE email = ?'
+    )
+      .bind(email)
+      .first();
+
+    let userId: string;
+    let displayName: string | null;
+    let createdAt: number;
+    let updatedAt: number;
+    let isNewUser = false;
+
+    if (existingUser) {
+      // User exists - check if it's already a GitHub account
+      if (existingUser.provider === 'github') {
+        // Same provider, just log them in
+        logger.info('Existing GitHub user logging in', { userId: existingUser.id });
+      } else {
+        // Different provider - link GitHub account to existing user
+        logger.info('Linking GitHub account to existing user', {
+          userId: existingUser.id,
+          existingProvider: existingUser.provider,
+        });
+
+        const now = Math.floor(Date.now() / 1000);
+        await c.env.DB.prepare(
+          `UPDATE users SET provider = 'github', provider_id = ?, updated_at = ? WHERE id = ?`
+        )
+          .bind(String(githubProfile.id), now, existingUser.id)
+          .run();
+      }
+
+      userId = existingUser.id as string;
+      displayName = existingUser.display_name as string | null;
+      createdAt = existingUser.created_at as number;
+      updatedAt = Math.floor(Date.now() / 1000);
+
+      // Check if account is active
+      if (!existingUser.is_active) {
+        logger.warn('GitHub login attempt for inactive account', { email });
+        return c.json(
+          response.error('Account is not active', 'ACCOUNT_INACTIVE'),
+          401
+        );
+      }
+    } else {
+      // Create new user
+      userId = crypto.randomUUID();
+      const now = Math.floor(Date.now() / 1000);
+      displayName = githubProfile.name || githubProfile.login || null;
+      createdAt = now;
+      updatedAt = now;
+      isNewUser = true;
+
+      await c.env.DB.prepare(
+        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active)
+         VALUES (?, ?, ?, 'github', ?, NULL, ?, ?, 1)`
+      )
+        .bind(userId, email, displayName, String(githubProfile.id), now, now)
+        .run();
+
+      logger.info('New GitHub user created', { userId, email });
+    }
+
+    // Get JWT secret from environment
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error('JWT_SECRET not configured');
+      return c.json(
+        response.error('Server configuration error', 'CONFIG_ERROR'),
+        500
+      );
+    }
+
+    // Generate access and refresh tokens
+    const tokens = await createTokenPair(userId, email!, jwtSecret);
+
+    // Store refresh token in KV
+    await storeRefreshToken(c.env.KV, userId, email!, tokens.refreshToken);
+
+    logger.info('GitHub OAuth login successful', { userId, isNewUser });
+
+    // Return success response with tokens
+    const statusCode = isNewUser ? 201 : 200;
+    const responseData = {
+      user: {
+        id: userId,
+        email: email,
+        display_name: displayName,
+        provider: 'github' as const,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        is_active: true,
+      },
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      expires_in: tokens.expiresIn,
+      token_type: 'Bearer',
+      is_new_user: isNewUser,
+    };
+
+    if (isNewUser) {
+      return c.json(response.created(responseData), statusCode);
+    }
+    return c.json(response.success(responseData), statusCode);
+  } catch (error) {
+    logger.error('Error during GitHub OAuth callback', error as Error);
+    return c.json(
+      response.error('Failed to complete GitHub sign-in', 'OAUTH_CALLBACK_FAILED'),
       500
     );
   }

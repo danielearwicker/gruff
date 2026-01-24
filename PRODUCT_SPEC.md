@@ -195,10 +195,25 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - GOOGLE_CLIENT_SECRET - OAuth client secret (stored as secret)
   - GOOGLE_REDIRECT_URI - Callback URL for OAuth flow
 
-#### 🟦 OAuth2 - GitHub Provider
+#### ✅ OAuth2 - GitHub Provider
 - GitHub OAuth2 sign-in flow
+  - GET /api/auth/github - Initiates OAuth flow, returns authorization URL with state parameter
+  - GET /api/auth/github/callback - Handles OAuth callback with authorization code
 - User provisioning from GitHub profile
+  - Creates new users with provider='github' and provider_id from GitHub
+  - Stores display name from GitHub profile (name or login)
+  - Fetches primary verified email via /user/emails endpoint when profile email is private
 - Link GitHub account to existing users
+  - If email already exists with different provider, links GitHub to existing account
+  - Updates provider and provider_id while preserving user data
+- Security features:
+  - State parameter stored in KV with 15-minute TTL for CSRF protection
+  - One-time use state (deleted after callback)
+  - Verified email requirement from GitHub
+- Configuration via environment variables:
+  - GITHUB_CLIENT_ID - OAuth client ID from GitHub Developer Settings
+  - GITHUB_CLIENT_SECRET - OAuth client secret (stored as secret)
+  - GITHUB_REDIRECT_URI - Callback URL for OAuth flow
 
 #### 🟦 OAuth2 - Additional Providers
 - Support for Microsoft, Apple, or other OIDC-compliant providers

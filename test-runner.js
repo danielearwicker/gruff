@@ -1166,6 +1166,110 @@ async function testGoogleOAuthCallbackExpiredState() {
 }
 
 // ============================================================================
+// GitHub OAuth2 Tests
+// ============================================================================
+
+async function testGitHubOAuthInitiate() {
+  logTest('GitHub OAuth - Initiate OAuth Flow');
+
+  // Request the GitHub OAuth authorization URL
+  const response = await makeRequest('GET', '/api/auth/github');
+
+  // In local development, GitHub OAuth is configured with placeholder values
+  // but the endpoint should still work and return an authorization URL
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.authorization_url, 'Should have authorization_url');
+  assert(response.data.data.state, 'Should have state parameter');
+
+  // Verify the authorization URL points to GitHub
+  const authUrl = response.data.data.authorization_url;
+  assert(authUrl.startsWith('https://github.com/login/oauth/authorize'), 'URL should be GitHub OAuth endpoint');
+  assert(authUrl.includes('client_id='), 'URL should include client_id');
+  assert(authUrl.includes('redirect_uri='), 'URL should include redirect_uri');
+  assert(authUrl.includes('scope='), 'URL should include scope');
+  assert(authUrl.includes('state='), 'URL should include state');
+}
+
+async function testGitHubOAuthCallbackMissingParams() {
+  logTest('GitHub OAuth - Callback Missing Parameters');
+
+  // Test callback without code or state
+  const response = await makeRequest('GET', '/api/auth/github/callback');
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+  assertEquals(response.data.code, 'INVALID_CALLBACK', 'Should have INVALID_CALLBACK error code');
+}
+
+async function testGitHubOAuthCallbackInvalidState() {
+  logTest('GitHub OAuth - Callback Invalid State');
+
+  // Test callback with invalid state
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=invalid_state`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'INVALID_STATE', 'Should have INVALID_STATE error code');
+}
+
+async function testGitHubOAuthCallbackErrorResponse() {
+  logTest('GitHub OAuth - Callback Error Response from GitHub');
+
+  // Test callback with error parameter (simulating GitHub returning an error)
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?error=access_denied&error_description=The%20user%20has%20denied%20your%20application%20access`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'OAUTH_ERROR', 'Should have OAUTH_ERROR error code');
+}
+
+async function testGitHubOAuthCallbackExpiredState() {
+  logTest('GitHub OAuth - Callback with Expired/Missing State in KV');
+
+  // First get a valid state from the initiate endpoint
+  const initResponse = await makeRequest('GET', '/api/auth/github');
+  assertEquals(initResponse.status, 200, 'Initiate should succeed');
+  const state = initResponse.data.data.state;
+
+  // Try to use a completely fabricated state that looks valid but isn't in KV
+  const fakeState = 'eyJub25jZSI6InRlc3Rub25jZSIsInRpbWVzdGFtcCI6MTcwMDAwMDAwMDAwMH0';
+
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=${fakeState}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'INVALID_STATE', 'Should have INVALID_STATE error code');
+}
+
+// ============================================================================
 // Type Management Tests
 // ============================================================================
 
@@ -8731,6 +8835,13 @@ async function runTests() {
     testGoogleOAuthCallbackInvalidState,
     testGoogleOAuthCallbackErrorResponse,
     testGoogleOAuthCallbackExpiredState,
+
+    // GitHub OAuth tests
+    testGitHubOAuthInitiate,
+    testGitHubOAuthCallbackMissingParams,
+    testGitHubOAuthCallbackInvalidState,
+    testGitHubOAuthCallbackErrorResponse,
+    testGitHubOAuthCallbackExpiredState,
 
     // User Management tests
     testListUsers,

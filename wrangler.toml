@@ -39,6 +39,13 @@ JWT_SECRET = "dev-secret-key-change-in-production-use-wrangler-secret-put"
 GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
 GOOGLE_REDIRECT_URI = "http://localhost:8787/api/auth/google/callback"
 
+# GitHub OAuth2 Configuration
+# For local development, these are placeholder values
+# For production, use: wrangler secret put GITHUB_CLIENT_SECRET
+# Get credentials from: https://github.com/settings/developers
+GITHUB_CLIENT_ID = "your-github-client-id"
+GITHUB_REDIRECT_URI = "http://localhost:8787/api/auth/github/callback"
+
 # =============================================================================
 # Environment: Preview (Pull Request deployments)
 # =============================================================================
@@ -56,6 +63,9 @@ ENVIRONMENT = "preview"
 # Google OAuth2 - Set GOOGLE_CLIENT_SECRET via: wrangler secret put GOOGLE_CLIENT_SECRET --env preview
 GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
 GOOGLE_REDIRECT_URI = "https://gruff-preview.your-domain.workers.dev/api/auth/google/callback"
+# GitHub OAuth2 - Set GITHUB_CLIENT_SECRET via: wrangler secret put GITHUB_CLIENT_SECRET --env preview
+GITHUB_CLIENT_ID = "your-github-client-id"
+GITHUB_REDIRECT_URI = "https://gruff-preview.your-domain.workers.dev/api/auth/github/callback"
 
 [[env.preview.d1_databases]]
 binding = "DB"
@@ -89,6 +99,9 @@ ENVIRONMENT = "production"
 # Google OAuth2 - Set GOOGLE_CLIENT_SECRET via: wrangler secret put GOOGLE_CLIENT_SECRET --env production
 GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
 GOOGLE_REDIRECT_URI = "https://gruff.your-domain.workers.dev/api/auth/google/callback"
+# GitHub OAuth2 - Set GITHUB_CLIENT_SECRET via: wrangler secret put GITHUB_CLIENT_SECRET --env production
+GITHUB_CLIENT_ID = "your-github-client-id"
+GITHUB_REDIRECT_URI = "https://gruff.your-domain.workers.dev/api/auth/github/callback"
 
 [[env.production.d1_databases]]
 binding = "DB"
