@@ -422,11 +422,23 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Partial success support with detailed per-item results
 - Client-provided IDs for reference correlation
 
-### 🟦 Export and Import
-- Export subgraph as JSON
-- Import graph structure from JSON
-- Maintain version history during import
-- Validation during import
+### ✅ Export and Import
+- Export subgraph as JSON via GET /api/export
+  - Filter by entity type IDs
+  - Filter by creation date range
+  - Option to include deleted entities/links
+  - Option to include version history
+  - Includes referenced types in export
+  - Returns format_version, exported_at timestamp, and metadata
+- Import graph structure from JSON via POST /api/export
+  - Support for creating new types as part of import
+  - Support for creating entities and links in a single request
+  - Client ID mapping for referential integrity
+  - Support type resolution by name or ID
+  - Support entity references by client_id or existing entity ID
+  - Partial success support with detailed per-item results
+  - Maximum 100 items per import request
+- Validation during import with clear error codes
 
 ### 🟦 Type Schema Validation
 - Optional JSON schema validation for entity/link properties

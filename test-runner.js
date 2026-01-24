@@ -6895,6 +6895,391 @@ async function testBulkOperationsMaxLimit() {
 }
 
 // ============================================================================
+// Export/Import Tests
+// ============================================================================
+
+async function testExportEntities() {
+  logTest('Export - Export Entities');
+
+  // Create an entity type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ExportTestEntityType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create some entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Export Entity 1', value: 100 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Export Entity 2', value: 200 }
+  });
+
+  // Export
+  const response = await makeRequest('GET', '/api/export');
+
+  assertEquals(response.status, 200, 'Should return 200 OK');
+  assert(response.data.data, 'Should return data');
+  assert(response.data.data.format_version === '1.0', 'Should have format_version 1.0');
+  assert(response.data.data.exported_at, 'Should have exported_at timestamp');
+  assert(Array.isArray(response.data.data.entities), 'Should have entities array');
+  assert(Array.isArray(response.data.data.links), 'Should have links array');
+  assert(Array.isArray(response.data.data.types), 'Should have types array');
+  assert(response.data.data.metadata, 'Should have metadata');
+  assert(response.data.data.metadata.entity_count >= 2, 'Should have at least 2 entities');
+}
+
+async function testExportWithTypeFilter() {
+  logTest('Export - Export with Type Filter');
+
+  // Get the type ID for filtering
+  const typeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Create another type and entity
+  const otherTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ExportTestOtherType',
+    category: 'entity'
+  });
+  const otherTypeId = otherTypeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: otherTypeId,
+    properties: { name: 'Other Type Entity' }
+  });
+
+  // Export only the first type
+  const response = await makeRequest('GET', `/api/export?type_ids=${typeId}`);
+
+  assertEquals(response.status, 200, 'Should return 200 OK');
+  const exportedEntities = response.data.data.entities;
+  for (const entity of exportedEntities) {
+    assertEquals(entity.type_id, typeId, 'All entities should be of the filtered type');
+  }
+}
+
+async function testExportWithLinks() {
+  logTest('Export - Export Entities with Links');
+
+  // Get entity type
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  // Create a link type
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ExportTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source Entity' }
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target Entity' }
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  // Create a link
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { relationship: 'connected' }
+  });
+
+  // Export (filtering by entity type to get our linked entities)
+  const response = await makeRequest('GET', `/api/export?type_ids=${entityTypeId}`);
+
+  assertEquals(response.status, 200, 'Should return 200 OK');
+  assert(response.data.data.links.length > 0, 'Should include links between exported entities');
+
+  // Verify the link references valid entity IDs from the export
+  const exportedEntityIds = new Set(response.data.data.entities.map(e => e.id));
+  for (const link of response.data.data.links) {
+    assert(exportedEntityIds.has(link.source_entity_id), 'Link source should be in exported entities');
+    assert(exportedEntityIds.has(link.target_entity_id), 'Link target should be in exported entities');
+  }
+}
+
+async function testExportIncludeDeleted() {
+  logTest('Export - Include Deleted Entities');
+
+  // Get entity type
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  // Create and delete an entity
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'To Be Deleted' }
+  });
+  const entityId = entityResponse.data.data.id;
+
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Export without deleted
+  const response1 = await makeRequest('GET', '/api/export');
+  const hasDeletedEntity1 = response1.data.data.entities.some(e => e.id === entityId);
+  assert(!hasDeletedEntity1, 'Should not include deleted entity by default');
+
+  // Export with deleted
+  const response2 = await makeRequest('GET', '/api/export?include_deleted=true');
+  const hasDeletedEntity2 = response2.data.data.entities.some(e => e.id === entityId && e.is_deleted === 1);
+  assert(hasDeletedEntity2, 'Should include deleted entity when include_deleted=true');
+}
+
+async function testImportEntities() {
+  logTest('Import - Import Entities');
+
+  // Get an existing entity type
+  const typeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Import entities
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [
+      { client_id: 'import-1', type_id: typeId, properties: { name: 'Imported Entity 1', imported: true } },
+      { client_id: 'import-2', type_id: typeId, properties: { name: 'Imported Entity 2', imported: true } },
+    ],
+    links: []
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assert(response.data.data, 'Should return data');
+  assert(response.data.data.entity_results, 'Should have entity_results');
+  assertEquals(response.data.data.entity_results.length, 2, 'Should have 2 entity results');
+  assertEquals(response.data.data.summary.entities.successful, 2, 'Should have 2 successful entities');
+  assertEquals(response.data.data.summary.entities.failed, 0, 'Should have 0 failed entities');
+
+  // Verify ID mapping
+  assert(response.data.data.id_mapping.entities['import-1'], 'Should have mapping for import-1');
+  assert(response.data.data.id_mapping.entities['import-2'], 'Should have mapping for import-2');
+}
+
+async function testImportEntitiesWithTypeName() {
+  logTest('Import - Import Entities Using Type Name');
+
+  // Import entities using type name instead of type_id
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [
+      { client_id: 'import-by-name-1', type_name: 'ExportTestEntityType', properties: { name: 'Imported By Name' } },
+    ],
+    links: []
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assertEquals(response.data.data.summary.entities.successful, 1, 'Should have 1 successful entity');
+  assert(response.data.data.id_mapping.entities['import-by-name-1'], 'Should have mapping for import-by-name-1');
+}
+
+async function testImportEntitiesInvalidType() {
+  logTest('Import - Import Entities with Invalid Type');
+
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [
+      { client_id: 'invalid-type', type_name: 'NonExistentType', properties: { name: 'Should Fail' } },
+    ],
+    links: []
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 (partial success supported)');
+  assertEquals(response.data.data.summary.entities.failed, 1, 'Should have 1 failed entity');
+  assertEquals(response.data.data.entity_results[0].code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error');
+}
+
+async function testImportEntitiesWithLinks() {
+  logTest('Import - Import Entities with Links');
+
+  // Get types
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  // Import entities and links using client_id references
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [
+      { client_id: 'entity-a', type_id: entityTypeId, properties: { name: 'Entity A' } },
+      { client_id: 'entity-b', type_id: entityTypeId, properties: { name: 'Entity B' } },
+    ],
+    links: [
+      {
+        client_id: 'link-ab',
+        type_id: linkTypeId,
+        source_entity_client_id: 'entity-a',
+        target_entity_client_id: 'entity-b',
+        properties: { weight: 10 }
+      },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assertEquals(response.data.data.summary.entities.successful, 2, 'Should have 2 successful entities');
+  assertEquals(response.data.data.summary.links.successful, 1, 'Should have 1 successful link');
+
+  // Verify the link was created correctly
+  const entityAId = response.data.data.id_mapping.entities['entity-a'];
+  const entityBId = response.data.data.id_mapping.entities['entity-b'];
+  const linkId = response.data.data.id_mapping.links['link-ab'];
+
+  // Fetch the link and verify
+  const linkResponse = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(linkResponse.data.data.source_entity_id, entityAId, 'Link source should match entity-a');
+  assertEquals(linkResponse.data.data.target_entity_id, entityBId, 'Link target should match entity-b');
+}
+
+async function testImportLinkInvalidSourceEntity() {
+  logTest('Import - Import Link with Invalid Source Entity');
+
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  // Try to create a link with a non-existent source
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [],
+    links: [
+      {
+        client_id: 'invalid-link',
+        type_id: linkTypeId,
+        source_entity_client_id: 'non-existent',
+        target_entity_id: '00000000-0000-0000-0000-000000000001',
+        properties: {}
+      },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 (partial success supported)');
+  assertEquals(response.data.data.summary.links.failed, 1, 'Should have 1 failed link');
+  assertEquals(response.data.data.link_results[0].code, 'SOURCE_ENTITY_NOT_FOUND', 'Should have SOURCE_ENTITY_NOT_FOUND error');
+}
+
+async function testImportWithNewTypes() {
+  logTest('Import - Import with New Types');
+
+  // Import with new types
+  const response = await makeRequest('POST', '/api/export', {
+    types: [
+      { name: 'ImportedNewEntityType', category: 'entity', description: 'A new entity type' },
+      { name: 'ImportedNewLinkType', category: 'link', description: 'A new link type' },
+    ],
+    entities: [
+      { client_id: 'new-type-entity', type_name: 'ImportedNewEntityType', properties: { created: 'via import' } },
+    ],
+    links: []
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assertEquals(response.data.data.summary.types.successful, 2, 'Should have 2 successful types');
+  assertEquals(response.data.data.summary.entities.successful, 1, 'Should have 1 successful entity');
+
+  // Verify the type was created
+  const typeResponse = await makeRequest('GET', '/api/types?name=ImportedNewEntityType');
+  assertEquals(typeResponse.data.data.length, 1, 'Should find the newly created type');
+  assertEquals(typeResponse.data.data[0].description, 'A new entity type', 'Type description should match');
+}
+
+async function testImportExistingType() {
+  logTest('Import - Import References Existing Type');
+
+  // Try to import a type that already exists
+  const response = await makeRequest('POST', '/api/export', {
+    types: [
+      { name: 'ExportTestEntityType', category: 'entity' },  // This already exists
+    ],
+    entities: [],
+    links: []
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assertEquals(response.data.data.summary.types.successful, 1, 'Should reuse existing type successfully');
+  assert(response.data.data.id_mapping.types['ExportTestEntityType'], 'Should have mapping for existing type name');
+}
+
+async function testImportEmptyRequest() {
+  logTest('Import - Empty Request Validation');
+
+  const response = await makeRequest('POST', '/api/export', {
+    entities: [],
+    links: []
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for empty import');
+}
+
+async function testExportImportRoundTrip() {
+  logTest('Export/Import - Round Trip');
+
+  // Get the entity type
+  const typeResponse = await makeRequest('GET', '/api/types?name=ExportTestEntityType');
+  const entityTypeId = typeResponse.data.data[0].id;
+
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=ExportTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  // Create test entities
+  const e1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'RoundTrip Entity 1', score: 85 }
+  });
+  const e1Id = e1Response.data.data.id;
+
+  const e2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'RoundTrip Entity 2', score: 90 }
+  });
+  const e2Id = e2Response.data.data.id;
+
+  // Create a link between them
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: e1Id,
+    target_entity_id: e2Id,
+    properties: { strength: 'strong' }
+  });
+
+  // Export
+  const exportResponse = await makeRequest('GET', `/api/export?type_ids=${entityTypeId}`);
+  assertEquals(exportResponse.status, 200, 'Export should succeed');
+
+  const exportData = exportResponse.data.data;
+  assert(exportData.entities.length >= 2, 'Export should contain at least 2 entities');
+
+  // Prepare import data from export (use client_ids for re-import)
+  const importEntities = exportData.entities
+    .filter(e => e.id === e1Id || e.id === e2Id)
+    .map((e, i) => ({
+      client_id: `reimport-${i}`,
+      type_id: e.type_id,
+      properties: e.properties
+    }));
+
+  // Re-import (creates new entities with same properties)
+  const importResponse = await makeRequest('POST', '/api/export', {
+    entities: importEntities,
+    links: []
+  });
+
+  assertEquals(importResponse.status, 201, 'Import should succeed');
+  assertEquals(importResponse.data.data.summary.entities.successful, importEntities.length, 'All entities should be imported');
+
+  // Verify the imported entities have the same properties
+  const importedEntityId = importResponse.data.data.id_mapping.entities['reimport-0'];
+  const verifyResponse = await makeRequest('GET', `/api/entities/${importedEntityId}`);
+  assertEquals(verifyResponse.status, 200, 'Should find imported entity');
+  assertEquals(verifyResponse.data.data.properties.name, importEntities[0].properties.name, 'Properties should match');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -7150,6 +7535,21 @@ async function runTests() {
     testBulkUpdateLinks,
     testBulkUpdateLinksNotFound,
     testBulkOperationsMaxLimit,
+
+    // Export/Import tests
+    testExportEntities,
+    testExportWithTypeFilter,
+    testExportWithLinks,
+    testExportIncludeDeleted,
+    testImportEntities,
+    testImportEntitiesWithTypeName,
+    testImportEntitiesInvalidType,
+    testImportEntitiesWithLinks,
+    testImportLinkInvalidSourceEntity,
+    testImportWithNewTypes,
+    testImportExistingType,
+    testImportEmptyRequest,
+    testExportImportRoundTrip,
   ];
 
   for (const test of tests) {
