@@ -547,13 +547,16 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Hot reload during development
 - Separate local and remote data by default
 
-### 🟦 CI/CD Pipeline
-- Automated testing on commits
-- Code quality checks (linting, type checking)
+### ✅ CI/CD Pipeline
+- Automated testing on commits (unit tests and integration tests on push/PR to main)
+- Code quality checks (ESLint linting, Prettier formatting, TypeScript type checking)
 - Wrangler deploy for automated deployments
 - Database migration automation via Wrangler D1 migrations
-- Preview deployments for pull requests
-- Environment-specific deployments (dev, staging, production)
+- Preview deployments for pull requests (deploys to preview environment with PR comment)
+- Environment-specific deployments (preview for PRs, production on main branch merge)
+- GitHub Actions workflow with concurrency management (cancels in-progress runs)
+- Coverage reports uploaded as artifacts
+- Production environment protection with GitHub Environments
 
 ## Security Considerations
 
