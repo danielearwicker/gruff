@@ -1057,6 +1057,115 @@ async function testGetCurrentUserExpiredToken() {
 }
 
 // ============================================================================
+// Google OAuth2 Tests
+// ============================================================================
+
+async function testGoogleOAuthInitiate() {
+  logTest('Google OAuth - Initiate OAuth Flow');
+
+  // Request the Google OAuth authorization URL
+  const response = await makeRequest('GET', '/api/auth/google');
+
+  // In local development, Google OAuth is configured with placeholder values
+  // but the endpoint should still work and return an authorization URL
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.authorization_url, 'Should have authorization_url');
+  assert(response.data.data.state, 'Should have state parameter');
+
+  // Verify the authorization URL points to Google
+  const authUrl = response.data.data.authorization_url;
+  assert(authUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth'), 'URL should be Google OAuth endpoint');
+  assert(authUrl.includes('client_id='), 'URL should include client_id');
+  assert(authUrl.includes('redirect_uri='), 'URL should include redirect_uri');
+  assert(authUrl.includes('response_type=code'), 'URL should include response_type=code');
+  assert(authUrl.includes('scope='), 'URL should include scope');
+  assert(authUrl.includes('state='), 'URL should include state');
+  assert(authUrl.includes('code_challenge='), 'URL should include PKCE code_challenge');
+  assert(authUrl.includes('code_challenge_method=S256'), 'URL should use S256 challenge method');
+}
+
+async function testGoogleOAuthCallbackMissingParams() {
+  logTest('Google OAuth - Callback Missing Parameters');
+
+  // Test callback without code or state
+  const response = await makeRequest('GET', '/api/auth/google/callback');
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+  assertEquals(response.data.code, 'INVALID_CALLBACK', 'Should have INVALID_CALLBACK error code');
+}
+
+async function testGoogleOAuthCallbackInvalidState() {
+  logTest('Google OAuth - Callback Invalid State');
+
+  // Test callback with invalid state
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=invalid_state`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'INVALID_STATE', 'Should have INVALID_STATE error code');
+}
+
+async function testGoogleOAuthCallbackErrorResponse() {
+  logTest('Google OAuth - Callback Error Response from Google');
+
+  // Test callback with error parameter (simulating Google returning an error)
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?error=access_denied&error_description=User%20denied%20access`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'OAUTH_ERROR', 'Should have OAUTH_ERROR error code');
+}
+
+async function testGoogleOAuthCallbackExpiredState() {
+  logTest('Google OAuth - Callback with Expired/Missing State in KV');
+
+  // First get a valid state from the initiate endpoint
+  const initResponse = await makeRequest('GET', '/api/auth/google');
+  assertEquals(initResponse.status, 200, 'Initiate should succeed');
+  const state = initResponse.data.data.state;
+
+  // Try to use the state twice (second time should fail as state is deleted after first use)
+  // But first we need to use it - which we can't fully test without a real Google callback
+  // Instead, test with a completely fabricated state that looks valid but isn't in KV
+  const fakeState = 'eyJub25jZSI6InRlc3Rub25jZSIsInRpbWVzdGFtcCI6MTcwMDAwMDAwMDAwMCwiY29kZVZlcmlmaWVyIjoidGVzdHZlcmlmaWVyIn0';
+
+  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=${fakeState}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(data.error, 'Should have error message');
+  assertEquals(data.code, 'INVALID_STATE', 'Should have INVALID_STATE error code');
+}
+
+// ============================================================================
 // Type Management Tests
 // ============================================================================
 
@@ -8615,6 +8724,13 @@ async function runTests() {
     testGetCurrentUserNoAuth,
     testGetCurrentUserInvalidToken,
     testGetCurrentUserExpiredToken,
+
+    // Google OAuth tests
+    testGoogleOAuthInitiate,
+    testGoogleOAuthCallbackMissingParams,
+    testGoogleOAuthCallbackInvalidState,
+    testGoogleOAuthCallbackErrorResponse,
+    testGoogleOAuthCallbackExpiredState,
 
     // User Management tests
     testListUsers,

@@ -1,24 +1,36 @@
 /**
  * Authentication routes
  *
- * Handles user registration, login, token refresh, and logout
+ * Handles user registration, login, token refresh, logout, and OAuth2 flows
  */
 
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema } from '../schemas/index.js';
+import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema, oauthCallbackQuerySchema } from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
 import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
 import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, rotateRefreshToken, invalidateSession } from '../utils/session.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import {
+  GoogleOAuthConfig,
+  generateOAuthState,
+  parseOAuthState,
+  buildAuthorizationUrl,
+  exchangeCodeForTokens,
+  fetchUserProfile,
+  validateGoogleProfile,
+} from '../services/google-oauth.js';
 
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
   JWT_SECRET: string;
   ENVIRONMENT: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
 };
 
 const authRouter = new Hono<{ Bindings: Bindings }>();
@@ -413,6 +425,294 @@ authRouter.get('/me', requireAuth(), async (c) => {
     logger.error('Error retrieving user profile', error as Error, { userId: user.user_id });
     return c.json(
       response.error('Failed to retrieve user profile', 'PROFILE_RETRIEVAL_FAILED'),
+      500
+    );
+  }
+});
+
+// =============================================================================
+// Google OAuth2 Routes
+// =============================================================================
+
+// KV key prefix for OAuth state storage
+const OAUTH_STATE_PREFIX = 'oauth_state:';
+const OAUTH_STATE_TTL = 15 * 60; // 15 minutes
+
+/**
+ * GET /api/auth/google
+ *
+ * Initiates Google OAuth2 sign-in flow
+ * Returns authorization URL for redirect
+ */
+authRouter.get('/google', async (c) => {
+  const logger = getLogger(c);
+
+  // Check if Google OAuth is configured
+  if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_REDIRECT_URI) {
+    logger.warn('Google OAuth not configured');
+    return c.json(
+      response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
+      501
+    );
+  }
+
+  try {
+    const config: GoogleOAuthConfig = {
+      clientId: c.env.GOOGLE_CLIENT_ID,
+      clientSecret: c.env.GOOGLE_CLIENT_SECRET || '',
+      redirectUri: c.env.GOOGLE_REDIRECT_URI,
+    };
+
+    // Generate state and PKCE code verifier
+    const { state, stateData } = generateOAuthState();
+
+    // Store state in KV for validation during callback
+    await c.env.KV.put(
+      `${OAUTH_STATE_PREFIX}${state}`,
+      JSON.stringify(stateData),
+      { expirationTtl: OAUTH_STATE_TTL }
+    );
+
+    // Build authorization URL
+    const authUrl = await buildAuthorizationUrl(
+      config,
+      state,
+      stateData.codeVerifier || ''
+    );
+
+    logger.info('Google OAuth authorization URL generated', { state: stateData.nonce });
+
+    return c.json(
+      response.success({
+        authorization_url: authUrl,
+        state: state,
+      })
+    );
+  } catch (error) {
+    logger.error('Error generating Google OAuth URL', error as Error);
+    return c.json(
+      response.error('Failed to initiate Google sign-in', 'OAUTH_INIT_FAILED'),
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/auth/google/callback
+ *
+ * Handles Google OAuth2 callback with authorization code
+ * Creates or links user account and returns tokens
+ */
+authRouter.get('/google/callback', async (c) => {
+  const logger = getLogger(c);
+
+  // Check if Google OAuth is configured
+  if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET || !c.env.GOOGLE_REDIRECT_URI) {
+    logger.warn('Google OAuth not fully configured');
+    return c.json(
+      response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
+      501
+    );
+  }
+
+  // Parse query parameters
+  const query = c.req.query();
+
+  // Check for OAuth error response
+  if (query.error) {
+    logger.warn('Google OAuth error response', {
+      error: query.error,
+      description: query.error_description,
+    });
+    return c.json(
+      response.error(
+        query.error_description || 'OAuth authentication failed',
+        'OAUTH_ERROR'
+      ),
+      400
+    );
+  }
+
+  // Validate required parameters
+  if (!query.code || !query.state) {
+    logger.warn('Missing OAuth callback parameters');
+    return c.json(
+      response.error('Missing authorization code or state', 'INVALID_CALLBACK'),
+      400
+    );
+  }
+
+  const { code, state } = query;
+
+  try {
+    // Retrieve and validate state from KV
+    const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${state}`);
+    if (!storedStateJson) {
+      logger.warn('OAuth state not found or expired', { state });
+      return c.json(
+        response.error('Invalid or expired state parameter', 'INVALID_STATE'),
+        400
+      );
+    }
+
+    // Parse stored state
+    const storedState = JSON.parse(storedStateJson);
+    const parsedState = parseOAuthState(state);
+
+    if (!parsedState || !storedState.codeVerifier) {
+      logger.warn('Invalid OAuth state data');
+      return c.json(
+        response.error('Invalid state data', 'INVALID_STATE'),
+        400
+      );
+    }
+
+    // Delete state from KV (one-time use)
+    await c.env.KV.delete(`${OAUTH_STATE_PREFIX}${state}`);
+
+    const config: GoogleOAuthConfig = {
+      clientId: c.env.GOOGLE_CLIENT_ID,
+      clientSecret: c.env.GOOGLE_CLIENT_SECRET,
+      redirectUri: c.env.GOOGLE_REDIRECT_URI,
+    };
+
+    // Exchange authorization code for tokens
+    logger.info('Exchanging authorization code for tokens');
+    const tokenResponse = await exchangeCodeForTokens(
+      config,
+      code,
+      storedState.codeVerifier
+    );
+
+    // Fetch user profile from Google
+    logger.info('Fetching Google user profile');
+    const googleProfile = await fetchUserProfile(tokenResponse.access_token);
+
+    // Validate Google profile
+    const profileValidation = validateGoogleProfile(googleProfile);
+    if (!profileValidation.valid) {
+      logger.warn('Invalid Google profile', { error: profileValidation.error });
+      return c.json(
+        response.error(profileValidation.error || 'Invalid profile', 'INVALID_PROFILE'),
+        400
+      );
+    }
+
+    logger.info('Google profile retrieved', {
+      googleId: googleProfile.id,
+      email: googleProfile.email,
+    });
+
+    // Check if user already exists by email
+    const existingUser = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active FROM users WHERE email = ?'
+    )
+      .bind(googleProfile.email)
+      .first();
+
+    let userId: string;
+    let displayName: string | null;
+    let createdAt: number;
+    let updatedAt: number;
+    let isNewUser = false;
+
+    if (existingUser) {
+      // User exists - check if it's already a Google account
+      if (existingUser.provider === 'google') {
+        // Same provider, just log them in
+        logger.info('Existing Google user logging in', { userId: existingUser.id });
+      } else {
+        // Different provider - link Google account to existing user
+        logger.info('Linking Google account to existing user', {
+          userId: existingUser.id,
+          existingProvider: existingUser.provider,
+        });
+
+        const now = Math.floor(Date.now() / 1000);
+        await c.env.DB.prepare(
+          `UPDATE users SET provider = 'google', provider_id = ?, updated_at = ? WHERE id = ?`
+        )
+          .bind(googleProfile.id, now, existingUser.id)
+          .run();
+      }
+
+      userId = existingUser.id as string;
+      displayName = existingUser.display_name as string | null;
+      createdAt = existingUser.created_at as number;
+      updatedAt = Math.floor(Date.now() / 1000);
+
+      // Check if account is active
+      if (!existingUser.is_active) {
+        logger.warn('Google login attempt for inactive account', { email: googleProfile.email });
+        return c.json(
+          response.error('Account is not active', 'ACCOUNT_INACTIVE'),
+          401
+        );
+      }
+    } else {
+      // Create new user
+      userId = crypto.randomUUID();
+      const now = Math.floor(Date.now() / 1000);
+      displayName = googleProfile.name || googleProfile.given_name || null;
+      createdAt = now;
+      updatedAt = now;
+      isNewUser = true;
+
+      await c.env.DB.prepare(
+        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active)
+         VALUES (?, ?, ?, 'google', ?, NULL, ?, ?, 1)`
+      )
+        .bind(userId, googleProfile.email, displayName, googleProfile.id, now, now)
+        .run();
+
+      logger.info('New Google user created', { userId, email: googleProfile.email });
+    }
+
+    // Get JWT secret from environment
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error('JWT_SECRET not configured');
+      return c.json(
+        response.error('Server configuration error', 'CONFIG_ERROR'),
+        500
+      );
+    }
+
+    // Generate access and refresh tokens
+    const tokens = await createTokenPair(userId, googleProfile.email, jwtSecret);
+
+    // Store refresh token in KV
+    await storeRefreshToken(c.env.KV, userId, googleProfile.email, tokens.refreshToken);
+
+    logger.info('Google OAuth login successful', { userId, isNewUser });
+
+    // Return success response with tokens
+    const statusCode = isNewUser ? 201 : 200;
+    const responseData = {
+      user: {
+        id: userId,
+        email: googleProfile.email,
+        display_name: displayName,
+        provider: 'google' as const,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        is_active: true,
+      },
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      expires_in: tokens.expiresIn,
+      token_type: 'Bearer',
+      is_new_user: isNewUser,
+    };
+
+    if (isNewUser) {
+      return c.json(response.created(responseData), statusCode);
+    }
+    return c.json(response.success(responseData), statusCode);
+  } catch (error) {
+    logger.error('Error during Google OAuth callback', error as Error);
+    return c.json(
+      response.error('Failed to complete Google sign-in', 'OAUTH_CALLBACK_FAILED'),
       500
     );
   }

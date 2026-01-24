@@ -175,10 +175,25 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 
 ### OAuth2 Integration
 
-#### 🟦 OAuth2 - Google Provider
+#### ✅ OAuth2 - Google Provider
 - Google OAuth2 sign-in flow
+  - GET /api/auth/google - Initiates OAuth flow, returns authorization URL with PKCE
+  - GET /api/auth/google/callback - Handles OAuth callback with authorization code
 - User provisioning from Google profile
+  - Creates new users with provider='google' and provider_id from Google
+  - Stores display name from Google profile
 - Link Google account to existing users
+  - If email already exists with different provider, links Google to existing account
+  - Updates provider and provider_id while preserving user data
+- Security features:
+  - PKCE (Proof Key for Code Exchange) with S256 challenge method
+  - State parameter stored in KV with 15-minute TTL for CSRF protection
+  - One-time use state (deleted after callback)
+  - Email verification check from Google profile
+- Configuration via environment variables:
+  - GOOGLE_CLIENT_ID - OAuth client ID from Google Cloud Console
+  - GOOGLE_CLIENT_SECRET - OAuth client secret (stored as secret)
+  - GOOGLE_REDIRECT_URI - Callback URL for OAuth flow
 
 #### 🟦 OAuth2 - GitHub Provider
 - GitHub OAuth2 sign-in flow

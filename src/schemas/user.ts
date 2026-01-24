@@ -68,6 +68,21 @@ export const jwtPayloadSchema = z.object({
   exp: z.number(),
 });
 
+// OAuth callback query parameters schema
+export const oauthCallbackQuerySchema = z.object({
+  code: z.string().min(1, 'Authorization code is required'),
+  state: z.string().min(1, 'State parameter is required'),
+  error: z.string().optional(),
+  error_description: z.string().optional(),
+});
+
+// OAuth state stored in KV
+export const oauthStateSchema = z.object({
+  nonce: z.string(),
+  timestamp: z.number(),
+  codeVerifier: z.string().optional(),
+});
+
 // Types derived from schemas
 export type User = z.infer<typeof userSchema>;
 export type CreateUser = z.infer<typeof createUserSchema>;
@@ -78,3 +93,5 @@ export type RefreshToken = z.infer<typeof refreshTokenSchema>;
 export type Logout = z.infer<typeof logoutSchema>;
 export type JwtPayload = z.infer<typeof jwtPayloadSchema>;
 export type Provider = z.infer<typeof providerSchema>;
+export type OAuthCallbackQuery = z.infer<typeof oauthCallbackQuerySchema>;
+export type OAuthState = z.infer<typeof oauthStateSchema>;

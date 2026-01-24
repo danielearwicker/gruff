@@ -40,6 +40,10 @@ type Bindings = {
   ENVIRONMENT: string;
   ALLOWED_ORIGINS?: string; // Comma-separated list of allowed origins for CORS (production)
   ANALYTICS?: AnalyticsEngineDataset; // Analytics Engine for error tracking
+  // Google OAuth2 configuration
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();

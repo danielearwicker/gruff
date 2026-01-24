@@ -32,6 +32,13 @@ JWT_SECRET = "dev-secret-key-change-in-production-use-wrangler-secret-put"
 # For production, set to your frontend domains: ALLOWED_ORIGINS = "https://app.example.com,https://admin.example.com"
 # ALLOWED_ORIGINS = "https://app.example.com"
 
+# Google OAuth2 Configuration
+# For local development, these are placeholder values
+# For production, use: wrangler secret put GOOGLE_CLIENT_SECRET
+# Get credentials from: https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "http://localhost:8787/api/auth/google/callback"
+
 # =============================================================================
 # Environment: Preview (Pull Request deployments)
 # =============================================================================
@@ -46,6 +53,9 @@ name = "gruff-preview"
 
 [env.preview.vars]
 ENVIRONMENT = "preview"
+# Google OAuth2 - Set GOOGLE_CLIENT_SECRET via: wrangler secret put GOOGLE_CLIENT_SECRET --env preview
+GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "https://gruff-preview.your-domain.workers.dev/api/auth/google/callback"
 
 [[env.preview.d1_databases]]
 binding = "DB"
@@ -76,6 +86,9 @@ name = "gruff"
 
 [env.production.vars]
 ENVIRONMENT = "production"
+# Google OAuth2 - Set GOOGLE_CLIENT_SECRET via: wrangler secret put GOOGLE_CLIENT_SECRET --env production
+GOOGLE_CLIENT_ID = "your-google-client-id.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "https://gruff.your-domain.workers.dev/api/auth/google/callback"
 
 [[env.production.d1_databases]]
 binding = "DB"
