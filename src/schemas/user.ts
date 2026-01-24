@@ -49,6 +49,11 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// Token refresh schema
+export const refreshTokenSchema = z.object({
+  refresh_token: z.string().min(1, 'Refresh token is required'),
+});
+
 // JWT payload schema
 export const jwtPayloadSchema = z.object({
   user_id: uuidSchema,
@@ -63,5 +68,6 @@ export type CreateUser = z.infer<typeof createUserSchema>;
 export type UpdateUser = z.infer<typeof updateUserSchema>;
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export type Login = z.infer<typeof loginSchema>;
+export type RefreshToken = z.infer<typeof refreshTokenSchema>;
 export type JwtPayload = z.infer<typeof jwtPayloadSchema>;
 export type Provider = z.infer<typeof providerSchema>;

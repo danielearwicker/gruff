@@ -143,11 +143,12 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Store refresh token in KV
 - Return tokens and user info
 
-#### 🟦 Token Refresh Endpoint
+#### ✅ Token Refresh Endpoint
 - POST /api/auth/refresh endpoint
-- Validate refresh token from KV
+- Validate refresh token JWT signature and expiration
+- Validate refresh token exists in KV store
 - Issue new access token
-- Optionally rotate refresh token
+- Return new access token with same refresh token
 
 #### 🟦 Logout Endpoint
 - POST /api/auth/logout endpoint

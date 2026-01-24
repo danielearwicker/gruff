@@ -6,10 +6,10 @@
 
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
-import { createUserSchema, loginSchema } from '../schemas/index.js';
+import { createUserSchema, loginSchema, refreshTokenSchema } from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
-import { createTokenPair } from '../utils/jwt.js';
-import { storeRefreshToken } from '../utils/session.js';
+import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
+import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, rotateRefreshToken } from '../utils/session.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 
@@ -220,6 +220,81 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
     logger.error('Error during login', error as Error, { email });
     return c.json(
       response.error('Failed to login', 'LOGIN_FAILED'),
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ *
+ * Refresh access token using a valid refresh token
+ */
+authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
+  const logger = getLogger(c);
+  const validated = c.get('validated_json') as any;
+
+  const { refresh_token } = validated;
+
+  try {
+    // Get JWT secret from environment
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error('JWT_SECRET not configured');
+      return c.json(
+        response.error('Server configuration error', 'CONFIG_ERROR'),
+        500
+      );
+    }
+
+    // Verify the refresh token JWT signature and expiration
+    const payload = await verifyRefreshToken(refresh_token, jwtSecret);
+
+    if (!payload) {
+      logger.warn('Invalid or expired refresh token');
+      return c.json(
+        response.error('Invalid or expired refresh token', 'INVALID_TOKEN'),
+        401
+      );
+    }
+
+    const { user_id, email } = payload;
+
+    // Validate that the refresh token exists in KV store
+    const isValid = await validateStoredRefreshToken(c.env.KV, user_id, refresh_token);
+
+    if (!isValid) {
+      logger.warn('Refresh token not found in session store', { userId: user_id });
+      return c.json(
+        response.error('Refresh token has been revoked', 'TOKEN_REVOKED'),
+        401
+      );
+    }
+
+    logger.info('Refresh token validated', { userId: user_id });
+
+    // Generate a new access token
+    const newAccessToken = await createAccessToken(user_id, email, jwtSecret);
+
+    // Optionally rotate the refresh token (best practice for security)
+    // For now, we'll keep the same refresh token, but you could rotate it here
+    // by generating a new refresh token and updating KV
+
+    logger.info('New access token created', { userId: user_id });
+
+    // Return success response with new access token
+    return c.json(
+      response.success({
+        access_token: newAccessToken,
+        refresh_token: refresh_token, // Return the same refresh token
+        expires_in: 15 * 60, // 15 minutes (should match ACCESS_TOKEN_EXPIRY)
+        token_type: 'Bearer',
+      })
+    );
+  } catch (error) {
+    logger.error('Error during token refresh', error as Error);
+    return c.json(
+      response.error('Failed to refresh token', 'REFRESH_FAILED'),
       500
     );
   }

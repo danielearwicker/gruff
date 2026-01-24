@@ -840,6 +840,73 @@ async function testUserLoginValidation() {
   assertEquals(response3.status, 400, 'Status code should be 400 for missing email');
 }
 
+async function testTokenRefresh() {
+  logTest('Authentication - Token Refresh');
+
+  // First, register a user to get tokens
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'refreshtest@example.com',
+    password: 'testPassword123',
+    display_name: 'Refresh Test User',
+  });
+
+  assertEquals(registerResponse.status, 201, 'Registration should succeed');
+  assert(registerResponse.data.data.access_token, 'Should have access token');
+  assert(registerResponse.data.data.refresh_token, 'Should have refresh token');
+
+  const refreshToken = registerResponse.data.data.refresh_token;
+  const originalAccessToken = registerResponse.data.data.access_token;
+
+  // Test token refresh endpoint
+  const refreshResponse = await makeRequest('POST', '/api/auth/refresh', {
+    refresh_token: refreshToken,
+  });
+
+  if (refreshResponse.status !== 200) {
+    logInfo(`Refresh response: ${JSON.stringify(refreshResponse.data, null, 2)}`);
+  }
+
+  assertEquals(refreshResponse.status, 200, 'Status code should be 200 OK');
+  assert(refreshResponse.ok, 'Response should be OK');
+  assertEquals(refreshResponse.data.success, true, 'Should have success: true');
+  assert(refreshResponse.data.data, 'Should have data object');
+  assert(refreshResponse.data.data.access_token, 'Should have new access token');
+  assert(refreshResponse.data.data.refresh_token, 'Should have refresh token');
+  assertEquals(refreshResponse.data.data.token_type, 'Bearer', 'Should have token_type: Bearer');
+  assert(refreshResponse.data.data.expires_in, 'Should have expires_in');
+
+  // Note: The access token might be the same if created within the same second
+  // This is fine - what matters is that we can successfully refresh
+  logInfo('Token refresh successful - new access token generated');
+}
+
+async function testTokenRefreshInvalidToken() {
+  logTest('Authentication - Token Refresh with Invalid Token');
+
+  // Test with a completely invalid token
+  const response = await makeRequest('POST', '/api/auth/refresh', {
+    refresh_token: 'invalid.token.here',
+  });
+
+  assertEquals(response.status, 401, 'Status code should be 401 Unauthorized');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testTokenRefreshMissingToken() {
+  logTest('Authentication - Token Refresh with Missing Token');
+
+  // Test with missing refresh token
+  const response = await makeRequest('POST', '/api/auth/refresh', {
+    // refresh_token missing
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+}
+
 // ============================================================================
 // Type Management Tests
 // ============================================================================
@@ -3959,6 +4026,9 @@ async function runTests() {
     testUserLoginInvalidEmail,
     testUserLoginInvalidPassword,
     testUserLoginValidation,
+    testTokenRefresh,
+    testTokenRefreshInvalidToken,
+    testTokenRefreshMissingToken,
 
     // Type Management tests
     testCreateTypeEntity,

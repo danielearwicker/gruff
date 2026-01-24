@@ -118,16 +118,16 @@ async function createToken(
 }
 
 /**
- * Verify and decode a JWT token
+ * Verify and decode a JWT token (internal function)
  *
  * @param token - JWT token to verify
  * @param secret - Secret key for verification
- * @returns Promise<JwtPayload | null> - Decoded payload if valid, null otherwise
+ * @returns Promise<JwtPayloadInternal | null> - Decoded payload if valid, null otherwise
  */
 async function verifyToken(
   token: string,
   secret: string
-): Promise<JwtPayload | null> {
+): Promise<JwtPayloadInternal | null> {
   try {
     // Split token into parts
     const parts = token.split('.');
@@ -165,9 +165,8 @@ async function verifyToken(
       return null;
     }
 
-    // Remove internal fields before returning
-    const { refresh, ...publicPayload } = payload;
-    return publicPayload as JwtPayload;
+    // Return the full internal payload (including refresh flag)
+    return payload;
   } catch (error) {
     return null;
   }
@@ -271,11 +270,17 @@ export async function verifyAccessToken(
   const payload = await verifyToken(token, secret);
 
   // Ensure this is not a refresh token
-  if (payload && (payload as JwtPayloadInternal).refresh) {
+  if (payload && payload.refresh) {
     return null;
   }
 
-  return payload;
+  // Remove the refresh flag before returning
+  if (payload) {
+    const { refresh, ...publicPayload } = payload;
+    return publicPayload as JwtPayload;
+  }
+
+  return null;
 }
 
 /**
@@ -289,7 +294,7 @@ export async function verifyRefreshToken(
   token: string,
   secret: string
 ): Promise<JwtPayload | null> {
-  const payload = (await verifyToken(token, secret)) as JwtPayloadInternal | null;
+  const payload = await verifyToken(token, secret);
 
   // Ensure this is a refresh token
   if (!payload || !payload.refresh) {
