@@ -8838,6 +8838,329 @@ async function testSanitizationImport() {
 }
 
 // ============================================================================
+// Caching Tests
+// ============================================================================
+
+async function testCachingTypeGet() {
+  logTest('Caching - Type GET returns consistent data on repeated requests');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheTestType',
+    category: 'entity',
+    description: 'Type for cache testing'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First request (cache miss)
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First request should succeed');
+  assertEquals(response1.data.data.name, 'CacheTestType', 'First request should return correct name');
+
+  // Second request (should be served from cache)
+  const response2 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response2.status, 200, 'Second request should succeed');
+  assertEquals(response2.data.data.id, typeId, 'Second request should return same type ID');
+  assertEquals(response2.data.data.name, 'CacheTestType', 'Second request should return same name');
+}
+
+async function testCachingTypeInvalidationOnUpdate() {
+  logTest('Caching - Type cache invalidates on update');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheInvalidateType',
+    category: 'entity',
+    description: 'Original description'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET to populate cache
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+  assertEquals(response1.data.data.description, 'Original description', 'Should have original description');
+
+  // Update the type
+  const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
+    description: 'Updated description'
+  });
+  assertEquals(updateResponse.status, 200, 'Update should succeed');
+
+  // GET again - should see updated data (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  assertEquals(response2.data.data.description, 'Updated description', 'Should see updated description after cache invalidation');
+}
+
+async function testCachingTypeInvalidationOnDelete() {
+  logTest('Caching - Type cache invalidates on delete');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheDeleteType',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET to populate cache
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+
+  // Delete the type
+  const deleteResponse = await makeRequest('DELETE', `/api/types/${typeId}`);
+  assertEquals(deleteResponse.status, 200, 'Delete should succeed');
+
+  // GET again - should return 404 (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response2.status, 404, 'GET after delete should return 404');
+}
+
+async function testCachingEntityGet() {
+  logTest('Caching - Entity GET returns consistent data on repeated requests');
+
+  // First ensure we have a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheEntityType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'CacheTestEntity' }
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // First request (cache miss)
+  const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response1.status, 200, 'First request should succeed');
+  assertEquals(response1.data.data.properties.name, 'CacheTestEntity', 'First request should return correct name');
+
+  // Second request (should be served from cache)
+  const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response2.status, 200, 'Second request should succeed');
+  assertEquals(response2.data.data.id, entityId, 'Second request should return same entity ID');
+  assertEquals(response2.data.data.properties.name, 'CacheTestEntity', 'Second request should return same name');
+}
+
+async function testCachingEntityInvalidationOnUpdate() {
+  logTest('Caching - Entity cache invalidates on update');
+
+  // First ensure we have a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheEntityUpdateType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original', status: 'active' }
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // First GET to populate cache
+  const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+  assertEquals(response1.data.data.properties.name, 'Original', 'Should have original name');
+
+  // Update the entity
+  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated', status: 'inactive' }
+  });
+  assertEquals(updateResponse.status, 200, 'Update should succeed');
+
+  // GET again - should see updated data (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  assertEquals(response2.data.data.properties.name, 'Updated', 'Should see updated name after cache invalidation');
+  assertEquals(response2.data.data.properties.status, 'inactive', 'Should see updated status');
+}
+
+async function testCachingEntityInvalidationOnDelete() {
+  logTest('Caching - Entity cache invalidates on delete');
+
+  // First ensure we have a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheEntityDeleteType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'ToBeDeleted' }
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // First GET to populate cache
+  const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+  assertEquals(response1.data.data.is_deleted, false, 'Should not be deleted initially');
+
+  // Delete the entity
+  const deleteResponse = await makeRequest('DELETE', `/api/entities/${entityId}`);
+  assertEquals(deleteResponse.status, 200, 'Delete should succeed');
+
+  // GET again - should show deleted status (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  assertEquals(response2.data.data.is_deleted, true, 'Should show as deleted after cache invalidation');
+}
+
+async function testCachingEntityInvalidationOnRestore() {
+  logTest('Caching - Entity cache invalidates on restore');
+
+  // First ensure we have a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheEntityRestoreType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create and delete an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'ToBeRestored' }
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // Delete it
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // GET to populate cache with deleted state
+  const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response1.status, 200, 'GET after delete should succeed');
+  assertEquals(response1.data.data.is_deleted, true, 'Should show as deleted');
+
+  // Restore the entity
+  const restoreResponse = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+  assertEquals(restoreResponse.status, 200, 'Restore should succeed');
+
+  // GET again - should show restored status (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  assertEquals(response2.data.data.is_deleted, false, 'Should show as not deleted after restore and cache invalidation');
+}
+
+async function testCachingLinkGet() {
+  logTest('Caching - Link GET returns consistent data on repeated requests');
+
+  // First ensure we have types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source' }
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target' }
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  // Create a link
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { relationship: 'connected' }
+  });
+
+  const linkId = createResponse.data.data.id;
+
+  // First request (cache miss)
+  const response1 = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(response1.status, 200, 'First request should succeed');
+  assertEquals(response1.data.data.properties.relationship, 'connected', 'First request should return correct property');
+
+  // Second request (should be served from cache)
+  const response2 = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(response2.status, 200, 'Second request should succeed');
+  assertEquals(response2.data.data.id, linkId, 'Second request should return same link ID');
+  assertEquals(response2.data.data.properties.relationship, 'connected', 'Second request should return same property');
+}
+
+async function testCachingLinkInvalidationOnUpdate() {
+  logTest('Caching - Link cache invalidates on update');
+
+  // First ensure we have types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheLinkUpdateEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'CacheLinkUpdateType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source' }
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target' }
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  // Create a link
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { weight: 1 }
+  });
+
+  const linkId = createResponse.data.data.id;
+
+  // First GET to populate cache
+  const response1 = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+  assertEquals(response1.data.data.properties.weight, 1, 'Should have original weight');
+
+  // Update the link
+  const updateResponse = await makeRequest('PUT', `/api/links/${linkId}`, {
+    properties: { weight: 5 }
+  });
+  assertEquals(updateResponse.status, 200, 'Update should succeed');
+
+  // GET again - should see updated data (cache should be invalidated)
+  const response2 = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  assertEquals(response2.data.data.properties.weight, 5, 'Should see updated weight after cache invalidation');
+}
+
+// ============================================================================
 // Generated Columns Tests
 // ============================================================================
 
@@ -9366,6 +9689,17 @@ async function runTests() {
     testSanitizationUpdate,
     testSanitizationSpecialCharactersPreserved,
     testSanitizationImport,
+
+    // Caching tests
+    testCachingTypeGet,
+    testCachingTypeInvalidationOnUpdate,
+    testCachingTypeInvalidationOnDelete,
+    testCachingEntityGet,
+    testCachingEntityInvalidationOnUpdate,
+    testCachingEntityInvalidationOnDelete,
+    testCachingEntityInvalidationOnRestore,
+    testCachingLinkGet,
+    testCachingLinkInvalidationOnUpdate,
 
     // Generated Columns tests
     testGeneratedColumnsEndpoint,

@@ -5,6 +5,13 @@ import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { logEntityOperation } from '../utils/audit.js';
+import {
+  getCache,
+  setCache,
+  getEntityCacheKey,
+  invalidateEntityCache,
+  CACHE_TTL,
+} from '../utils/cache.js';
 
 type Bindings = {
   DB: D1Database;
@@ -254,12 +261,23 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
 /**
  * GET /api/entities/:id
  * Get the latest version of a specific entity
+ *
+ * Caching: Individual entity lookups are cached for fast repeated access.
+ * Cache is invalidated when entity is updated, deleted, or restored.
  */
 entities.get('/:id', async (c) => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
 
   try {
+    // Try to get from cache first
+    const cacheKey = getEntityCacheKey(id);
+    const cached = await getCache<any>(kv, cacheKey);
+    if (cached) {
+      return c.json(cached);
+    }
+
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
@@ -274,7 +292,14 @@ entities.get('/:id', async (c) => {
       is_latest: entity.is_latest === 1,
     };
 
-    return c.json(response.success(result));
+    const responseData = response.success(result);
+
+    // Cache the successful response
+    setCache(kv, cacheKey, responseData, CACHE_TTL.ENTITY).catch(() => {
+      // Silently ignore cache write errors
+    });
+
+    return c.json(responseData);
   } catch (error) {
     getLogger(c).child({ module: 'entities' }).error('Error fetching entity', error instanceof Error ? error : undefined);
     throw error;
@@ -378,6 +403,17 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
       getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
     }
 
+    // Invalidate cache for both the original ID and the old version ID
+    // since both can be used to look up this entity
+    try {
+      await Promise.all([
+        invalidateEntityCache(c.env.KV, id),
+        invalidateEntityCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
+    }
+
     return c.json(response.updated(result));
   } catch (error) {
     getLogger(c).child({ module: 'entities' }).error('Error updating entity', error instanceof Error ? error : undefined);
@@ -442,6 +478,16 @@ entities.delete('/:id', async (c) => {
       });
     } catch (auditError) {
       getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
+
+    // Invalidate cache for both the original ID and the old version ID
+    try {
+      await Promise.all([
+        invalidateEntityCache(c.env.KV, id),
+        invalidateEntityCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.deleted());
@@ -520,6 +566,16 @@ entities.post('/:id/restore', async (c) => {
       });
     } catch (auditError) {
       getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
+
+    // Invalidate cache for both the original ID and the old version ID
+    try {
+      await Promise.all([
+        invalidateEntityCache(c.env.KV, id),
+        invalidateEntityCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.success(result, 'Entity restored successfully'));

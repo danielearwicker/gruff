@@ -660,12 +660,24 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Database monitoring via Workers Analytics
 - Note: D1 is single-threaded per database (~1,000 queries/sec for 1ms queries)
 
-### 🟦 Caching Strategy
+### ✅ Caching Strategy
 - Cloudflare KV for frequently accessed data
+  - Types: Cached for 5 minutes (300s) - rarely changes
+  - Types list: Cached for 5 minutes with version-based invalidation
+  - Entities: Cached for 1 minute (60s) - individual lookups
+  - Links: Cached for 1 minute (60s) - individual lookups
+  - Users: Cached for 2 minutes (120s)
 - Cache invalidation strategy with KV expiration
+  - Automatic invalidation on create, update, delete, and restore operations
+  - Version-based invalidation for list caches
+  - Cache-aside pattern with getOrSet helper
 - Configurable TTL per data type (KV supports per-key TTL)
-- Edge caching via Cache API for read-heavy endpoints
-- Consider Durable Objects for strongly consistent caching needs
+- Cache utility module (`src/utils/cache.ts`) with:
+  - Key generation functions for each data type
+  - setCache, getCache, deleteCache operations
+  - Cache invalidation functions per resource type
+  - CacheStatsTracker for monitoring
+- Integration with types, entities, and links routes
 
 ### 🟦 API Response Optimization
 - Automatic compression via Cloudflare's edge network

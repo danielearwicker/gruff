@@ -5,6 +5,13 @@ import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { logLinkOperation } from '../utils/audit.js';
+import {
+  getCache,
+  setCache,
+  getLinkCacheKey,
+  invalidateLinkCache,
+  CACHE_TTL,
+} from '../utils/cache.js';
 
 type Bindings = {
   DB: D1Database;
@@ -285,12 +292,23 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
 /**
  * GET /api/links/:id
  * Get the latest version of a specific link
+ *
+ * Caching: Individual link lookups are cached for fast repeated access.
+ * Cache is invalidated when link is updated, deleted, or restored.
  */
 links.get('/:id', async (c) => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
 
   try {
+    // Try to get from cache first
+    const cacheKey = getLinkCacheKey(id);
+    const cached = await getCache<any>(kv, cacheKey);
+    if (cached) {
+      return c.json(cached);
+    }
+
     const link = await findLatestVersion(db, id);
 
     if (!link) {
@@ -305,7 +323,14 @@ links.get('/:id', async (c) => {
       is_latest: link.is_latest === 1,
     };
 
-    return c.json(response.success(result));
+    const responseData = response.success(result);
+
+    // Cache the successful response
+    setCache(kv, cacheKey, responseData, CACHE_TTL.LINK).catch(() => {
+      // Silently ignore cache write errors
+    });
+
+    return c.json(responseData);
   } catch (error) {
     getLogger(c).child({ module: 'links' }).error('Error fetching link', error instanceof Error ? error : undefined);
     throw error;
@@ -411,6 +436,16 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
       getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
     }
 
+    // Invalidate cache for both the original ID and the old version ID
+    try {
+      await Promise.all([
+        invalidateLinkCache(c.env.KV, id),
+        invalidateLinkCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
+    }
+
     return c.json(response.updated(result));
   } catch (error) {
     getLogger(c).child({ module: 'links' }).error('Error updating link', error instanceof Error ? error : undefined);
@@ -479,6 +514,16 @@ links.delete('/:id', async (c) => {
       });
     } catch (auditError) {
       getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
+
+    // Invalidate cache for both the original ID and the old version ID
+    try {
+      await Promise.all([
+        invalidateLinkCache(c.env.KV, id),
+        invalidateLinkCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.deleted());
@@ -561,6 +606,16 @@ links.post('/:id/restore', async (c) => {
       });
     } catch (auditError) {
       getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
+
+    // Invalidate cache for both the original ID and the old version ID
+    try {
+      await Promise.all([
+        invalidateLinkCache(c.env.KV, id),
+        invalidateLinkCache(c.env.KV, currentVersion.id),
+      ]);
+    } catch (cacheError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.success(result, 'Link restored successfully'));

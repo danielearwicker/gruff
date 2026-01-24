@@ -3,6 +3,14 @@ import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createTypeSchema, updateTypeSchema, typeQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import {
+  getCache,
+  setCache,
+  getTypeCacheKey,
+  getVersionedTypesListCacheKey,
+  invalidateTypeCache,
+  CACHE_TTL,
+} from '../utils/cache.js';
 
 type Bindings = {
   DB: D1Database;
@@ -74,6 +82,15 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
       json_schema: created?.json_schema ? JSON.parse(created.json_schema as string) : null,
     };
 
+    // Invalidate types list cache after creating a new type
+    try {
+      await invalidateTypeCache(c.env.KV, id);
+    } catch (cacheError) {
+      // Log but don't fail the request if cache invalidation fails
+      const logger = getLogger(c).child({ module: 'types' });
+      logger.warn('Failed to invalidate cache', { error: cacheError });
+    }
+
     return c.json(response.created(result), 201);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
@@ -85,12 +102,30 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
 /**
  * GET /api/types
  * List all types with optional filtering and cursor-based pagination
+ *
+ * Caching: Results are cached when no cursor is provided (first page only)
+ * to avoid stale pagination issues while still benefiting from caching
+ * for the most common case.
  */
 types.get('/', validateQuery(typeQuerySchema), async (c) => {
   const query = c.get('validated_query') as any;
   const db = c.env.DB;
+  const kv = c.env.KV;
 
   try {
+    // Only cache first page (no cursor) to avoid stale pagination issues
+    const canCache = !query.cursor;
+    let cacheKey: string | null = null;
+
+    if (canCache) {
+      // Get versioned cache key (includes list version for invalidation)
+      cacheKey = await getVersionedTypesListCacheKey(kv, query.category, query.name);
+      const cached = await getCache<any>(kv, cacheKey);
+      if (cached) {
+        return c.json(cached);
+      }
+    }
+
     let sql = 'SELECT * FROM types WHERE 1=1';
     const bindings: any[] = [];
 
@@ -148,7 +183,16 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
       nextCursor = `${lastItem.created_at}:${lastItem.id}`;
     }
 
-    return c.json(response.cursorPaginated(typesData, nextCursor, hasMore));
+    const responseData = response.cursorPaginated(typesData, nextCursor, hasMore);
+
+    // Cache the response (first page only)
+    if (canCache && cacheKey) {
+      setCache(kv, cacheKey, responseData, CACHE_TTL.TYPES_LIST).catch(() => {
+        // Silently ignore cache write errors
+      });
+    }
+
+    return c.json(responseData);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error listing types', error instanceof Error ? error : undefined);
@@ -159,12 +203,22 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
 /**
  * GET /api/types/:id
  * Get a specific type by ID
+ *
+ * Caching: Individual type lookups are cached for fast repeated access.
  */
 types.get('/:id', async (c) => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
 
   try {
+    // Try to get from cache first
+    const cacheKey = getTypeCacheKey(id);
+    const cached = await getCache<any>(kv, cacheKey);
+    if (cached) {
+      return c.json(cached);
+    }
+
     const type = await db.prepare('SELECT * FROM types WHERE id = ?')
       .bind(id)
       .first();
@@ -179,7 +233,14 @@ types.get('/:id', async (c) => {
       json_schema: type.json_schema ? JSON.parse(type.json_schema as string) : null,
     };
 
-    return c.json(response.success(result));
+    const responseData = response.success(result);
+
+    // Cache the successful response
+    setCache(kv, cacheKey, responseData, CACHE_TTL.TYPES).catch(() => {
+      // Silently ignore cache write errors
+    });
+
+    return c.json(responseData);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error fetching type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
@@ -260,6 +321,14 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
       json_schema: updated?.json_schema ? JSON.parse(updated.json_schema as string) : null,
     };
 
+    // Invalidate cache after update
+    try {
+      await invalidateTypeCache(c.env.KV, id);
+    } catch (cacheError) {
+      const logger = getLogger(c).child({ module: 'types' });
+      logger.warn('Failed to invalidate cache', { error: cacheError });
+    }
+
     return c.json(response.updated(result));
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
@@ -314,6 +383,14 @@ types.delete('/:id', async (c) => {
     await db.prepare('DELETE FROM types WHERE id = ?')
       .bind(id)
       .run();
+
+    // Invalidate cache after delete
+    try {
+      await invalidateTypeCache(c.env.KV, id);
+    } catch (cacheError) {
+      const logger = getLogger(c).child({ module: 'types' });
+      logger.warn('Failed to invalidate cache', { error: cacheError });
+    }
 
     return c.json(response.deleted());
   } catch (error) {
