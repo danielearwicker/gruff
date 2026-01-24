@@ -17,6 +17,7 @@ import searchRouter from './routes/search.js';
 import usersRouter from './routes/users.js';
 import bulkRouter from './routes/bulk.js';
 import exportRouter from './routes/export.js';
+import auditRouter from './routes/audit.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -245,6 +246,9 @@ app.route('/api/bulk', bulkRouter);
 
 // Mount export/import routes
 app.route('/api/export', exportRouter);
+
+// Mount audit log routes
+app.route('/api/audit', auditRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

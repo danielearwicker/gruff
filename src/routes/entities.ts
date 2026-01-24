@@ -4,6 +4,7 @@ import { createEntitySchema, updateEntitySchema, entityQuerySchema } from '../sc
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
+import { logEntityOperation } from '../utils/audit.js';
 
 type Bindings = {
   DB: D1Database;
@@ -119,6 +120,17 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
       is_deleted: created?.is_deleted === 1,
       is_latest: created?.is_latest === 1,
     };
+
+    // Log the create operation
+    try {
+      await logEntityOperation(db, c, 'create', id, systemUserId, {
+        type_id: data.type_id,
+        properties: data.properties,
+      });
+    } catch (auditError) {
+      // Log but don't fail the request if audit logging fails
+      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.created(result), 201);
   } catch (error) {
@@ -354,6 +366,18 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
       is_latest: updated?.is_latest === 1,
     };
 
+    // Log the update operation
+    try {
+      await logEntityOperation(db, c, 'update', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        old_properties: currentVersion.properties ? JSON.parse(currentVersion.properties as string) : {},
+        new_properties: data.properties,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
+
     return c.json(response.updated(result));
   } catch (error) {
     getLogger(c).child({ module: 'entities' }).error('Error updating entity', error instanceof Error ? error : undefined);
@@ -408,6 +432,17 @@ entities.delete('/:id', async (c) => {
       now,
       systemUserId
     ).run();
+
+    // Log the delete operation
+    try {
+      await logEntityOperation(db, c, 'delete', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        type_id: currentVersion.type_id,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.deleted());
   } catch (error) {
@@ -475,6 +510,17 @@ entities.post('/:id/restore', async (c) => {
       is_deleted: restored?.is_deleted === 1,
       is_latest: restored?.is_latest === 1,
     };
+
+    // Log the restore operation
+    try {
+      await logEntityOperation(db, c, 'restore', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        type_id: currentVersion.type_id,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.success(result, 'Entity restored successfully'));
   } catch (error) {

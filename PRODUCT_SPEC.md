@@ -458,9 +458,12 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - Nested object validation
   - allOf, anyOf, oneOf, not logical operators
 
-### 🟦 Audit Logging
-- Comprehensive audit log of all operations
-- Query audit logs by user, entity, date range
+### ✅ Audit Logging
+- Comprehensive audit log of all operations (create, update, delete, restore for entities and links)
+- Query audit logs by user, entity, date range via GET /api/audit endpoint
+- Get resource-specific audit history via GET /api/audit/resource/:resource_type/:resource_id
+- Get user-specific actions via GET /api/audit/user/:user_id
+- Includes operation details, timestamps, user ID, IP address, and user agent
 - Compliance and security tracking
 
 ### ✅ Rate Limiting

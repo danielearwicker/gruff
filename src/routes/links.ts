@@ -4,6 +4,7 @@ import { createLinkSchema, updateLinkSchema, linkQuerySchema } from '../schemas/
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
+import { logLinkOperation } from '../utils/audit.js';
 
 type Bindings = {
   DB: D1Database;
@@ -139,6 +140,18 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
       is_deleted: created?.is_deleted === 1,
       is_latest: created?.is_latest === 1,
     };
+
+    // Log the create operation
+    try {
+      await logLinkOperation(db, c, 'create', id, systemUserId, {
+        type_id: data.type_id,
+        source_entity_id: data.source_entity_id,
+        target_entity_id: data.target_entity_id,
+        properties: data.properties,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.created(result), 201);
   } catch (error) {
@@ -386,6 +399,18 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
       is_latest: updated?.is_latest === 1,
     };
 
+    // Log the update operation
+    try {
+      await logLinkOperation(db, c, 'update', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        old_properties: currentVersion.properties ? JSON.parse(currentVersion.properties as string) : {},
+        new_properties: data.properties,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
+
     return c.json(response.updated(result));
   } catch (error) {
     getLogger(c).child({ module: 'links' }).error('Error updating link', error instanceof Error ? error : undefined);
@@ -442,6 +467,19 @@ links.delete('/:id', async (c) => {
       now,
       systemUserId
     ).run();
+
+    // Log the delete operation
+    try {
+      await logLinkOperation(db, c, 'delete', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        type_id: currentVersion.type_id,
+        source_entity_id: currentVersion.source_entity_id,
+        target_entity_id: currentVersion.target_entity_id,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.deleted());
   } catch (error) {
@@ -511,6 +549,19 @@ links.post('/:id/restore', async (c) => {
       is_deleted: restored?.is_deleted === 1,
       is_latest: restored?.is_latest === 1,
     };
+
+    // Log the restore operation
+    try {
+      await logLinkOperation(db, c, 'restore', newId, systemUserId, {
+        previous_version_id: currentVersion.id,
+        type_id: currentVersion.type_id,
+        source_entity_id: currentVersion.source_entity_id,
+        target_entity_id: currentVersion.target_entity_id,
+        version: newVersion,
+      });
+    } catch (auditError) {
+      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+    }
 
     return c.json(response.success(result, 'Link restored successfully'));
   } catch (error) {

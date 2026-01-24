@@ -7700,6 +7700,259 @@ async function testRateLimitPerCategory() {
 }
 
 // ============================================================================
+// Audit Logging Tests
+// ============================================================================
+
+async function testAuditLogQueryEndpoint() {
+  logTest('Audit Logging - Query Audit Logs Endpoint');
+
+  // Register a user to get auth token
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-test@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Query audit logs
+  const response = await fetch(`${DEV_SERVER_URL}/api/audit`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(data.success, 'Should have success: true');
+  assert(Array.isArray(data.data), 'Data should be an array');
+  assert(data.metadata !== undefined, 'Should have metadata');
+}
+
+async function testAuditLogQueryWithFilters() {
+  logTest('Audit Logging - Query Audit Logs with Filters');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-filter-test@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Query with filters
+  const response = await fetch(`${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=create&limit=10`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(data.success, 'Should have success: true');
+  assert(Array.isArray(data.data), 'Data should be an array');
+}
+
+async function testAuditLogResourceHistory() {
+  logTest('Audit Logging - Get Resource Audit History');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-history@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Create a type first
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'AuditHistoryTestType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Audit Test Entity' }
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Get audit history for the entity
+  const response = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(data.success, 'Should have success: true');
+  assert(data.data.audit_history, 'Should have audit_history array');
+  assert(Array.isArray(data.data.audit_history), 'audit_history should be an array');
+  assert(data.data.audit_history.length >= 1, 'Should have at least 1 audit entry for create');
+  assertEquals(data.data.resource_type, 'entity', 'Should match resource type');
+  assertEquals(data.data.resource_id, entityId, 'Should match resource ID');
+}
+
+async function testAuditLogUserActions() {
+  logTest('Audit Logging - Get User Audit Logs');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-user-actions@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+  const userId = registerResponse.data.data.user.id;
+
+  // Get audit logs for the user
+  const response = await fetch(`${DEV_SERVER_URL}/api/audit/user/${userId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(data.success, 'Should have success: true');
+  assert(data.data.audit_logs, 'Should have audit_logs array');
+  assert(Array.isArray(data.data.audit_logs), 'audit_logs should be an array');
+  assertEquals(data.data.user_id, userId, 'Should match user ID');
+}
+
+async function testAuditLogInvalidResourceType() {
+  logTest('Audit Logging - Invalid Resource Type');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-invalid-type@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Query with invalid resource type
+  const response = await fetch(`${DEV_SERVER_URL}/api/audit/resource/invalid/test-id`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+}
+
+async function testAuditLogEntityCreateLogged() {
+  logTest('Audit Logging - Entity Create is Logged');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-create-log@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Create a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'AuditCreateLogType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Logged Entity' }
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Check that the create was logged
+  const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const auditData = await auditResponse.json();
+
+  assert(auditData.data.audit_history.length >= 1, 'Should have at least 1 audit entry');
+  const createEntry = auditData.data.audit_history.find(e => e.operation === 'create');
+  assert(createEntry, 'Should have a create operation logged');
+  assertEquals(createEntry.resource_type, 'entity', 'Should log resource_type as entity');
+  assertEquals(createEntry.resource_id, entityId, 'Should log correct resource_id');
+}
+
+async function testAuditLogEntityUpdateLogged() {
+  logTest('Audit Logging - Entity Update is Logged');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-update-log@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Create a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'AuditUpdateLogType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original Name' }
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Update the entity
+  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Name' }
+  });
+  const newEntityId = updateResponse.data.data.id;
+
+  // Check that the update was logged
+  const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${newEntityId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const auditData = await auditResponse.json();
+
+  const updateEntry = auditData.data.audit_history.find(e => e.operation === 'update');
+  assert(updateEntry, 'Should have an update operation logged');
+  assertEquals(updateEntry.resource_type, 'entity', 'Should log resource_type as entity');
+  assert(updateEntry.details, 'Update entry should have details');
+}
+
+async function testAuditLogEntityDeleteLogged() {
+  logTest('Audit Logging - Entity Delete is Logged');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'audit-delete-log@example.com',
+    password: 'testPassword123',
+  });
+  const token = registerResponse.data.data.access_token;
+
+  // Create a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'AuditDeleteLogType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'To Be Deleted' }
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Delete the entity
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Check audit logs for delete operation
+  const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=delete&limit=10`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const auditData = await auditResponse.json();
+
+  const deleteEntries = auditData.data.filter(e => e.operation === 'delete' && e.resource_type === 'entity');
+  assert(deleteEntries.length >= 1, 'Should have at least 1 delete operation logged');
+}
+
+async function testAuditLogRequiresAuth() {
+  logTest('Audit Logging - Endpoints Require Authentication');
+
+  // Try to query audit logs without auth
+  const response = await makeRequest('GET', '/api/audit');
+
+  assertEquals(response.status, 401, 'Should return 401 Unauthorized');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -7987,6 +8240,17 @@ async function runTests() {
     testRateLimitHeaders,
     testRateLimitExceeded,
     testRateLimitPerCategory,
+
+    // Audit Logging tests
+    testAuditLogQueryEndpoint,
+    testAuditLogQueryWithFilters,
+    testAuditLogResourceHistory,
+    testAuditLogUserActions,
+    testAuditLogInvalidResourceType,
+    testAuditLogEntityCreateLogged,
+    testAuditLogEntityUpdateLogged,
+    testAuditLogEntityDeleteLogged,
+    testAuditLogRequiresAuth,
   ];
 
   for (const test of tests) {
