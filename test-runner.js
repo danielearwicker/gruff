@@ -2988,6 +2988,323 @@ async function testGetInboundLinksExcludesDeleted() {
   assertEquals(responseWithDeleted.data.data.length, 2, 'Should have 2 links when including deleted');
 }
 
+async function testGetNeighbors() {
+  logTest('Graph Navigation - Get All Neighbors (Inbound and Outbound)');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NeighborsTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'NeighborsTestLinkType1',
+    category: 'link',
+    description: 'First link type for neighbors tests'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'NeighborsTestLinkType2',
+    category: 'link',
+    description: 'Second link type for neighbors tests'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create five entities: center, two inbound sources, and two outbound targets
+  const centerEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Center Entity' }
+  });
+  const centerEntityId = centerEntity.data.data.id;
+
+  const inboundSource1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Inbound Source 1' }
+  });
+  const inboundSource1Id = inboundSource1.data.data.id;
+
+  const inboundSource2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Inbound Source 2' }
+  });
+  const inboundSource2Id = inboundSource2.data.data.id;
+
+  const outboundTarget1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Outbound Target 1' }
+  });
+  const outboundTarget1Id = outboundTarget1.data.data.id;
+
+  const outboundTarget2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Outbound Target 2' }
+  });
+  const outboundTarget2Id = outboundTarget2.data.data.id;
+
+  // Create inbound links (pointing TO center entity)
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: inboundSource1Id,
+    target_entity_id: centerEntityId,
+    properties: { relationship: 'follows' }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: inboundSource2Id,
+    target_entity_id: centerEntityId,
+    properties: { relationship: 'subscribes' }
+  });
+
+  // Create outbound links (FROM center entity)
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: centerEntityId,
+    target_entity_id: outboundTarget1Id,
+    properties: { relationship: 'likes' }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: centerEntityId,
+    target_entity_id: outboundTarget2Id,
+    properties: { relationship: 'mentions' }
+  });
+
+  // Test: Get all neighbors
+  const response = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data array');
+  assertEquals(response.data.data.length, 4, 'Should have 4 neighbors (2 inbound + 2 outbound)');
+
+  // Verify inbound neighbors
+  const inbound1 = response.data.data.find(n => n.id === inboundSource1Id);
+  assert(inbound1, 'Should include first inbound source');
+  assertEquals(inbound1.properties.name, 'Inbound Source 1', 'Should have correct properties');
+  assert(inbound1.connections, 'Should have connections array');
+  assertEquals(inbound1.connections.length, 1, 'Should have 1 connection');
+  assertEquals(inbound1.connections[0].direction, 'inbound', 'Should be inbound connection');
+  assertEquals(inbound1.connections[0].link_type_id, linkType1Id, 'Should have correct link type');
+
+  const inbound2 = response.data.data.find(n => n.id === inboundSource2Id);
+  assert(inbound2, 'Should include second inbound source');
+  assertEquals(inbound2.properties.name, 'Inbound Source 2', 'Should have correct properties');
+
+  // Verify outbound neighbors
+  const outbound1 = response.data.data.find(n => n.id === outboundTarget1Id);
+  assert(outbound1, 'Should include first outbound target');
+  assertEquals(outbound1.properties.name, 'Outbound Target 1', 'Should have correct properties');
+  assert(outbound1.connections, 'Should have connections array');
+  assertEquals(outbound1.connections.length, 1, 'Should have 1 connection');
+  assertEquals(outbound1.connections[0].direction, 'outbound', 'Should be outbound connection');
+
+  const outbound2 = response.data.data.find(n => n.id === outboundTarget2Id);
+  assert(outbound2, 'Should include second outbound target');
+  assertEquals(outbound2.properties.name, 'Outbound Target 2', 'Should have correct properties');
+}
+
+async function testGetNeighborsFilterByDirection() {
+  logTest('Graph Navigation - Get Neighbors Filtered by Direction');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DirectionFilterTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DirectionFilterTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const centerEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Center' }
+  });
+  const centerEntityId = centerEntity.data.data.id;
+
+  const inboundSource = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Inbound Source' }
+  });
+  const inboundSourceId = inboundSource.data.data.id;
+
+  const outboundTarget = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Outbound Target' }
+  });
+  const outboundTargetId = outboundTarget.data.data.id;
+
+  // Create links
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: inboundSourceId,
+    target_entity_id: centerEntityId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: centerEntityId,
+    target_entity_id: outboundTargetId,
+    properties: {}
+  });
+
+  // Test: Get only inbound neighbors
+  const inboundResponse = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?direction=inbound`);
+  assertEquals(inboundResponse.status, 200, 'Status code should be 200');
+  assertEquals(inboundResponse.data.data.length, 1, 'Should have 1 inbound neighbor');
+  assertEquals(inboundResponse.data.data[0].id, inboundSourceId, 'Should be inbound source');
+
+  // Test: Get only outbound neighbors
+  const outboundResponse = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?direction=outbound`);
+  assertEquals(outboundResponse.status, 200, 'Status code should be 200');
+  assertEquals(outboundResponse.data.data.length, 1, 'Should have 1 outbound neighbor');
+  assertEquals(outboundResponse.data.data[0].id, outboundTargetId, 'Should be outbound target');
+}
+
+async function testGetNeighborsFilterByLinkType() {
+  logTest('Graph Navigation - Get Neighbors Filtered by Link Type');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkTypeFilterTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'LinkTypeFilterTestLinkType1',
+    category: 'link'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'LinkTypeFilterTestLinkType2',
+    category: 'link'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create entities
+  const centerEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Center' }
+  });
+  const centerEntityId = centerEntity.data.data.id;
+
+  const neighbor1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Neighbor 1' }
+  });
+  const neighbor1Id = neighbor1.data.data.id;
+
+  const neighbor2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Neighbor 2' }
+  });
+  const neighbor2Id = neighbor2.data.data.id;
+
+  // Create links of different types
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: centerEntityId,
+    target_entity_id: neighbor1Id,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: centerEntityId,
+    target_entity_id: neighbor2Id,
+    properties: {}
+  });
+
+  // Test: Get neighbors filtered by link type
+  const response = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?type_id=${linkType1Id}`);
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 1, 'Should have 1 neighbor with specified link type');
+  assertEquals(response.data.data[0].id, neighbor1Id, 'Should be the correct neighbor');
+  assertEquals(response.data.data[0].connections[0].link_type_id, linkType1Id, 'Should have correct link type');
+}
+
+async function testGetNeighborsEntityNotFound() {
+  logTest('Graph Navigation - Get Neighbors for Non-existent Entity Returns 404');
+
+  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/neighbors');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testGetNeighborsBidirectionalConnection() {
+  logTest('Graph Navigation - Get Neighbors Handles Bidirectional Connections');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BidirectionalTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BidirectionalTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Create bidirectional links
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { direction: 'forward' }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity2Id,
+    target_entity_id: entity1Id,
+    properties: { direction: 'backward' }
+  });
+
+  // Test: Get neighbors of entity 1
+  const response = await makeRequest('GET', `/api/entities/${entity1Id}/neighbors`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 1, 'Should have 1 unique neighbor despite 2 connections');
+
+  const neighbor = response.data.data[0];
+  assertEquals(neighbor.id, entity2Id, 'Neighbor should be entity 2');
+  assertEquals(neighbor.connections.length, 2, 'Should have 2 connections (bidirectional)');
+
+  // Verify both directions are present
+  const hasInbound = neighbor.connections.some(c => c.direction === 'inbound');
+  const hasOutbound = neighbor.connections.some(c => c.direction === 'outbound');
+  assert(hasInbound, 'Should have inbound connection');
+  assert(hasOutbound, 'Should have outbound connection');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -3111,6 +3428,11 @@ async function runTests() {
     testGetInboundLinksFilterByType,
     testGetInboundLinksEntityNotFound,
     testGetInboundLinksExcludesDeleted,
+    testGetNeighbors,
+    testGetNeighborsFilterByDirection,
+    testGetNeighborsFilterByLinkType,
+    testGetNeighborsEntityNotFound,
+    testGetNeighborsBidirectionalConnection,
 
     // Add new test functions here as features are implemented
     // Example:

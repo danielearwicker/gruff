@@ -206,11 +206,11 @@ GET    /api/entities/{id}/inbound         # Get inbound links to an entity
 ```
 Returns all links where the specified entity is the target, with optional filtering by link type.
 
-#### 🟦 Basic Graph Navigation - Neighbors
+#### ✅ Basic Graph Navigation - Neighbors
 ```
 GET    /api/entities/{id}/neighbors       # Get connected entities
 ```
-Returns all entities connected to the specified entity (both inbound and outbound), with optional filtering.
+Returns all entities connected to the specified entity (both inbound and outbound), with optional filtering by link type, entity type, and direction.
 
 #### 🟦 Advanced Graph Traversal
 ```

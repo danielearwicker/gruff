@@ -771,4 +771,156 @@ entities.get('/:id/inbound', async (c) => {
   }
 });
 
+/**
+ * GET /api/entities/:id/neighbors
+ * Get all connected entities (both inbound and outbound)
+ */
+entities.get('/:id/neighbors', async (c) => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  // Optional query parameters for filtering
+  const typeId = c.req.query('type_id'); // Filter by link type
+  const entityTypeId = c.req.query('entity_type_id'); // Filter by entity type
+  const includeDeleted = c.req.query('include_deleted') === 'true';
+  const direction = c.req.query('direction'); // 'inbound', 'outbound', or both (default)
+
+  try {
+    // First, verify the entity exists
+    const entity = await findLatestVersion(db, id);
+
+    if (!entity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    const neighbors: any[] = [];
+
+    // Fetch outbound neighbors (entities this entity links to)
+    if (!direction || direction === 'outbound') {
+      let outboundSql = `
+        SELECT DISTINCT
+          e.id,
+          e.type_id,
+          e.properties,
+          e.version,
+          e.created_at,
+          e.created_by,
+          e.is_deleted,
+          e.is_latest,
+          l.id as link_id,
+          l.type_id as link_type_id,
+          l.properties as link_properties,
+          'outbound' as direction
+        FROM links l
+        INNER JOIN entities e ON l.target_entity_id = e.id
+        WHERE l.source_entity_id = ?
+        AND l.is_latest = 1
+        AND e.is_latest = 1
+      `;
+      const outboundBindings: any[] = [entity.id];
+
+      if (!includeDeleted) {
+        outboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+      }
+
+      if (typeId) {
+        outboundSql += ' AND l.type_id = ?';
+        outboundBindings.push(typeId);
+      }
+
+      if (entityTypeId) {
+        outboundSql += ' AND e.type_id = ?';
+        outboundBindings.push(entityTypeId);
+      }
+
+      const { results: outboundResults } = await db.prepare(outboundSql)
+        .bind(...outboundBindings)
+        .all();
+
+      neighbors.push(...outboundResults);
+    }
+
+    // Fetch inbound neighbors (entities that link to this entity)
+    if (!direction || direction === 'inbound') {
+      let inboundSql = `
+        SELECT DISTINCT
+          e.id,
+          e.type_id,
+          e.properties,
+          e.version,
+          e.created_at,
+          e.created_by,
+          e.is_deleted,
+          e.is_latest,
+          l.id as link_id,
+          l.type_id as link_type_id,
+          l.properties as link_properties,
+          'inbound' as direction
+        FROM links l
+        INNER JOIN entities e ON l.source_entity_id = e.id
+        WHERE l.target_entity_id = ?
+        AND l.is_latest = 1
+        AND e.is_latest = 1
+      `;
+      const inboundBindings: any[] = [entity.id];
+
+      if (!includeDeleted) {
+        inboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+      }
+
+      if (typeId) {
+        inboundSql += ' AND l.type_id = ?';
+        inboundBindings.push(typeId);
+      }
+
+      if (entityTypeId) {
+        inboundSql += ' AND e.type_id = ?';
+        inboundBindings.push(entityTypeId);
+      }
+
+      const { results: inboundResults } = await db.prepare(inboundSql)
+        .bind(...inboundBindings)
+        .all();
+
+      neighbors.push(...inboundResults);
+    }
+
+    // Deduplicate neighbors (an entity might be connected both ways)
+    const uniqueNeighborsMap = new Map();
+
+    for (const neighbor of neighbors) {
+      const neighborId = neighbor.id as string;
+
+      if (!uniqueNeighborsMap.has(neighborId)) {
+        uniqueNeighborsMap.set(neighborId, {
+          id: neighbor.id,
+          type_id: neighbor.type_id,
+          properties: neighbor.properties ? JSON.parse(neighbor.properties as string) : {},
+          version: neighbor.version,
+          created_at: neighbor.created_at,
+          created_by: neighbor.created_by,
+          is_deleted: neighbor.is_deleted === 1,
+          is_latest: neighbor.is_latest === 1,
+          connections: []
+        });
+      }
+
+      // Add the link information
+      uniqueNeighborsMap.get(neighborId).connections.push({
+        link_id: neighbor.link_id,
+        link_type_id: neighbor.link_type_id,
+        link_properties: neighbor.link_properties ? JSON.parse(neighbor.link_properties as string) : {},
+        direction: neighbor.direction
+      });
+    }
+
+    const neighborsData = Array.from(uniqueNeighborsMap.values());
+
+    return c.json(response.success(neighborsData));
+  } catch (error) {
+    console.error('[Entities] Error fetching neighbors:', error);
+    throw error;
+  }
+});
+
 export default entities;
