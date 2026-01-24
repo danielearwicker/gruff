@@ -15,6 +15,10 @@
     "db:create:local": "wrangler d1 execute gruff-db --local --command='SELECT 1'",
     "test": "node test-runner.js",
     "test:watch": "nodemon test-runner.js",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:unit:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -29,13 +33,16 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.6",
     "@cloudflare/workers-types": "^4.20260123.0",
     "@eslint/js": "^9.39.2",
+    "@vitest/ui": "^3.2.4",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
+    "vitest": "^3.2.4",
     "wrangler": "^4.60.0"
   },
   "dependencies": {

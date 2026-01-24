@@ -1,5 +1,95 @@
 # Testing Guide
 
+## Overview
+
+The Gruff project includes two types of testing:
+1. **Unit Tests** - Fast, isolated tests using Vitest
+2. **Integration Tests** - End-to-end API tests against a local development server
+
+## Unit Tests
+
+### Running Unit Tests
+
+```bash
+# Run all unit tests once
+npm run test:unit
+
+# Run tests in watch mode (auto-rerun on file changes)
+npm run test:unit:watch
+
+# Run tests with interactive UI
+npm run test:unit:ui
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+### Unit Test Framework
+
+The project uses [Vitest](https://vitest.dev/) with the Cloudflare Workers pool for unit testing:
+
+- **Vitest**: Fast, ESM-native test runner with Vite-powered transformations
+- **@cloudflare/vitest-pool-workers**: Enables testing of Workers-specific code
+- **Coverage**: V8 coverage provider for comprehensive code coverage reports
+
+### Writing Unit Tests
+
+Unit tests are located in the `test/` directory and follow the naming pattern `*.test.ts`.
+
+Example unit test structure:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { myFunction } from '../src/utils/myModule.js';
+
+describe('MyModule', () => {
+  describe('myFunction', () => {
+    it('should handle valid input', () => {
+      const result = myFunction('test');
+      expect(result).toBe('expected output');
+    });
+
+    it('should reject invalid input', () => {
+      expect(() => myFunction(null)).toThrow();
+    });
+  });
+});
+```
+
+### Test Organization
+
+```
+test/
+├── schemas/          # Schema validation tests
+│   └── entity.test.ts
+├── utils/            # Utility function tests
+│   └── response.test.ts
+└── ...               # Other test categories
+```
+
+### Best Practices for Unit Tests
+
+1. **Fast and Isolated**: Unit tests should run quickly and not depend on external services
+2. **Clear Assertions**: Use descriptive test names and assertion messages
+3. **One Concept Per Test**: Each test should verify a single behavior
+4. **Mock External Dependencies**: Use Vitest's mocking capabilities for external services
+5. **Test Edge Cases**: Include tests for error conditions and boundary cases
+
+### Coverage Goals
+
+- Aim for 80%+ code coverage on utility functions and business logic
+- Focus on testing critical paths and error handling
+- Use coverage reports to identify untested code paths
+
+```bash
+# Generate coverage report
+npm run test:coverage
+
+# Coverage reports are generated in:
+# - coverage/index.html (HTML report)
+# - coverage/coverage-final.json (JSON report)
+```
+
 ## Integration Test Suite
 
 The Gruff project includes an automated integration test suite (`test-runner.js`) that verifies the API functionality against a local development server.
