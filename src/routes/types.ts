@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createTypeSchema, updateTypeSchema, typeQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
+import { createLogger } from '../utils/logger.js';
 
 type Bindings = {
   DB: D1Database;
@@ -10,6 +11,9 @@ type Bindings = {
 };
 
 const types = new Hono<{ Bindings: Bindings }>();
+
+// Create logger for types route
+const logger = createLogger({ module: 'types' });
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -75,7 +79,7 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
 
     return c.json(response.created(result), 201);
   } catch (error) {
-    console.error('[Types] Error creating type:', error);
+    logger.error('Error creating type', error instanceof Error ? error : undefined, { typeName: data.name });
     throw error;
   }
 });
@@ -115,7 +119,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
         }
       } catch (e) {
         // Invalid cursor format, ignore and continue without cursor
-        console.warn('[Types] Invalid cursor format:', query.cursor);
+        logger.warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
 
@@ -147,7 +151,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(typesData, nextCursor, hasMore));
   } catch (error) {
-    console.error('[Types] Error listing types:', error);
+    logger.error('Error listing types', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -177,7 +181,7 @@ types.get('/:id', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    console.error('[Types] Error fetching type:', error);
+    logger.error('Error fetching type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
 });
@@ -257,7 +261,7 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
 
     return c.json(response.updated(result));
   } catch (error) {
-    console.error('[Types] Error updating type:', error);
+    logger.error('Error updating type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
 });
@@ -311,7 +315,7 @@ types.delete('/:id', async (c) => {
 
     return c.json(response.deleted());
   } catch (error) {
-    console.error('[Types] Error deleting type:', error);
+    logger.error('Error deleting type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
 });

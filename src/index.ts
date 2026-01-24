@@ -3,6 +3,7 @@ import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
+import { createLogger } from './utils/logger.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
@@ -20,10 +21,14 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {
-  console.error('[Error Handler] Error occurred:', err);
-  console.error('[Error Handler] Error type:', err?.constructor?.name);
-
   const requestId = crypto.randomUUID();
+
+  // Create logger with request context
+  const logger = createLogger({
+    requestId,
+    path: c.req.path,
+    method: c.req.method,
+  });
   let statusCode = 500;
   let errorResponse: any = {
     error: 'Internal server error',
@@ -74,6 +79,16 @@ app.onError((err, c) => {
       requestId,
     };
   }
+
+  // Log error details for monitoring
+  logger.error(
+    'Request error',
+    err instanceof Error ? err : new Error(String(err)),
+    {
+      statusCode,
+      errorCode: errorResponse.code,
+    }
+  );
 
   return c.json(errorResponse, statusCode);
 });

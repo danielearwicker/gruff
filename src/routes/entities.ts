@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createEntitySchema, updateEntitySchema, entityQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
+import { createLogger } from '../utils/logger.js';
 
 type Bindings = {
   DB: D1Database;
@@ -10,6 +11,9 @@ type Bindings = {
 };
 
 const entities = new Hono<{ Bindings: Bindings }>();
+
+// Create logger for entities route
+const logger = createLogger({ module: 'entities' });
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -103,7 +107,7 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
 
     return c.json(response.created(result), 201);
   } catch (error) {
-    console.error('[Entities] Error creating entity:', error);
+    logger.error('Error creating entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -181,7 +185,7 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
         }
       } catch (e) {
         // Invalid cursor format, ignore and continue without cursor
-        console.warn('[Entities] Invalid cursor format:', query.cursor);
+        logger.warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
 
@@ -215,7 +219,7 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(entitiesData, nextCursor, hasMore));
   } catch (error) {
-    console.error('[Entities] Error listing entities:', error);
+    logger.error('Error listing entities', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -245,7 +249,7 @@ entities.get('/:id', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    console.error('[Entities] Error fetching entity:', error);
+    logger.error('Error fetching entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -315,7 +319,7 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
 
     return c.json(response.updated(result));
   } catch (error) {
-    console.error('[Entities] Error updating entity:', error);
+    logger.error('Error updating entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -370,7 +374,7 @@ entities.delete('/:id', async (c) => {
 
     return c.json(response.deleted());
   } catch (error) {
-    console.error('[Entities] Error deleting entity:', error);
+    logger.error('Error deleting entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -437,7 +441,7 @@ entities.post('/:id/restore', async (c) => {
 
     return c.json(response.success(result, 'Entity restored successfully'));
   } catch (error) {
-    console.error('[Entities] Error restoring entity:', error);
+    logger.error('Error restoring entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -497,7 +501,7 @@ entities.get('/:id/versions', async (c) => {
 
     return c.json(response.success(versions));
   } catch (error) {
-    console.error('[Entities] Error fetching entity versions:', error);
+    logger.error('Error fetching entity versions', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -567,7 +571,7 @@ entities.get('/:id/versions/:version', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    console.error('[Entities] Error fetching entity version:', error);
+    logger.error('Error fetching entity version', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -644,7 +648,7 @@ entities.get('/:id/history', async (c) => {
 
     return c.json(response.success(history));
   } catch (error) {
-    console.error('[Entities] Error fetching entity history:', error);
+    logger.error('Error fetching entity history', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -749,7 +753,7 @@ entities.get('/:id/outbound', async (c) => {
 
     return c.json(response.success(linksData));
   } catch (error) {
-    console.error('[Entities] Error fetching outbound links:', error);
+    logger.error('Error fetching outbound links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -822,7 +826,7 @@ entities.get('/:id/inbound', async (c) => {
 
     return c.json(response.success(linksData));
   } catch (error) {
-    console.error('[Entities] Error fetching inbound links:', error);
+    logger.error('Error fetching inbound links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -974,7 +978,7 @@ entities.get('/:id/neighbors', async (c) => {
 
     return c.json(response.success(neighborsData));
   } catch (error) {
-    console.error('[Entities] Error fetching neighbors:', error);
+    logger.error('Error fetching neighbors', error instanceof Error ? error : undefined);
     throw error;
   }
 });

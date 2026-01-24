@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createLinkSchema, updateLinkSchema, linkQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
+import { createLogger } from '../utils/logger.js';
 
 type Bindings = {
   DB: D1Database;
@@ -10,6 +11,9 @@ type Bindings = {
 };
 
 const links = new Hono<{ Bindings: Bindings }>();
+
+// Create logger for links route
+const logger = createLogger({ module: 'links' });
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -123,7 +127,7 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
 
     return c.json(response.created(result), 201);
   } catch (error) {
-    console.error('[Links] Error creating link:', error);
+    logger.error('Error creating link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -211,7 +215,7 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
         }
       } catch (e) {
         // Invalid cursor format, ignore and continue without cursor
-        console.warn('[Links] Invalid cursor format:', query.cursor);
+        logger.warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
 
@@ -245,7 +249,7 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(linksData, nextCursor, hasMore));
   } catch (error) {
-    console.error('[Links] Error listing links:', error);
+    logger.error('Error listing links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -275,7 +279,7 @@ links.get('/:id', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    console.error('[Links] Error fetching link:', error);
+    logger.error('Error fetching link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -347,7 +351,7 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
 
     return c.json(response.updated(result));
   } catch (error) {
-    console.error('[Links] Error updating link:', error);
+    logger.error('Error updating link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -404,7 +408,7 @@ links.delete('/:id', async (c) => {
 
     return c.json(response.deleted());
   } catch (error) {
-    console.error('[Links] Error deleting link:', error);
+    logger.error('Error deleting link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -473,7 +477,7 @@ links.post('/:id/restore', async (c) => {
 
     return c.json(response.success(result, 'Link restored successfully'));
   } catch (error) {
-    console.error('[Links] Error restoring link:', error);
+    logger.error('Error restoring link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -533,7 +537,7 @@ links.get('/:id/versions', async (c) => {
 
     return c.json(response.success(versions));
   } catch (error) {
-    console.error('[Links] Error fetching link versions:', error);
+    logger.error('Error fetching link versions', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -603,7 +607,7 @@ links.get('/:id/versions/:version', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    console.error('[Links] Error fetching link version:', error);
+    logger.error('Error fetching link version', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -682,7 +686,7 @@ links.get('/:id/history', async (c) => {
 
     return c.json(response.success(history));
   } catch (error) {
-    console.error('[Links] Error fetching link history:', error);
+    logger.error('Error fetching link history', error instanceof Error ? error : undefined);
     throw error;
   }
 });

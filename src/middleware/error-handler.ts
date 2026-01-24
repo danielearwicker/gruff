@@ -1,5 +1,6 @@
 import { Context, MiddlewareHandler } from 'hono';
 import { ZodError } from 'zod';
+import { createLogger } from '../utils/logger.js';
 
 /**
  * Custom error classes for better error handling
@@ -80,12 +81,15 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
   try {
     await next();
   } catch (error) {
-    console.error('[Error Handler] Error occurred:', error);
-    console.error('[Error Handler] Error type:', error?.constructor?.name);
-    console.error('[Error Handler] Error name:', (error as any)?.name);
-
     // Generate request ID for tracking
     const requestId = crypto.randomUUID();
+
+    // Create logger with request context
+    const logger = createLogger({
+      requestId,
+      path: c.req.path,
+      method: c.req.method,
+    });
 
     // Default error response
     let statusCode = 500;
@@ -166,14 +170,14 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
     }
 
     // Log error details for monitoring
-    console.error('[Error Handler]', {
-      requestId,
-      path: c.req.path,
-      method: c.req.method,
-      statusCode,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    logger.error(
+      'Request error',
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        statusCode,
+        errorCode: errorResponse.code,
+      }
+    );
 
     return c.json(errorResponse, statusCode);
   }
