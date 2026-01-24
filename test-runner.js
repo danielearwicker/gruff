@@ -4721,6 +4721,354 @@ async function testFilterEntitiesByMultipleProperties() {
 }
 
 // ============================================================================
+// Search Tests
+// ============================================================================
+
+async function testSearchEntitiesByType() {
+  logTest('Search Entities - Filter by Type');
+
+  // Create test types
+  const personType = await makeRequest('POST', '/api/types', {
+    name: 'SearchPersonType',
+    category: 'entity'
+  });
+  const companyType = await makeRequest('POST', '/api/types', {
+    name: 'SearchCompanyType',
+    category: 'entity'
+  });
+
+  const personTypeId = personType.data.data.id;
+  const companyTypeId = companyType.data.data.id;
+
+  // Create test entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: personTypeId,
+    properties: { name: 'Alice' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: personTypeId,
+    properties: { name: 'Bob' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: companyTypeId,
+    properties: { name: 'Acme Corp' }
+  });
+
+  // Search for person entities
+  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+    type_id: personTypeId
+  });
+
+  assertEquals(searchResponse.status, 200, 'Should return 200');
+  assert(searchResponse.data.data.length >= 2, 'Should find at least 2 person entities');
+  assert(searchResponse.data.data.every(e => e.type_id === personTypeId), 'All results should be person type');
+}
+
+async function testSearchEntitiesByProperty() {
+  logTest('Search Entities - Filter by Property');
+
+  // Create test type
+  const employeeType = await makeRequest('POST', '/api/types', {
+    name: 'SearchEmployeeType',
+    category: 'entity'
+  });
+  const employeeTypeId = employeeType.data.data.id;
+
+  // Create test entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: employeeTypeId,
+    properties: { name: 'Charlie', department: 'Engineering', salary: 100000 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: employeeTypeId,
+    properties: { name: 'Diana', department: 'Marketing', salary: 90000 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: employeeTypeId,
+    properties: { name: 'Eve', department: 'Engineering', salary: 95000 }
+  });
+
+  // Search by string property
+  const searchByDept = await makeRequest('POST', '/api/search/entities', {
+    type_id: employeeTypeId,
+    properties: { department: 'Engineering' }
+  });
+
+  assertEquals(searchByDept.status, 200, 'Should return 200');
+  assert(searchByDept.data.data.length >= 2, 'Should find at least 2 engineering employees');
+  assert(searchByDept.data.data.every(e => e.properties.department === 'Engineering'), 'All results should be Engineering');
+
+  // Search by number property
+  const searchBySalary = await makeRequest('POST', '/api/search/entities', {
+    type_id: employeeTypeId,
+    properties: { salary: 100000 }
+  });
+
+  assertEquals(searchBySalary.status, 200, 'Should return 200');
+  assert(searchBySalary.data.data.length >= 1, 'Should find at least 1 employee with $100k salary');
+  assert(searchBySalary.data.data.every(e => e.properties.salary === 100000), 'All results should have $100k salary');
+}
+
+async function testSearchEntitiesByMultipleProperties() {
+  logTest('Search Entities - Filter by Multiple Properties');
+
+  // Create test type
+  const productType = await makeRequest('POST', '/api/types', {
+    name: 'SearchProductType',
+    category: 'entity'
+  });
+  const productTypeId = productType.data.data.id;
+
+  // Create test entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: productTypeId,
+    properties: { name: 'Laptop', category: 'Electronics', inStock: true, price: 1200 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: productTypeId,
+    properties: { name: 'Mouse', category: 'Electronics', inStock: false, price: 25 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: productTypeId,
+    properties: { name: 'Keyboard', category: 'Electronics', inStock: true, price: 80 }
+  });
+
+  // Search by multiple properties
+  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+    type_id: productTypeId,
+    properties: {
+      category: 'Electronics',
+      inStock: true
+    }
+  });
+
+  assertEquals(searchResponse.status, 200, 'Should return 200');
+  assert(searchResponse.data.data.length >= 2, 'Should find at least 2 in-stock electronics');
+  assert(searchResponse.data.data.every(e => e.properties.category === 'Electronics'), 'All results should be Electronics');
+  assert(searchResponse.data.data.every(e => e.properties.inStock === true), 'All results should be in stock');
+}
+
+async function testSearchEntitiesPagination() {
+  logTest('Search Entities - Pagination with Cursor');
+
+  // Create test type
+  const itemType = await makeRequest('POST', '/api/types', {
+    name: 'SearchItemType',
+    category: 'entity'
+  });
+  const itemTypeId = itemType.data.data.id;
+
+  // Create multiple test entities
+  for (let i = 0; i < 25; i++) {
+    await makeRequest('POST', '/api/entities', {
+      type_id: itemTypeId,
+      properties: { name: `Item ${i}` }
+    });
+  }
+
+  // First page with limit
+  const page1 = await makeRequest('POST', '/api/search/entities', {
+    type_id: itemTypeId,
+    limit: 10
+  });
+
+  assertEquals(page1.status, 200, 'Should return 200');
+  assertEquals(page1.data.data.length, 10, 'Should return 10 items');
+  assert(page1.data.metadata.hasMore, 'Should have more results');
+  assert(page1.data.metadata.cursor, 'Should provide next cursor');
+
+  // Second page using cursor
+  const page2 = await makeRequest('POST', '/api/search/entities', {
+    type_id: itemTypeId,
+    limit: 10,
+    cursor: page1.data.metadata.cursor
+  });
+
+  assertEquals(page2.status, 200, 'Should return 200');
+  assertEquals(page2.data.data.length, 10, 'Should return 10 items');
+  // Verify no duplicate IDs between pages
+  const page1Ids = new Set(page1.data.data.map(e => e.id));
+  const page2Ids = new Set(page2.data.data.map(e => e.id));
+  const intersection = [...page1Ids].filter(id => page2Ids.has(id));
+  assertEquals(intersection.length, 0, 'Pages should not have overlapping items');
+}
+
+async function testSearchLinksBasic() {
+  logTest('Search Links - Basic Search');
+
+  // Create test types
+  const userType = await makeRequest('POST', '/api/types', {
+    name: 'SearchUserType',
+    category: 'entity'
+  });
+  const friendshipType = await makeRequest('POST', '/api/types', {
+    name: 'SearchFriendshipType',
+    category: 'link'
+  });
+
+  const userTypeId = userType.data.data.id;
+  const friendshipTypeId = friendshipType.data.data.id;
+
+  // Create test entities
+  const user1 = await makeRequest('POST', '/api/entities', {
+    type_id: userTypeId,
+    properties: { name: 'Frank' }
+  });
+  const user2 = await makeRequest('POST', '/api/entities', {
+    type_id: userTypeId,
+    properties: { name: 'Grace' }
+  });
+
+  const user1Id = user1.data.data.id;
+  const user2Id = user2.data.data.id;
+
+  // Create test links
+  await makeRequest('POST', '/api/links', {
+    type_id: friendshipTypeId,
+    source_entity_id: user1Id,
+    target_entity_id: user2Id,
+    properties: { since: 2020 }
+  });
+
+  // Search for links by type
+  const searchResponse = await makeRequest('POST', '/api/search/links', {
+    type_id: friendshipTypeId
+  });
+
+  assertEquals(searchResponse.status, 200, 'Should return 200');
+  assert(searchResponse.data.data.length >= 1, 'Should find at least 1 friendship link');
+  assert(searchResponse.data.data.every(l => l.type_id === friendshipTypeId), 'All results should be friendship type');
+}
+
+async function testSearchLinksBySourceEntity() {
+  logTest('Search Links - Filter by Source Entity');
+
+  // Create test types
+  const authorType = await makeRequest('POST', '/api/types', {
+    name: 'SearchAuthorType',
+    category: 'entity'
+  });
+  const bookType = await makeRequest('POST', '/api/types', {
+    name: 'SearchBookType',
+    category: 'entity'
+  });
+  const wroteType = await makeRequest('POST', '/api/types', {
+    name: 'SearchWroteType',
+    category: 'link'
+  });
+
+  const authorTypeId = authorType.data.data.id;
+  const bookTypeId = bookType.data.data.id;
+  const wroteTypeId = wroteType.data.data.id;
+
+  // Create test entities
+  const author1 = await makeRequest('POST', '/api/entities', {
+    type_id: authorTypeId,
+    properties: { name: 'Author One' }
+  });
+  const author2 = await makeRequest('POST', '/api/entities', {
+    type_id: authorTypeId,
+    properties: { name: 'Author Two' }
+  });
+  const book1 = await makeRequest('POST', '/api/entities', {
+    type_id: bookTypeId,
+    properties: { title: 'Book A' }
+  });
+  const book2 = await makeRequest('POST', '/api/entities', {
+    type_id: bookTypeId,
+    properties: { title: 'Book B' }
+  });
+
+  const author1Id = author1.data.data.id;
+  const author2Id = author2.data.data.id;
+  const book1Id = book1.data.data.id;
+  const book2Id = book2.data.data.id;
+
+  // Create links - author1 wrote book1 and book2
+  await makeRequest('POST', '/api/links', {
+    type_id: wroteTypeId,
+    source_entity_id: author1Id,
+    target_entity_id: book1Id,
+    properties: {}
+  });
+  await makeRequest('POST', '/api/links', {
+    type_id: wroteTypeId,
+    source_entity_id: author1Id,
+    target_entity_id: book2Id,
+    properties: {}
+  });
+  // author2 wrote book2
+  await makeRequest('POST', '/api/links', {
+    type_id: wroteTypeId,
+    source_entity_id: author2Id,
+    target_entity_id: book2Id,
+    properties: {}
+  });
+
+  // Search for links from author1
+  const searchResponse = await makeRequest('POST', '/api/search/links', {
+    source_entity_id: author1Id
+  });
+
+  assertEquals(searchResponse.status, 200, 'Should return 200');
+  assert(searchResponse.data.data.length >= 2, 'Should find at least 2 links from author1');
+  assert(searchResponse.data.data.every(l => l.source_entity_id === author1Id), 'All results should have author1 as source');
+}
+
+async function testSearchLinksWithEntityInfo() {
+  logTest('Search Links - Include Entity Information');
+
+  // Create test types
+  const cityType = await makeRequest('POST', '/api/types', {
+    name: 'SearchCityType',
+    category: 'entity'
+  });
+  const roadType = await makeRequest('POST', '/api/types', {
+    name: 'SearchRoadType',
+    category: 'link'
+  });
+
+  const cityTypeId = cityType.data.data.id;
+  const roadTypeId = roadType.data.data.id;
+
+  // Create test entities
+  const city1 = await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'New York' }
+  });
+  const city2 = await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'Boston' }
+  });
+
+  const city1Id = city1.data.data.id;
+  const city2Id = city2.data.data.id;
+
+  // Create link
+  await makeRequest('POST', '/api/links', {
+    type_id: roadTypeId,
+    source_entity_id: city1Id,
+    target_entity_id: city2Id,
+    properties: { distance: 215 }
+  });
+
+  // Search for links
+  const searchResponse = await makeRequest('POST', '/api/search/links', {
+    type_id: roadTypeId
+  });
+
+  assertEquals(searchResponse.status, 200, 'Should return 200');
+  assert(searchResponse.data.data.length >= 1, 'Should find at least 1 road link');
+
+  const link = searchResponse.data.data[0];
+  assert(link.source_entity, 'Should include source entity info');
+  assert(link.target_entity, 'Should include target entity info');
+  assert(link.source_entity.properties, 'Source entity should have properties');
+  assert(link.target_entity.properties, 'Target entity should have properties');
+  assert(link.type, 'Should include link type info');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -4898,6 +5246,15 @@ async function runTests() {
     testFilterEntitiesByJsonPropertyBoolean,
     testFilterLinksByJsonPropertyString,
     testFilterEntitiesByMultipleProperties,
+
+    // Search tests
+    testSearchEntitiesByType,
+    testSearchEntitiesByProperty,
+    testSearchEntitiesByMultipleProperties,
+    testSearchEntitiesPagination,
+    testSearchLinksBasic,
+    testSearchLinksBySourceEntity,
+    testSearchLinksWithEntityInfo,
 
     // Add new test functions here as features are implemented
     // Example:

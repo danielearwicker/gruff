@@ -12,6 +12,7 @@ import entitiesRouter from './routes/entities.js';
 import linksRouter from './routes/links.js';
 import authRouter from './routes/auth.js';
 import graphRouter from './routes/graph.js';
+import searchRouter from './routes/search.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -215,6 +216,9 @@ app.route('/api/links', linksRouter);
 
 // Mount graph operations routes
 app.route('/api/graph', graphRouter);
+
+// Mount search routes
+app.route('/api/search', searchRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

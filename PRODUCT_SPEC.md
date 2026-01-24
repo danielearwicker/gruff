@@ -296,13 +296,37 @@ Find the shortest path between two entities in the graph:
 - Return the path as array of entities and links
 - Return 404 if no path exists
 
-### 🟦 Search and Query Endpoints
+### Search and Query Endpoints
 
+#### ✅ Basic Entity Search
 ```
-POST   /api/search/entities        # Advanced entity search (JSON properties)
-POST   /api/search/links           # Advanced link search (JSON properties)
-GET    /api/search/suggest         # Type-ahead suggestions
+POST   /api/search/entities        # Search entities by JSON properties
 ```
+Implement basic entity search endpoint:
+- Accept search criteria in request body (type filter, property filters, date range)
+- Support basic equality matching on JSON properties
+- Return paginated results
+- Include entity type information in results
+
+#### ✅ Basic Link Search
+```
+POST   /api/search/links           # Search links by JSON properties
+```
+Implement basic link search endpoint:
+- Accept search criteria in request body (type filter, property filters, source/target entity filters)
+- Support basic equality matching on JSON properties
+- Return paginated results
+- Include link type and connected entity information in results
+
+#### 🟦 Type-ahead Suggestions
+```
+GET    /api/search/suggest         # Type-ahead suggestions for entity names
+```
+Implement type-ahead suggestion endpoint:
+- Search entity properties for partial matches
+- Return quick results (limit 10) for autocomplete UIs
+- Support configurable property path for searching (e.g., "name", "title")
+- Include entity type and ID in results
 
 ### 🟦 User Management Endpoints
 
