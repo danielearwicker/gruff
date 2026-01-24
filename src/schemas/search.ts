@@ -1,13 +1,62 @@
 import { z } from 'zod';
 import { uuidSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
+/**
+ * Property filter schema with comparison operators
+ *
+ * Examples:
+ * - Equality: { path: "name", operator: "eq", value: "John" }
+ * - Greater than: { path: "age", operator: "gt", value: 18 }
+ * - Pattern match: { path: "email", operator: "like", value: "%@example.com" }
+ * - In set: { path: "status", operator: "in", value: ["active", "pending"] }
+ * - Exists: { path: "metadata.tags", operator: "exists" }
+ */
+export const propertyFilterSchema = z.object({
+  // JSON path to the property (e.g., "name", "address.city")
+  path: z.string().min(1),
+
+  // Comparison operator
+  operator: z.enum([
+    'eq',           // equals
+    'ne',           // not equals
+    'gt',           // greater than
+    'lt',           // less than
+    'gte',          // greater than or equal
+    'lte',          // less than or equal
+    'like',         // SQL LIKE pattern matching (case-sensitive)
+    'ilike',        // case-insensitive LIKE
+    'starts_with',  // string starts with value
+    'ends_with',    // string ends with value
+    'contains',     // string contains value (case-insensitive)
+    'in',           // value in array
+    'not_in',       // value not in array
+    'exists',       // property exists (value is ignored)
+    'not_exists',   // property doesn't exist (value is ignored)
+  ]),
+
+  // Value to compare against (optional for exists/not_exists operators)
+  value: z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(z.union([z.string(), z.number(), z.boolean()])),
+  ]).optional(),
+});
+
+export type PropertyFilter = z.infer<typeof propertyFilterSchema>;
+
 // Entity search request schema
 export const searchEntitiesSchema = z.object({
   // Type filter
   type_id: uuidSchema.optional(),
 
-  // Property filters - key-value pairs for equality matching
+  // Property filters - DEPRECATED: Use property_filters instead
+  // Kept for backward compatibility with simple equality matching
   properties: z.record(z.string(), z.any()).optional(),
+
+  // Advanced property filters with comparison operators
+  property_filters: z.array(propertyFilterSchema).optional(),
 
   // Date range filters (Unix timestamps)
   created_after: z.number().int().positive().optional(),
@@ -33,8 +82,12 @@ export const searchLinksSchema = z.object({
   source_entity_id: uuidSchema.optional(),
   target_entity_id: uuidSchema.optional(),
 
-  // Property filters - key-value pairs for equality matching
+  // Property filters - DEPRECATED: Use property_filters instead
+  // Kept for backward compatibility with simple equality matching
   properties: z.record(z.string(), z.any()).optional(),
+
+  // Advanced property filters with comparison operators
+  property_filters: z.array(propertyFilterSchema).optional(),
 
   // Date range filters (Unix timestamps)
   created_after: z.number().int().positive().optional(),

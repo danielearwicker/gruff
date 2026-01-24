@@ -5512,6 +5512,349 @@ async function testGetUserActivityNotFound() {
 }
 
 // ============================================================================
+// Advanced Property Filter Tests (Comparison Operators)
+// ============================================================================
+
+async function testPropertyFilterEquals() {
+  logTest('Property Filters - Equality (eq) Operator');
+
+  // Create a type and entities with numeric age property
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestPerson',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create test entities
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Alice', age: 25 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Bob', age: 30 }
+  });
+
+  // Search with eq operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'age', operator: 'eq', value: 25 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.name === 'Alice', 'Should return Alice');
+}
+
+async function testPropertyFilterGreaterThan() {
+  logTest('Property Filters - Greater Than (gt) Operator');
+
+  // Create a type and entities
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestProduct',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Product A', price: 10 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Product B', price: 20 }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Product C', price: 30 }
+  });
+
+  // Search with gt operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'price', operator: 'gt', value: 15 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities with price > 15');
+}
+
+async function testPropertyFilterLessThanOrEqual() {
+  logTest('Property Filters - Less Than or Equal (lte) Operator');
+
+  // Reuse the Product type from previous test
+  const typeResponse = await makeRequest('GET', '/api/types?name=PropertyFilterTestProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search with lte operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'price', operator: 'lte', value: 20 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities with price <= 20');
+}
+
+async function testPropertyFilterLike() {
+  logTest('Property Filters - LIKE Pattern Matching');
+
+  // Create a type and entities
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestEmail',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { email: 'alice@example.com' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { email: 'bob@test.com' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { email: 'charlie@example.com' }
+  });
+
+  // Search with like operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'email', operator: 'like', value: '%@example.com' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities with @example.com emails');
+}
+
+async function testPropertyFilterStartsWith() {
+  logTest('Property Filters - Starts With Operator');
+
+  // Reuse Email type
+  const typeResponse = await makeRequest('GET', '/api/types?name=PropertyFilterTestEmail');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search with starts_with operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'email', operator: 'starts_with', value: 'alice' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity starting with alice');
+}
+
+async function testPropertyFilterContains() {
+  logTest('Property Filters - Contains Operator (Case-Insensitive)');
+
+  // Reuse Email type
+  const typeResponse = await makeRequest('GET', '/api/types?name=PropertyFilterTestEmail');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search with contains operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'email', operator: 'contains', value: 'EXAMPLE' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities containing EXAMPLE (case-insensitive)');
+}
+
+async function testPropertyFilterIn() {
+  logTest('Property Filters - IN Operator (Array)');
+
+  // Create a type and entities
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestStatus',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { status: 'active' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { status: 'pending' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { status: 'inactive' }
+  });
+
+  // Search with in operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'status', operator: 'in', value: ['active', 'pending'] }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities with status in [active, pending]');
+}
+
+async function testPropertyFilterExists() {
+  logTest('Property Filters - Exists Operator');
+
+  // Create a type and entities
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestOptional',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Entity 1', optional_field: 'value' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Entity 2' }
+  });
+
+  // Search with exists operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'optional_field', operator: 'exists' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity with optional_field');
+}
+
+async function testPropertyFilterNotExists() {
+  logTest('Property Filters - Not Exists Operator');
+
+  // Reuse Optional type
+  const typeResponse = await makeRequest('GET', '/api/types?name=PropertyFilterTestOptional');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search with not_exists operator
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'optional_field', operator: 'not_exists' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity without optional_field');
+}
+
+async function testPropertyFilterMultipleConditions() {
+  logTest('Property Filters - Multiple Conditions (AND Logic)');
+
+  // Reuse Person type
+  const typeResponse = await makeRequest('GET', '/api/types?name=PropertyFilterTestPerson');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Create another entity
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Charlie', age: 25 }
+  });
+
+  // Search with multiple filters (AND logic)
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'age', operator: 'eq', value: 25 },
+      { path: 'name', operator: 'eq', value: 'Alice' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity matching both conditions');
+  assert(response.data.data[0].properties.name === 'Alice', 'Should return Alice');
+}
+
+async function testPropertyFilterOnLinks() {
+  logTest('Property Filters - Apply to Link Search');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestLinkEntity',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PropertyFilterTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+
+  // Create links with weight property
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity2.data.data.id,
+    properties: { weight: 5 }
+  });
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity2.data.data.id,
+    target_entity_id: entity1.data.data.id,
+    properties: { weight: 10 }
+  });
+
+  // Search links with filter
+  const response = await makeRequest('POST', '/api/search/links', {
+    type_id: linkTypeId,
+    property_filters: [
+      { path: 'weight', operator: 'gte', value: 7 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 link with weight >= 7');
+  assert(response.data.data[0].properties.weight === 10, 'Should return link with weight 10');
+}
+
+async function testPropertyFilterInvalidPath() {
+  logTest('Property Filters - Invalid JSON Path');
+
+  // Try to use invalid path with special characters
+  const response = await makeRequest('POST', '/api/search/entities', {
+    property_filters: [
+      { path: 'name; DROP TABLE entities; --', operator: 'eq', value: 'test' }
+    ]
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for invalid path');
+  assert(response.data.error, 'Should return error message');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -5716,12 +6059,19 @@ async function runTests() {
     testTypeAheadSuggestionsLimit,
     testTypeAheadSuggestionsCustomProperty,
 
-    // Add new test functions here as features are implemented
-    // Example:
-    // testUserRegistration,
-    // testUserLogin,
-    // testLinkVersionHistory,
-    // etc.
+    // Advanced Property Filter tests
+    testPropertyFilterEquals,
+    testPropertyFilterGreaterThan,
+    testPropertyFilterLessThanOrEqual,
+    testPropertyFilterLike,
+    testPropertyFilterStartsWith,
+    testPropertyFilterContains,
+    testPropertyFilterIn,
+    testPropertyFilterExists,
+    testPropertyFilterNotExists,
+    testPropertyFilterMultipleConditions,
+    testPropertyFilterOnLinks,
+    testPropertyFilterInvalidPath,
   ];
 
   for (const test of tests) {

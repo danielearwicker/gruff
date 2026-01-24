@@ -3,6 +3,7 @@ import { validateJson, validateQuery } from '../middleware/validation.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import { buildPropertyFilters } from '../utils/property-filters.js';
 
 type Bindings = {
   DB: D1Database;
@@ -56,7 +57,8 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
       whereClauses.push('e.is_deleted = 0');
     }
 
-    // Property filters using JSON extraction
+    // DEPRECATED: Legacy property filters (simple equality matching)
+    // Kept for backward compatibility
     if (criteria.properties && Object.keys(criteria.properties).length > 0) {
       for (const [key, value] of Object.entries(criteria.properties)) {
         // Use SQLite's json_extract to filter by property values
@@ -73,6 +75,20 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
         } else if (value === null) {
           whereClauses.push(`json_extract(e.properties, '$.${key}') IS NULL`);
         }
+      }
+    }
+
+    // Advanced property filters with comparison operators
+    if (criteria.property_filters && criteria.property_filters.length > 0) {
+      try {
+        const filterResult = buildPropertyFilters(criteria.property_filters, 'e');
+        if (filterResult.sql) {
+          whereClauses.push(filterResult.sql);
+          bindings.push(...filterResult.bindings);
+        }
+      } catch (error) {
+        logger.error('Invalid property filter', error as Error);
+        return c.json(response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
       }
     }
 
@@ -205,7 +221,8 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
       whereClauses.push('l.is_deleted = 0');
     }
 
-    // Property filters using JSON extraction
+    // DEPRECATED: Legacy property filters (simple equality matching)
+    // Kept for backward compatibility
     if (criteria.properties && Object.keys(criteria.properties).length > 0) {
       for (const [key, value] of Object.entries(criteria.properties)) {
         // Use SQLite's json_extract to filter by property values
@@ -221,6 +238,20 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
         } else if (value === null) {
           whereClauses.push(`json_extract(l.properties, '$.${key}') IS NULL`);
         }
+      }
+    }
+
+    // Advanced property filters with comparison operators
+    if (criteria.property_filters && criteria.property_filters.length > 0) {
+      try {
+        const filterResult = buildPropertyFilters(criteria.property_filters, 'l');
+        if (filterResult.sql) {
+          whereClauses.push(filterResult.sql);
+          bindings.push(...filterResult.bindings);
+        }
+      } catch (error) {
+        logger.error('Invalid property filter', error as Error);
+        return c.json(response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
       }
     }
 

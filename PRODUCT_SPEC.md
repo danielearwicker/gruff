@@ -352,12 +352,36 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 - Filter by soft-deleted status
 - Filter by JSON property values (basic equality)
 
-### 🟦 Advanced JSON Property Queries
-- SQLite JSON1 extension functions (json_extract, json_each, etc.)
-- Support for nested property filtering using JSON path expressions
-- Type-aware comparisons (string, number, boolean)
-- Combine multiple property filters with AND/OR logic
-- Generated columns for frequently queried JSON properties (with indexes)
+### Advanced JSON Property Queries
+
+This feature enhances property filtering capabilities beyond basic equality matching.
+
+#### ✅ Comparison Operators for JSON Properties
+- Support comparison operators: `eq` (equals), `ne` (not equals), `gt` (greater than), `lt` (less than), `gte` (greater than or equal), `lte` (less than or equal)
+- Support string pattern matching: `like` (SQL LIKE), `ilike` (case-insensitive LIKE), `starts_with`, `ends_with`, `contains`
+- Support set operations: `in` (value in array), `not_in` (value not in array)
+- Support existence checks: `exists` (property exists), `not_exists` (property doesn't exist)
+- Type-aware comparisons for strings, numbers, and booleans
+- Apply to both entity and link search endpoints
+- Implemented via `property_filters` parameter in search endpoints with backward compatibility for legacy `properties` parameter
+
+#### 🟦 Nested Property Path Support
+- Support dot notation for nested JSON properties (e.g., `address.city`, `metadata.tags.0`)
+- Support array indexing in JSON paths
+- Validate JSON path expressions before query execution
+- Handle missing or null values gracefully
+
+#### 🟦 Logical Operators for Property Filters
+- Support AND/OR logic for combining multiple property filters
+- Implement filter groups with nested conditions
+- Define JSON schema for filter expressions (e.g., `{"and": [filter1, filter2]}`, `{"or": [filter1, filter2]}`)
+- Apply to both entity and link search endpoints
+
+#### 🟦 Generated Columns and Indexes
+- Add migration to create generated columns for frequently queried properties
+- Create indexes on generated columns
+- Document which properties have generated columns
+- Provide utility to add new generated columns for specific use cases
 
 ### ✅ Soft Delete Implementation
 - `is_deleted` flag on entities and links
