@@ -14,6 +14,7 @@ import authRouter from './routes/auth.js';
 import graphRouter from './routes/graph.js';
 import searchRouter from './routes/search.js';
 import usersRouter from './routes/users.js';
+import bulkRouter from './routes/bulk.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -223,6 +224,9 @@ app.route('/api/graph', graphRouter);
 
 // Mount search routes
 app.route('/api/search', searchRouter);
+
+// Mount bulk operations routes
+app.route('/api/bulk', bulkRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

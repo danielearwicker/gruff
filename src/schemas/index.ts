@@ -5,3 +5,4 @@ export * from './type.js';
 export * from './entity.js';
 export * from './link.js';
 export * from './search.js';
+export * from './bulk.js';

@@ -412,11 +412,15 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Shortest path algorithms
 - Traversal with filtering at each step
 
-### 🟦 Bulk Operations
-- Batch create entities
-- Batch create links
-- Batch update operations
-- Transaction support for consistency
+### ✅ Bulk Operations
+- Batch create entities via POST /api/bulk/entities
+- Batch create links via POST /api/bulk/links
+- Batch update entities via PUT /api/bulk/entities
+- Batch update links via PUT /api/bulk/links
+- Transaction support for consistency using D1 batch operations
+- Maximum 100 items per request to prevent abuse
+- Partial success support with detailed per-item results
+- Client-provided IDs for reference correlation
 
 ### 🟦 Export and Import
 - Export subgraph as JSON

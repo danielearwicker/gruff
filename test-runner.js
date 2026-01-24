@@ -6512,6 +6512,389 @@ async function testFilterExpressionInvalidPath() {
 }
 
 // ============================================================================
+// Bulk Operations Tests
+// ============================================================================
+
+async function testBulkCreateEntities() {
+  logTest('Bulk Operations - Create Multiple Entities');
+
+  // Create an entity type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BulkTestEntityType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Bulk create entities
+  const response = await makeRequest('POST', '/api/bulk/entities', {
+    entities: [
+      { type_id: typeId, properties: { name: 'Bulk Entity 1' }, client_id: 'client-1' },
+      { type_id: typeId, properties: { name: 'Bulk Entity 2' }, client_id: 'client-2' },
+      { type_id: typeId, properties: { name: 'Bulk Entity 3' }, client_id: 'client-3' },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assert(response.data.data, 'Should return data');
+  assert(response.data.data.results, 'Should return results array');
+  assertEquals(response.data.data.results.length, 3, 'Should have 3 results');
+  assertEquals(response.data.data.summary.total, 3, 'Summary should show 3 total');
+  assertEquals(response.data.data.summary.successful, 3, 'Summary should show 3 successful');
+  assertEquals(response.data.data.summary.failed, 0, 'Summary should show 0 failed');
+
+  // Check all entities were created with correct client_ids
+  for (const result of response.data.data.results) {
+    assert(result.success, `Entity at index ${result.index} should be successful`);
+    assert(result.id, `Entity at index ${result.index} should have an id`);
+    assert(result.client_id, `Entity at index ${result.index} should have client_id`);
+  }
+}
+
+async function testBulkCreateEntitiesValidationError() {
+  logTest('Bulk Operations - Create Entities with Invalid Type');
+
+  const invalidTypeId = '00000000-0000-0000-0000-000000000000';
+
+  // Create an entity type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BulkTestValidEntityType',
+    category: 'entity'
+  });
+  const validTypeId = typeResponse.data.data.id;
+
+  const response = await makeRequest('POST', '/api/bulk/entities', {
+    entities: [
+      { type_id: validTypeId, properties: { name: 'Valid Entity' } },
+      { type_id: invalidTypeId, properties: { name: 'Invalid Entity' } },
+      { type_id: validTypeId, properties: { name: 'Another Valid Entity' } },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 (partial success)');
+  assertEquals(response.data.data.summary.total, 3, 'Summary should show 3 total');
+  assertEquals(response.data.data.summary.successful, 2, 'Summary should show 2 successful');
+  assertEquals(response.data.data.summary.failed, 1, 'Summary should show 1 failed');
+
+  // Check specific results
+  assert(response.data.data.results[0].success, 'First entity should succeed');
+  assert(!response.data.data.results[1].success, 'Second entity should fail');
+  assertEquals(response.data.data.results[1].code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error code');
+  assert(response.data.data.results[2].success, 'Third entity should succeed');
+}
+
+async function testBulkCreateEntitiesEmptyArray() {
+  logTest('Bulk Operations - Create Entities with Empty Array');
+
+  const response = await makeRequest('POST', '/api/bulk/entities', {
+    entities: []
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for empty array');
+}
+
+async function testBulkCreateLinks() {
+  logTest('Bulk Operations - Create Multiple Links');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BulkLinkTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BulkLinkTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Source 1' }
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Target 1' }
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  const entity3Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Target 2' }
+  });
+  const entity3Id = entity3Response.data.data.id;
+
+  // Bulk create links
+  const response = await makeRequest('POST', '/api/bulk/links', {
+    links: [
+      { type_id: linkTypeId, source_entity_id: entity1Id, target_entity_id: entity2Id, properties: { weight: 1 }, client_id: 'link-1' },
+      { type_id: linkTypeId, source_entity_id: entity1Id, target_entity_id: entity3Id, properties: { weight: 2 }, client_id: 'link-2' },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 Created');
+  assertEquals(response.data.data.results.length, 2, 'Should have 2 results');
+  assertEquals(response.data.data.summary.successful, 2, 'Summary should show 2 successful');
+  assertEquals(response.data.data.summary.failed, 0, 'Summary should show 0 failed');
+
+  for (const result of response.data.data.results) {
+    assert(result.success, `Link at index ${result.index} should be successful`);
+    assert(result.id, `Link at index ${result.index} should have an id`);
+  }
+}
+
+async function testBulkCreateLinksInvalidEntity() {
+  logTest('Bulk Operations - Create Links with Invalid Entity');
+
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  const validEntityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Valid Entity for Link' }
+  });
+  const validEntityId = validEntityResponse.data.data.id;
+
+  const invalidEntityId = '00000000-0000-0000-0000-000000000000';
+
+  const response = await makeRequest('POST', '/api/bulk/links', {
+    links: [
+      { type_id: linkTypeId, source_entity_id: validEntityId, target_entity_id: invalidEntityId, properties: {} },
+    ]
+  });
+
+  assertEquals(response.status, 201, 'Should return 201 (partial success)');
+  assertEquals(response.data.data.summary.failed, 1, 'Summary should show 1 failed');
+  assertEquals(response.data.data.results[0].code, 'TARGET_ENTITY_NOT_FOUND', 'Should have TARGET_ENTITY_NOT_FOUND error code');
+}
+
+async function testBulkUpdateEntities() {
+  logTest('Bulk Operations - Update Multiple Entities');
+
+  // Get the existing type
+  const typeResponse = await makeRequest('GET', '/api/types?name=BulkTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Create entities to update
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Update Test 1', value: 10 }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Update Test 2', value: 20 }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Bulk update
+  const response = await makeRequest('PUT', '/api/bulk/entities', {
+    entities: [
+      { id: entity1Id, properties: { name: 'Updated 1', value: 100 } },
+      { id: entity2Id, properties: { name: 'Updated 2', value: 200 } },
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.results.length, 2, 'Should have 2 results');
+  assertEquals(response.data.data.summary.successful, 2, 'Summary should show 2 successful');
+
+  for (const result of response.data.data.results) {
+    assert(result.success, `Entity at index ${result.index} should be successful`);
+    assertEquals(result.version, 2, 'Should be version 2');
+  }
+
+  // Verify updates
+  const verifyEntity1 = await makeRequest('GET', `/api/entities/${entity1Id}`);
+  assertEquals(verifyEntity1.data.data.properties.name, 'Updated 1', 'Entity 1 name should be updated');
+  assertEquals(verifyEntity1.data.data.properties.value, 100, 'Entity 1 value should be updated');
+}
+
+async function testBulkUpdateEntitiesNotFound() {
+  logTest('Bulk Operations - Update Entities with Not Found');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=BulkTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  const validEntity = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Valid for Bulk Update' }
+  });
+  const validEntityId = validEntity.data.data.id;
+
+  const invalidEntityId = '00000000-0000-0000-0000-000000000000';
+
+  const response = await makeRequest('PUT', '/api/bulk/entities', {
+    entities: [
+      { id: validEntityId, properties: { name: 'Updated Valid' } },
+      { id: invalidEntityId, properties: { name: 'Should Fail' } },
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200 (partial success)');
+  assertEquals(response.data.data.summary.successful, 1, 'Summary should show 1 successful');
+  assertEquals(response.data.data.summary.failed, 1, 'Summary should show 1 failed');
+  assertEquals(response.data.data.results[1].code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testBulkUpdateDeletedEntity() {
+  logTest('Bulk Operations - Update Deleted Entity Fails');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=BulkTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Create and delete an entity
+  const entity = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Will Be Deleted' }
+  });
+  const entityId = entity.data.data.id;
+
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Try to bulk update the deleted entity
+  const response = await makeRequest('PUT', '/api/bulk/entities', {
+    entities: [
+      { id: entityId, properties: { name: 'Should Fail' } },
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.summary.failed, 1, 'Should show 1 failed');
+  assertEquals(response.data.data.results[0].code, 'ENTITY_DELETED', 'Should have ENTITY_DELETED error code');
+}
+
+async function testBulkUpdateLinks() {
+  logTest('Bulk Operations - Update Multiple Links');
+
+  // Get existing types
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  // Create entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Update Source' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Update Target' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Create links
+  const link1 = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { weight: 1 }
+  });
+  const link1Id = link1.data.data.id;
+
+  const link2 = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity2Id,
+    target_entity_id: entity1Id,
+    properties: { weight: 2 }
+  });
+  const link2Id = link2.data.data.id;
+
+  // Bulk update links
+  const response = await makeRequest('PUT', '/api/bulk/links', {
+    links: [
+      { id: link1Id, properties: { weight: 100, label: 'Updated' } },
+      { id: link2Id, properties: { weight: 200, label: 'Also Updated' } },
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.results.length, 2, 'Should have 2 results');
+  assertEquals(response.data.data.summary.successful, 2, 'Summary should show 2 successful');
+
+  for (const result of response.data.data.results) {
+    assert(result.success, `Link at index ${result.index} should be successful`);
+    assertEquals(result.version, 2, 'Should be version 2');
+  }
+
+  // Verify updates
+  const verifyLink1 = await makeRequest('GET', `/api/links/${link1Id}`);
+  assertEquals(verifyLink1.data.data.properties.weight, 100, 'Link 1 weight should be updated');
+  assertEquals(verifyLink1.data.data.properties.label, 'Updated', 'Link 1 label should be set');
+}
+
+async function testBulkUpdateLinksNotFound() {
+  logTest('Bulk Operations - Update Links with Not Found');
+
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestLinkType');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestEntityType');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Valid Link Source' }
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Valid Link Target' }
+  });
+
+  const validLink = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity2.data.data.id,
+    properties: { weight: 5 }
+  });
+  const validLinkId = validLink.data.data.id;
+
+  const invalidLinkId = '00000000-0000-0000-0000-000000000000';
+
+  const response = await makeRequest('PUT', '/api/bulk/links', {
+    links: [
+      { id: validLinkId, properties: { weight: 50 } },
+      { id: invalidLinkId, properties: { weight: 999 } },
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200 (partial success)');
+  assertEquals(response.data.data.summary.successful, 1, 'Summary should show 1 successful');
+  assertEquals(response.data.data.summary.failed, 1, 'Summary should show 1 failed');
+  assertEquals(response.data.data.results[1].code, 'NOT_FOUND', 'Should have NOT_FOUND error code');
+}
+
+async function testBulkOperationsMaxLimit() {
+  logTest('Bulk Operations - Exceeds Maximum Items Limit');
+
+  const typeResponse = await makeRequest('GET', '/api/types?name=BulkTestEntityType');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Try to create more than 100 entities
+  const entities = [];
+  for (let i = 0; i < 101; i++) {
+    entities.push({ type_id: typeId, properties: { name: `Entity ${i}` } });
+  }
+
+  const response = await makeRequest('POST', '/api/bulk/entities', {
+    entities: entities
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for exceeding max limit');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -6754,6 +7137,19 @@ async function runTests() {
     testFilterExpressionOnLinks,
     testFilterExpressionPrecedenceOverPropertyFilters,
     testFilterExpressionInvalidPath,
+
+    // Bulk Operations tests
+    testBulkCreateEntities,
+    testBulkCreateEntitiesValidationError,
+    testBulkCreateEntitiesEmptyArray,
+    testBulkCreateLinks,
+    testBulkCreateLinksInvalidEntity,
+    testBulkUpdateEntities,
+    testBulkUpdateEntitiesNotFound,
+    testBulkUpdateDeletedEntity,
+    testBulkUpdateLinks,
+    testBulkUpdateLinksNotFound,
+    testBulkOperationsMaxLimit,
   ];
 
   for (const test of tests) {
