@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
+import { requestContextMiddleware, getLogger, getRequestId } from './middleware/request-context.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger } from './utils/logger.js';
@@ -19,12 +20,15 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// Request context middleware - must be first to add requestId and logger to all requests
+app.use('*', requestContextMiddleware);
+
 // Global error handler using Hono's onError
 app.onError((err, c) => {
-  const requestId = crypto.randomUUID();
-
-  // Create logger with request context
-  const logger = createLogger({
+  // Get request ID and logger from context (set by request context middleware)
+  // Fallback to generating new ones if not available (shouldn't happen in normal flow)
+  const requestId = getRequestId(c) || crypto.randomUUID();
+  const logger = getLogger(c) || createLogger({
     requestId,
     path: c.req.path,
     method: c.req.method,

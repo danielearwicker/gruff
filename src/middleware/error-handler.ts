@@ -81,11 +81,10 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
   try {
     await next();
   } catch (error) {
-    // Generate request ID for tracking
-    const requestId = crypto.randomUUID();
-
-    // Create logger with request context
-    const logger = createLogger({
+    // Get request ID and logger from context (set by request context middleware)
+    // Fallback to generating new ones if not available (shouldn't happen in normal flow)
+    const requestId = (c.get('requestId') as string) || crypto.randomUUID();
+    const logger = (c.get('logger') as ReturnType<typeof createLogger>) || createLogger({
       requestId,
       path: c.req.path,
       method: c.req.method,

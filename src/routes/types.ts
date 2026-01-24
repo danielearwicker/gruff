@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createTypeSchema, updateTypeSchema, typeQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
-import { createLogger } from '../utils/logger.js';
+import { getLogger } from '../middleware/request-context.js';
 
 type Bindings = {
   DB: D1Database;
@@ -11,9 +11,6 @@ type Bindings = {
 };
 
 const types = new Hono<{ Bindings: Bindings }>();
-
-// Create logger for types route
-const logger = createLogger({ module: 'types' });
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -79,6 +76,7 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
 
     return c.json(response.created(result), 201);
   } catch (error) {
+    const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error creating type', error instanceof Error ? error : undefined, { typeName: data.name });
     throw error;
   }
@@ -119,6 +117,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
         }
       } catch (e) {
         // Invalid cursor format, ignore and continue without cursor
+        const logger = getLogger(c).child({ module: 'types' });
         logger.warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
@@ -151,6 +150,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(typesData, nextCursor, hasMore));
   } catch (error) {
+    const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error listing types', error instanceof Error ? error : undefined);
     throw error;
   }
@@ -181,6 +181,7 @@ types.get('/:id', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
+    const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error fetching type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
@@ -261,6 +262,7 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
 
     return c.json(response.updated(result));
   } catch (error) {
+    const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error updating type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
@@ -315,6 +317,7 @@ types.delete('/:id', async (c) => {
 
     return c.json(response.deleted());
   } catch (error) {
+    const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error deleting type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
     throw error;
   }
