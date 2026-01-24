@@ -9876,6 +9876,90 @@ async function testFieldSelectionWithWhitespace() {
 }
 
 // ============================================================================
+// Response Time Tracking Tests
+// ============================================================================
+
+async function testResponseTimeHeaderOnGet() {
+  logTest('Response Time - X-Response-Time header present on GET requests');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  const responseTime = response.headers.get('X-Response-Time');
+  assert(responseTime, 'X-Response-Time header should be present');
+  assert(responseTime.match(/^\d+ms$/), 'X-Response-Time should be in format NNms');
+}
+
+async function testResponseTimeHeaderOnPost() {
+  logTest('Response Time - X-Response-Time header present on POST requests');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  const response = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Response Time Test Entity' },
+  });
+
+  assertEquals(response.status, 201, 'Status code should be 201');
+  const responseTime = response.headers.get('X-Response-Time');
+  assert(responseTime, 'X-Response-Time header should be present');
+  assert(responseTime.match(/^\d+ms$/), 'X-Response-Time should be in format NNms');
+}
+
+async function testResponseTimeHeaderOnError() {
+  logTest('Response Time - X-Response-Time header present on error responses');
+
+  const response = await makeRequest('GET', '/api/nonexistent');
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  const responseTime = response.headers.get('X-Response-Time');
+  assert(responseTime, 'X-Response-Time header should be present even on errors');
+  assert(responseTime.match(/^\d+ms$/), 'X-Response-Time should be in format NNms');
+}
+
+async function testResponseTimeHeaderOnHealthEndpoint() {
+  logTest('Response Time - X-Response-Time header present on health endpoint');
+
+  const response = await makeRequest('GET', '/health');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  const responseTime = response.headers.get('X-Response-Time');
+  assert(responseTime, 'X-Response-Time header should be present on health endpoint');
+  assert(responseTime.match(/^\d+ms$/), 'X-Response-Time should be in format NNms');
+}
+
+async function testResponseTimeHeaderOnAuthEndpoint() {
+  logTest('Response Time - X-Response-Time header present on auth endpoints');
+
+  const response = await makeRequest('POST', '/api/auth/login', {
+    email: 'nonexistent@example.com',
+    password: 'password123',
+  });
+
+  // Should be 401 since user doesn't exist
+  assertEquals(response.status, 401, 'Status code should be 401');
+  const responseTime = response.headers.get('X-Response-Time');
+  assert(responseTime, 'X-Response-Time header should be present on auth endpoints');
+  assert(responseTime.match(/^\d+ms$/), 'X-Response-Time should be in format NNms');
+}
+
+async function testResponseTimeIsReasonable() {
+  logTest('Response Time - Response time value is reasonable');
+
+  const response = await makeRequest('GET', '/health');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  const responseTime = response.headers.get('X-Response-Time');
+  const timeMs = parseInt(responseTime.replace('ms', ''), 10);
+
+  assert(timeMs >= 0, 'Response time should be non-negative');
+  assert(timeMs < 30000, 'Response time should be less than 30 seconds');
+  logInfo(`Response time: ${timeMs}ms`);
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -10264,6 +10348,14 @@ async function runTests() {
     testFieldSelectionLinkList,
     testFieldSelectionEmptyFieldsReturnsAll,
     testFieldSelectionWithWhitespace,
+
+    // Response Time Tracking tests
+    testResponseTimeHeaderOnGet,
+    testResponseTimeHeaderOnPost,
+    testResponseTimeHeaderOnError,
+    testResponseTimeHeaderOnHealthEndpoint,
+    testResponseTimeHeaderOnAuthEndpoint,
+    testResponseTimeIsReasonable,
   ];
 
   for (const test of tests) {

@@ -705,11 +705,22 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Returns 400 error with list of allowed fields when invalid fields requested
 - Implemented via utility module with consistent behavior across all endpoints
 
-#### 🟦 Response Time Monitoring via Workers Analytics
+#### ✅ Response Time Monitoring via Workers Analytics
 - Track response times for all API endpoints
+  - Response time tracking middleware (`src/middleware/response-time.ts`)
+  - Response time tracker utility (`src/utils/response-time-tracking.ts`)
+  - X-Response-Time header added to all responses
 - Write metrics to Analytics Engine
-- Categorize by endpoint type (read, write, search, graph)
+  - Metrics include: duration, status code, content length, timestamp
+  - Request context: method, path, user ID, request ID
+  - Cloudflare edge context: colo (data center), country
+- Categorize by endpoint type (read, write, search, graph, auth, bulk, export, health, docs)
+  - Automatic endpoint categorization based on path and HTTP method
+  - Route pattern extraction for grouping (UUIDs and numeric IDs replaced with :id)
 - Enable performance trend analysis
+  - Environment-based partitioning for Analytics Engine queries
+  - Status code categorization (2xx, 3xx, 4xx, 5xx)
+  - Configurable skip paths and minimum duration threshold
 
 #### ✅ Global Edge Deployment
 - Handled automatically by Cloudflare Workers

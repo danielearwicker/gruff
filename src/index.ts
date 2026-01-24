@@ -10,6 +10,7 @@ import {
   getProductionSecurityConfig,
 } from './middleware/security.js';
 import { etag } from './middleware/etag.js';
+import { responseTime } from './middleware/response-time.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
@@ -115,6 +116,14 @@ app.use('*', async (c, next) => {
   const headersMiddleware = createSecurityHeadersMiddleware(securityConfig);
   await headersMiddleware(c, next);
 });
+
+// Response time tracking middleware - tracks all requests for performance analysis
+// Writes metrics to Analytics Engine for performance trend analysis
+// Adds X-Response-Time header to all responses
+app.use('*', responseTime({
+  headerName: 'X-Response-Time', // Add response time to response headers
+  skipPaths: ['/docs'], // Skip documentation endpoints (static content)
+}));
 
 // Rate limiting middleware - applied to all /api/* routes
 // Automatically categorizes requests based on path and method
