@@ -5855,6 +5855,401 @@ async function testPropertyFilterInvalidPath() {
 }
 
 // ============================================================================
+// Nested Property Path Tests
+// ============================================================================
+
+async function testNestedPropertyPathDotNotation() {
+  logTest('Nested Property Paths - Dot Notation for Nested Objects');
+
+  // Create a type for nested property tests
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestAddress',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities with nested address properties
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Alice',
+      address: { city: 'New York', country: 'USA', zip: '10001' }
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Bob',
+      address: { city: 'Los Angeles', country: 'USA', zip: '90001' }
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Charlie',
+      address: { city: 'London', country: 'UK', zip: 'SW1A 1AA' }
+    }
+  });
+
+  // Search using nested path with dot notation
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'address.city', operator: 'eq', value: 'New York' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.name === 'Alice', 'Should return Alice');
+}
+
+async function testNestedPropertyPathDeepNesting() {
+  logTest('Nested Property Paths - Deep Nesting (Multiple Levels)');
+
+  // Create a type for deep nested tests
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestUser',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities with deeply nested properties
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      user: {
+        profile: {
+          settings: {
+            theme: 'dark',
+            notifications: true
+          }
+        }
+      }
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      user: {
+        profile: {
+          settings: {
+            theme: 'light',
+            notifications: false
+          }
+        }
+      }
+    }
+  });
+
+  // Search using deeply nested path
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'user.profile.settings.theme', operator: 'eq', value: 'dark' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity with dark theme');
+}
+
+async function testNestedPropertyPathArrayIndexBracket() {
+  logTest('Nested Property Paths - Array Index with Bracket Notation');
+
+  // Create a type for array tests
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestTags',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities with array properties
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Entity A',
+      tags: ['featured', 'new', 'popular']
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Entity B',
+      tags: ['sale', 'clearance', 'limited']
+    }
+  });
+
+  // Search using array index with bracket notation
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'tags[0]', operator: 'eq', value: 'featured' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.name === 'Entity A', 'Should return Entity A');
+}
+
+async function testNestedPropertyPathArrayIndexDot() {
+  logTest('Nested Property Paths - Array Index with Dot Notation');
+
+  // Reuse Tags type
+  const typeResponse = await makeRequest('GET', '/api/types?name=NestedPathTestTags');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search using array index with dot notation
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'tags.1', operator: 'eq', value: 'clearance' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.name === 'Entity B', 'Should return Entity B');
+}
+
+async function testNestedPropertyPathMixedNotation() {
+  logTest('Nested Property Paths - Mixed Notation (Arrays in Objects)');
+
+  // Create a type for complex nested tests
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestOrder',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities with complex nested structure
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      order_id: 'ORD-001',
+      items: [
+        { product: 'Widget A', price: 10.99, quantity: 2 },
+        { product: 'Widget B', price: 24.99, quantity: 1 }
+      ]
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      order_id: 'ORD-002',
+      items: [
+        { product: 'Gadget X', price: 99.99, quantity: 1 },
+        { product: 'Widget A', price: 10.99, quantity: 5 }
+      ]
+    }
+  });
+
+  // Search using mixed notation: array index + nested property
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'items[0].product', operator: 'eq', value: 'Widget A' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity with Widget A as first item');
+  assert(response.data.data[0].properties.order_id === 'ORD-001', 'Should return ORD-001');
+}
+
+async function testNestedPropertyPathNumericComparison() {
+  logTest('Nested Property Paths - Numeric Comparison on Nested Properties');
+
+  // Reuse Order type
+  const typeResponse = await makeRequest('GET', '/api/types?name=NestedPathTestOrder');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search for orders where first item price > 50
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'items[0].price', operator: 'gt', value: 50 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.order_id === 'ORD-002', 'Should return ORD-002 (first item price 99.99)');
+}
+
+async function testNestedPropertyPathExists() {
+  logTest('Nested Property Paths - Exists Check on Nested Property');
+
+  // Create a type for nested exists tests
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestProfile',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create entities with varying nested structure
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Complete Profile',
+      profile: { bio: 'A software developer', website: 'https://example.com' }
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Partial Profile',
+      profile: { bio: 'Another developer' }
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'No Profile',
+      email: 'noprofile@test.com'
+    }
+  });
+
+  // Search for entities with profile.website existing
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'profile.website', operator: 'exists' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 entity');
+  assert(response.data.data[0].properties.name === 'Complete Profile', 'Should return Complete Profile');
+}
+
+async function testNestedPropertyPathNotExists() {
+  logTest('Nested Property Paths - Not Exists Check on Nested Property');
+
+  // Reuse Profile type
+  const typeResponse = await makeRequest('GET', '/api/types?name=NestedPathTestProfile');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search for entities where profile.website does NOT exist
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'profile.website', operator: 'not_exists' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities without profile.website');
+}
+
+async function testNestedPropertyPathPatternMatching() {
+  logTest('Nested Property Paths - Pattern Matching on Nested Strings');
+
+  // Reuse Address type
+  const typeResponse = await makeRequest('GET', '/api/types?name=NestedPathTestAddress');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Search using contains on nested property
+  const response = await makeRequest('POST', '/api/search/entities', {
+    type_id: typeId,
+    property_filters: [
+      { path: 'address.country', operator: 'eq', value: 'USA' }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 2, 'Should return 2 entities in USA');
+}
+
+async function testNestedPropertyPathInvalidNestedBrackets() {
+  logTest('Nested Property Paths - Invalid Path with Nested Brackets');
+
+  // Try to use nested brackets which should be invalid
+  const response = await makeRequest('POST', '/api/search/entities', {
+    property_filters: [
+      { path: 'data[[0]]', operator: 'eq', value: 'test' }
+    ]
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for nested brackets');
+  assert(response.data.error, 'Should return error message');
+}
+
+async function testNestedPropertyPathInvalidEmptyBrackets() {
+  logTest('Nested Property Paths - Invalid Path with Empty Brackets');
+
+  // Try to use empty brackets which should be invalid
+  const response = await makeRequest('POST', '/api/search/entities', {
+    property_filters: [
+      { path: 'data[]', operator: 'eq', value: 'test' }
+    ]
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 for empty brackets');
+  assert(response.data.error, 'Should return error message');
+}
+
+async function testNestedPropertyPathOnLinks() {
+  logTest('Nested Property Paths - Apply to Link Search');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestLinkEntity',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NestedPathTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' }
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' }
+  });
+
+  // Create links with nested properties
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity2.data.data.id,
+    properties: {
+      relationship: 'colleague',
+      metadata: { strength: 5, since: '2020-01-01' }
+    }
+  });
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity2.data.data.id,
+    target_entity_id: entity1.data.data.id,
+    properties: {
+      relationship: 'friend',
+      metadata: { strength: 10, since: '2015-06-15' }
+    }
+  });
+
+  // Search links with nested path filter
+  const response = await makeRequest('POST', '/api/search/links', {
+    type_id: linkTypeId,
+    property_filters: [
+      { path: 'metadata.strength', operator: 'gte', value: 7 }
+    ]
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data.length === 1, 'Should return 1 link with metadata.strength >= 7');
+  assert(response.data.data[0].properties.relationship === 'friend', 'Should return friend relationship');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -6072,6 +6467,20 @@ async function runTests() {
     testPropertyFilterMultipleConditions,
     testPropertyFilterOnLinks,
     testPropertyFilterInvalidPath,
+
+    // Nested Property Path tests
+    testNestedPropertyPathDotNotation,
+    testNestedPropertyPathDeepNesting,
+    testNestedPropertyPathArrayIndexBracket,
+    testNestedPropertyPathArrayIndexDot,
+    testNestedPropertyPathMixedNotation,
+    testNestedPropertyPathNumericComparison,
+    testNestedPropertyPathExists,
+    testNestedPropertyPathNotExists,
+    testNestedPropertyPathPatternMatching,
+    testNestedPropertyPathInvalidNestedBrackets,
+    testNestedPropertyPathInvalidEmptyBrackets,
+    testNestedPropertyPathOnLinks,
   ];
 
   for (const test of tests) {

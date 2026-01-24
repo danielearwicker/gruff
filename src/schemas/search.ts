@@ -4,15 +4,27 @@ import { uuidSchema, jsonPropertiesSchema, paginationQuerySchema } from './commo
 /**
  * Property filter schema with comparison operators
  *
+ * Supported path formats:
+ * - Simple properties: "name", "age"
+ * - Nested properties (dot notation): "address.city", "user.profile.name"
+ * - Array indices (bracket notation): "tags[0]", "items[2]"
+ * - Array indices (dot notation): "tags.0", "items.2"
+ * - Mixed paths: "users[0].address.city", "data.items[1].value", "orders.0.items.1.name"
+ *
  * Examples:
  * - Equality: { path: "name", operator: "eq", value: "John" }
  * - Greater than: { path: "age", operator: "gt", value: 18 }
+ * - Nested property: { path: "address.city", operator: "eq", value: "New York" }
+ * - Array element: { path: "tags[0]", operator: "eq", value: "featured" }
+ * - Array element (dot): { path: "tags.0", operator: "eq", value: "featured" }
+ * - Deep nested: { path: "users[0].profile.name", operator: "contains", value: "John" }
  * - Pattern match: { path: "email", operator: "like", value: "%@example.com" }
  * - In set: { path: "status", operator: "in", value: ["active", "pending"] }
  * - Exists: { path: "metadata.tags", operator: "exists" }
  */
 export const propertyFilterSchema = z.object({
-  // JSON path to the property (e.g., "name", "address.city")
+  // JSON path to the property
+  // Supports: simple ("name"), nested ("address.city"), array indices ("tags[0]" or "tags.0")
   path: z.string().min(1),
 
   // Comparison operator

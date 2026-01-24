@@ -18,22 +18,260 @@ export interface PropertyFilterResult {
 }
 
 /**
- * Sanitize a JSON path to prevent SQL injection
- * - Only allow alphanumeric characters, dots, underscores, and array indices
- * - Convert to SQLite JSON path format ($.path.to.property)
+ * Result of parsing a JSON path
+ */
+export interface ParsedJsonPath {
+  /** Whether the path is valid */
+  isValid: boolean;
+  /** The SQLite-compatible JSON path (e.g., "$.address.city" or "$.tags[0].name") */
+  sqlPath: string;
+  /** Array of path components */
+  components: JsonPathComponent[];
+  /** Error message if invalid */
+  error?: string;
+}
+
+/**
+ * A single component of a JSON path
+ */
+export interface JsonPathComponent {
+  /** Type of component: 'property' for object properties, 'index' for array indices */
+  type: 'property' | 'index';
+  /** The property name (for property) or array index (for index) */
+  value: string | number;
+}
+
+/**
+ * Maximum allowed nesting depth for JSON paths
+ */
+const MAX_PATH_DEPTH = 10;
+
+/**
+ * Parse and validate a JSON path expression
+ *
+ * Supports:
+ * - Simple properties: "name", "age"
+ * - Nested properties with dot notation: "address.city", "user.profile.name"
+ * - Array indices with bracket notation: "tags[0]", "items[2]"
+ * - Array indices with dot notation: "tags.0", "items.2"
+ * - Mixed notation: "users[0].address.city", "data.items[1].value"
+ *
+ * @param path The JSON path expression to parse
+ * @returns Parsed path information including validity, SQLite path, and components
+ */
+export function parseJsonPath(path: string): ParsedJsonPath {
+  // Empty path is invalid
+  if (!path || path.trim() === '') {
+    return {
+      isValid: false,
+      sqlPath: '',
+      components: [],
+      error: 'JSON path cannot be empty',
+    };
+  }
+
+  // Remove leading $. if present (we'll add it back)
+  let normalizedPath = path;
+  if (normalizedPath.startsWith('$.')) {
+    normalizedPath = normalizedPath.slice(2);
+  } else if (normalizedPath.startsWith('$')) {
+    normalizedPath = normalizedPath.slice(1);
+  }
+
+  // Validate the path only contains safe characters
+  // Allow: alphanumeric, underscores, dots, square brackets, and digits inside brackets
+  if (!/^[a-zA-Z0-9_.\[\]]+$/.test(normalizedPath)) {
+    return {
+      isValid: false,
+      sqlPath: '',
+      components: [],
+      error: `Invalid characters in JSON path: ${path}. Only alphanumeric characters, underscores, dots, and square brackets are allowed.`,
+    };
+  }
+
+  const components: JsonPathComponent[] = [];
+  const sqlParts: string[] = [];
+
+  // Split by dots first, then handle bracket notation within each segment
+  // We need to be careful with segments like "items[0]" which should stay together
+  let current = '';
+  let inBracket = false;
+
+  for (let i = 0; i < normalizedPath.length; i++) {
+    const char = normalizedPath[i];
+
+    if (char === '[') {
+      if (inBracket) {
+        return {
+          isValid: false,
+          sqlPath: '',
+          components: [],
+          error: `Invalid JSON path: nested brackets are not allowed at position ${i}`,
+        };
+      }
+      inBracket = true;
+
+      // If there's content before the bracket, it's a property name
+      if (current) {
+        if (!isValidPropertyName(current)) {
+          return {
+            isValid: false,
+            sqlPath: '',
+            components: [],
+            error: `Invalid property name: ${current}. Property names must start with a letter or underscore.`,
+          };
+        }
+        components.push({ type: 'property', value: current });
+        sqlParts.push(current);
+        current = '';
+      }
+    } else if (char === ']') {
+      if (!inBracket) {
+        return {
+          isValid: false,
+          sqlPath: '',
+          components: [],
+          error: `Invalid JSON path: unexpected closing bracket at position ${i}`,
+        };
+      }
+      inBracket = false;
+
+      // Content inside brackets should be an array index
+      const indexValue = current.trim();
+      if (!/^\d+$/.test(indexValue)) {
+        return {
+          isValid: false,
+          sqlPath: '',
+          components: [],
+          error: `Invalid array index: ${current}. Array indices must be non-negative integers.`,
+        };
+      }
+      const index = parseInt(indexValue, 10);
+      components.push({ type: 'index', value: index });
+      sqlParts.push(`[${index}]`);
+      current = '';
+    } else if (char === '.' && !inBracket) {
+      // Dot separator for properties
+      if (current) {
+        // Check if current is a numeric index (dot notation for arrays)
+        if (/^\d+$/.test(current)) {
+          const index = parseInt(current, 10);
+          components.push({ type: 'index', value: index });
+          sqlParts.push(`[${index}]`);
+        } else {
+          if (!isValidPropertyName(current)) {
+            return {
+              isValid: false,
+              sqlPath: '',
+              components: [],
+              error: `Invalid property name: ${current}. Property names must start with a letter or underscore.`,
+            };
+          }
+          components.push({ type: 'property', value: current });
+          sqlParts.push(current);
+        }
+        current = '';
+      }
+      // Ignore leading or consecutive dots (treat as empty)
+    } else {
+      current += char;
+    }
+  }
+
+  // Handle any remaining content
+  if (inBracket) {
+    return {
+      isValid: false,
+      sqlPath: '',
+      components: [],
+      error: 'Invalid JSON path: unclosed bracket',
+    };
+  }
+
+  if (current) {
+    // Check if current is a numeric index (dot notation for arrays)
+    if (/^\d+$/.test(current)) {
+      const index = parseInt(current, 10);
+      components.push({ type: 'index', value: index });
+      sqlParts.push(`[${index}]`);
+    } else {
+      if (!isValidPropertyName(current)) {
+        return {
+          isValid: false,
+          sqlPath: '',
+          components: [],
+          error: `Invalid property name: ${current}. Property names must start with a letter or underscore.`,
+        };
+      }
+      components.push({ type: 'property', value: current });
+      sqlParts.push(current);
+    }
+  }
+
+  // Check for empty components array
+  if (components.length === 0) {
+    return {
+      isValid: false,
+      sqlPath: '',
+      components: [],
+      error: 'JSON path cannot be empty',
+    };
+  }
+
+  // Check for maximum depth
+  if (components.length > MAX_PATH_DEPTH) {
+    return {
+      isValid: false,
+      sqlPath: '',
+      components: [],
+      error: `JSON path exceeds maximum depth of ${MAX_PATH_DEPTH}`,
+    };
+  }
+
+  // Build the SQLite-compatible path
+  // Format: $.property.name[0].nested
+  let sqlPath = '$';
+  for (const part of sqlParts) {
+    if (part.startsWith('[')) {
+      // Array index - append directly
+      sqlPath += part;
+    } else {
+      // Property name - append with dot separator
+      sqlPath += `.${part}`;
+    }
+  }
+
+  return {
+    isValid: true,
+    sqlPath,
+    components,
+  };
+}
+
+/**
+ * Check if a string is a valid JSON property name
+ * Property names must start with a letter or underscore, followed by letters, digits, or underscores
+ */
+function isValidPropertyName(name: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+}
+
+/**
+ * Sanitize and convert a JSON path to SQLite JSON path format
+ * This is the main entry point for path validation in filters
+ *
+ * @param path The JSON path to sanitize
+ * @returns The SQLite-compatible JSON path
+ * @throws Error if the path is invalid
  */
 function sanitizeJsonPath(path: string): string {
-  // Validate path contains only safe characters
-  if (!/^[a-zA-Z0-9._\[\]]+$/.test(path)) {
-    throw new Error(`Invalid JSON path: ${path}. Only alphanumeric characters, dots, underscores, and array indices are allowed.`);
+  const parsed = parseJsonPath(path);
+
+  if (!parsed.isValid) {
+    throw new Error(parsed.error || `Invalid JSON path: ${path}`);
   }
 
-  // Ensure path starts with $. for SQLite JSON functions
-  if (!path.startsWith('$.')) {
-    return `$.${path}`;
-  }
-
-  return path;
+  return parsed.sqlPath;
 }
 
 /**

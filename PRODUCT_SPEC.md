@@ -365,11 +365,15 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Apply to both entity and link search endpoints
 - Implemented via `property_filters` parameter in search endpoints with backward compatibility for legacy `properties` parameter
 
-#### 🟦 Nested Property Path Support
+#### ✅ Nested Property Path Support
 - Support dot notation for nested JSON properties (e.g., `address.city`, `metadata.tags.0`)
-- Support array indexing in JSON paths
-- Validate JSON path expressions before query execution
-- Handle missing or null values gracefully
+- Support array indexing in JSON paths with bracket notation (`tags[0]`) and dot notation (`tags.0`)
+- Support mixed notation for complex paths (`users[0].address.city`, `orders.0.items.1.name`)
+- Validate JSON path expressions before query execution with proper error messages
+- Handle missing or null values gracefully (returns NULL for non-existent paths)
+- Maximum path depth of 10 levels to prevent abuse
+- Property names must start with a letter or underscore, followed by letters, digits, or underscores
+- Implemented via `parseJsonPath()` function that converts user paths to SQLite-compatible JSON paths
 
 #### 🟦 Logical Operators for Property Filters
 - Support AND/OR logic for combining multiple property filters
