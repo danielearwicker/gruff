@@ -18,6 +18,7 @@ import usersRouter from './routes/users.js';
 import bulkRouter from './routes/bulk.js';
 import exportRouter from './routes/export.js';
 import auditRouter from './routes/audit.js';
+import docsRouter from './routes/docs.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -190,7 +191,8 @@ app.get('/api/version', (c) => {
     },
     api: {
       version: 'v1',
-      documentation: '/api',
+      documentation: '/docs',
+      openapi: '/docs/openapi.json',
     },
     dependencies: {
       hono: '^4.11.5',
@@ -209,6 +211,8 @@ app.get('/', (c) => {
       health: '/health',
       api: '/api',
       version: '/api/version',
+      documentation: '/docs',
+      openapi: '/docs/openapi.json',
     },
   });
 });
@@ -249,6 +253,9 @@ app.route('/api/export', exportRouter);
 
 // Mount audit log routes
 app.route('/api/audit', auditRouter);
+
+// Mount API documentation routes (OpenAPI spec and Scalar UI)
+app.route('/docs', docsRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {

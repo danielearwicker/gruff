@@ -1,0 +1,114 @@
+import { Hono } from 'hono';
+import { apiReference } from '@scalar/hono-api-reference';
+import { generateOpenApiSpec } from '../openapi/index.js';
+
+const docs = new Hono();
+
+// Serve the OpenAPI spec as JSON
+docs.get('/openapi.json', (c) => {
+  const spec = generateOpenApiSpec();
+  return c.json(spec);
+});
+
+// Serve the OpenAPI spec as YAML (for compatibility)
+docs.get('/openapi.yaml', (c) => {
+  const spec = generateOpenApiSpec();
+  // Simple JSON to YAML conversion for the spec
+  const yamlContent = jsonToYaml(spec);
+  return new Response(yamlContent, {
+    headers: {
+      'Content-Type': 'text/yaml',
+    },
+  });
+});
+
+// Serve the interactive API documentation using Scalar
+docs.get(
+  '/',
+  apiReference({
+    pageTitle: 'Gruff API Documentation',
+    spec: {
+      url: '/docs/openapi.json',
+    },
+    theme: 'default',
+    layout: 'modern',
+    darkMode: true,
+    hideModels: false,
+    hideDownloadButton: false,
+    showSidebar: true,
+    customCss: `
+      .darklight-reference {
+        --scalar-background-1: #1a1a2e;
+        --scalar-background-2: #16213e;
+        --scalar-background-3: #0f3460;
+        --scalar-color-1: #ffffff;
+        --scalar-color-2: #e4e4e7;
+        --scalar-color-3: #a1a1aa;
+        --scalar-color-accent: #60a5fa;
+      }
+    `,
+    metaData: {
+      title: 'Gruff API Documentation',
+      description: 'Entity-Relationship Graph Database with Versioning API',
+    },
+  })
+);
+
+// Simple JSON to YAML converter (basic implementation)
+function jsonToYaml(obj: any, indent = 0): string {
+  const spaces = '  '.repeat(indent);
+  let yaml = '';
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      if (typeof item === 'object' && item !== null) {
+        yaml += `${spaces}-\n${jsonToYaml(item, indent + 1)}`;
+      } else {
+        yaml += `${spaces}- ${formatYamlValue(item)}\n`;
+      }
+    }
+  } else if (typeof obj === 'object' && obj !== null) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value) && value.length === 0) {
+          yaml += `${spaces}${key}: []\n`;
+        } else if (Object.keys(value).length === 0) {
+          yaml += `${spaces}${key}: {}\n`;
+        } else {
+          yaml += `${spaces}${key}:\n${jsonToYaml(value, indent + 1)}`;
+        }
+      } else {
+        yaml += `${spaces}${key}: ${formatYamlValue(value)}\n`;
+      }
+    }
+  }
+
+  return yaml;
+}
+
+function formatYamlValue(value: any): string {
+  if (value === null) return 'null';
+  if (value === undefined) return '~';
+  if (typeof value === 'string') {
+    // Check if string needs quoting
+    if (
+      value === '' ||
+      value.includes('\n') ||
+      value.includes(':') ||
+      value.includes('#') ||
+      value.startsWith(' ') ||
+      value.endsWith(' ') ||
+      /^[0-9]/.test(value) ||
+      ['true', 'false', 'null', 'yes', 'no'].includes(value.toLowerCase())
+    ) {
+      // Use double quotes and escape special characters
+      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+    }
+    return value;
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  return String(value);
+}
+
+export default docs;

@@ -7953,6 +7953,132 @@ async function testAuditLogRequiresAuth() {
 }
 
 // ============================================================================
+// API Documentation Tests
+// ============================================================================
+
+async function testDocsOpenApiJson() {
+  logTest('API Documentation - OpenAPI JSON Spec');
+
+  const response = await makeRequest('GET', '/docs/openapi.json');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data !== null, 'Response should have JSON body');
+  assertEquals(response.data.openapi, '3.1.0', 'Should be OpenAPI 3.1.0 spec');
+  assert(response.data.info, 'Should have info section');
+  assertEquals(response.data.info.title, 'Gruff API', 'Should have correct title');
+  assertEquals(response.data.info.version, '1.0.0', 'Should have correct version');
+  assert(response.data.paths, 'Should have paths section');
+  assert(response.data.components, 'Should have components section');
+  assert(response.data.components.schemas, 'Should have schemas');
+  assert(response.data.components.securitySchemes, 'Should have security schemes');
+  assert(response.data.tags, 'Should have tags');
+}
+
+async function testDocsOpenApiYaml() {
+  logTest('API Documentation - OpenAPI YAML Spec');
+
+  const response = await fetch(`${DEV_SERVER_URL}/docs/openapi.yaml`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+
+  const contentType = response.headers.get('content-type');
+  assert(contentType.includes('text/yaml'), 'Content-Type should be text/yaml');
+
+  const yamlContent = await response.text();
+  assert(yamlContent.includes('openapi:'), 'Should contain openapi field');
+  assert(yamlContent.includes('Gruff API'), 'Should contain API title');
+  assert(yamlContent.includes('/api/entities'), 'Should contain entity paths');
+}
+
+async function testDocsScalarUi() {
+  logTest('API Documentation - Scalar UI');
+
+  const response = await fetch(`${DEV_SERVER_URL}/docs`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+
+  const contentType = response.headers.get('content-type');
+  assert(contentType.includes('text/html'), 'Content-Type should be text/html');
+
+  const htmlContent = await response.text();
+  assert(htmlContent.includes('Gruff API Documentation'), 'Should contain page title');
+  assert(htmlContent.includes('scalar'), 'Should contain Scalar reference');
+}
+
+async function testDocsOpenApiEndpoints() {
+  logTest('API Documentation - Endpoints Coverage');
+
+  const response = await makeRequest('GET', '/docs/openapi.json');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  const paths = response.data.paths;
+
+  // Verify critical endpoints are documented
+  assert(paths['/health'], 'Should document /health endpoint');
+  assert(paths['/api/version'], 'Should document /api/version endpoint');
+  assert(paths['/api/auth/register'], 'Should document /api/auth/register endpoint');
+  assert(paths['/api/auth/login'], 'Should document /api/auth/login endpoint');
+  assert(paths['/api/entities'], 'Should document /api/entities endpoint');
+  assert(paths['/api/entities/{id}'], 'Should document /api/entities/{id} endpoint');
+  assert(paths['/api/links'], 'Should document /api/links endpoint');
+  assert(paths['/api/types'], 'Should document /api/types endpoint');
+  assert(paths['/api/graph/traverse'], 'Should document /api/graph/traverse endpoint');
+  assert(paths['/api/graph/path'], 'Should document /api/graph/path endpoint');
+  assert(paths['/api/search/entities'], 'Should document /api/search/entities endpoint');
+  assert(paths['/api/bulk/entities'], 'Should document /api/bulk/entities endpoint');
+  assert(paths['/api/export'], 'Should document /api/export endpoint');
+  assert(paths['/api/audit'], 'Should document /api/audit endpoint');
+}
+
+async function testDocsOpenApiSchemas() {
+  logTest('API Documentation - Schemas Coverage');
+
+  const response = await makeRequest('GET', '/docs/openapi.json');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  const schemas = response.data.components.schemas;
+
+  // Verify critical schemas are defined
+  assert(schemas.Entity, 'Should have Entity schema');
+  assert(schemas.Link, 'Should have Link schema');
+  assert(schemas.Type, 'Should have Type schema');
+  assert(schemas.User, 'Should have User schema');
+  assert(schemas.CreateEntity, 'Should have CreateEntity schema');
+  assert(schemas.CreateLink, 'Should have CreateLink schema');
+  assert(schemas.CreateType, 'Should have CreateType schema');
+  assert(schemas.Error, 'Should have Error schema');
+  assert(schemas.Success, 'Should have Success schema');
+  assert(schemas.AuditLog, 'Should have AuditLog schema');
+}
+
+async function testDocsRootEndpointIncludesDocsLink() {
+  logTest('API Documentation - Root Endpoint Includes Docs Link');
+
+  const response = await makeRequest('GET', '/');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.endpoints.documentation, 'Should have documentation endpoint');
+  assertEquals(response.data.endpoints.documentation, '/docs', 'Documentation should be at /docs');
+  assert(response.data.endpoints.openapi, 'Should have openapi endpoint');
+  assertEquals(response.data.endpoints.openapi, '/docs/openapi.json', 'OpenAPI should be at /docs/openapi.json');
+}
+
+async function testDocsVersionEndpointIncludesDocsLink() {
+  logTest('API Documentation - Version Endpoint Includes Docs Link');
+
+  const response = await makeRequest('GET', '/api/version');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.api.documentation, 'Should have documentation link');
+  assertEquals(response.data.api.documentation, '/docs', 'Documentation should be at /docs');
+  assert(response.data.api.openapi, 'Should have openapi link');
+  assertEquals(response.data.api.openapi, '/docs/openapi.json', 'OpenAPI should be at /docs/openapi.json');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -8251,6 +8377,15 @@ async function runTests() {
     testAuditLogEntityUpdateLogged,
     testAuditLogEntityDeleteLogged,
     testAuditLogRequiresAuth,
+
+    // API Documentation tests
+    testDocsOpenApiJson,
+    testDocsOpenApiYaml,
+    testDocsScalarUi,
+    testDocsOpenApiEndpoints,
+    testDocsOpenApiSchemas,
+    testDocsRootEndpointIncludesDocsLink,
+    testDocsVersionEndpointIncludesDocsLink,
   ];
 
   for (const test of tests) {

@@ -482,12 +482,13 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Automatic endpoint category detection based on request path and method
 - Cloudflare's built-in rate limiting rules available as additional protection layer
 
-### 🟦 API Documentation
-- OpenAPI 3.0 specification (generated from Zod schemas)
-- Interactive API documentation UI (Scalar, Swagger UI hosted on Workers)
-- Request/response examples
-- Authentication flow documentation
-- Hono's built-in OpenAPI support
+### ✅ API Documentation
+- OpenAPI 3.1.0 specification available at `/docs/openapi.json`
+- Interactive API documentation UI using Scalar at `/docs`
+- Comprehensive endpoint documentation with request/response examples
+- Authentication flow documentation with security schemes
+- YAML spec available at `/docs/openapi.yaml`
+- Covers all API endpoints: auth, users, types, entities, links, graph, search, bulk, export/import, and audit
 
 ## Technical Architecture
 
