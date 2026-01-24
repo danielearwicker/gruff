@@ -10,11 +10,13 @@ import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
 import entitiesRouter from './routes/entities.js';
 import linksRouter from './routes/links.js';
+import authRouter from './routes/auth.js';
 
 // Define the environment bindings type
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
+  JWT_SECRET: string;
   ENVIRONMENT: string;
 };
 
@@ -197,6 +199,9 @@ app.get('/api', (c) => {
     message: 'Gruff API - Entity-Relationship Database with Versioning',
   });
 });
+
+// Mount authentication routes
+app.route('/api/auth', authRouter);
 
 // Mount type management routes
 app.route('/api/types', typesRouter);

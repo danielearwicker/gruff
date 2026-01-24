@@ -16,3 +16,6 @@ id = "local-kv"
 [vars]
 # Environment variables (non-secret)
 ENVIRONMENT = "development"
+# JWT secret for local development only
+# For production, use: wrangler secret put JWT_SECRET
+JWT_SECRET = "dev-secret-key-change-in-production-use-wrangler-secret-put"

@@ -129,7 +129,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 
 ### Local Authentication - API Endpoints
 
-#### 🟦 User Registration Endpoint
+#### ✅ User Registration Endpoint
 - POST /api/auth/register endpoint
 - Email and password validation using Zod
 - Create user record in database

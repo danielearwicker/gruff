@@ -672,6 +672,82 @@ async function testResponseFormattingForbidden() {
 }
 
 // ============================================================================
+// Authentication Tests
+// ============================================================================
+
+async function testUserRegistration() {
+  logTest('Authentication - User Registration');
+
+  const response = await makeRequest('POST', '/api/auth/register', {
+    email: 'newuser@example.com',
+    password: 'testPassword123',
+    display_name: 'New Test User',
+  });
+
+  assertEquals(response.status, 201, 'Status code should be 201 Created');
+  assert(response.data.success, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.user, 'Should have user object');
+  assertEquals(response.data.data.user.email, 'newuser@example.com', 'Should have correct email');
+  assertEquals(response.data.data.user.display_name, 'New Test User', 'Should have correct display name');
+  assertEquals(response.data.data.user.provider, 'local', 'Should have provider: local');
+  assert(response.data.data.user.id, 'Should have user ID');
+  assert(response.data.data.access_token, 'Should have access token');
+  assert(response.data.data.refresh_token, 'Should have refresh token');
+  assertEquals(response.data.data.token_type, 'Bearer', 'Should have token_type: Bearer');
+  assert(response.data.data.expires_in, 'Should have expires_in');
+}
+
+async function testUserRegistrationDuplicateEmail() {
+  logTest('Authentication - User Registration with Duplicate Email');
+
+  // First registration
+  await makeRequest('POST', '/api/auth/register', {
+    email: 'duplicate@example.com',
+    password: 'testPassword123',
+  });
+
+  // Attempt duplicate registration
+  const response = await makeRequest('POST', '/api/auth/register', {
+    email: 'duplicate@example.com',
+    password: 'anotherPassword456',
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'USER_EXISTS', 'Should have USER_EXISTS code');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testUserRegistrationValidation() {
+  logTest('Authentication - User Registration Validation');
+
+  // Test missing password
+  const response1 = await makeRequest('POST', '/api/auth/register', {
+    email: 'validation-test@example.com',
+    // password missing
+  });
+
+  assertEquals(response1.status, 400, 'Status code should be 400 for missing password');
+
+  // Test invalid email
+  const response2 = await makeRequest('POST', '/api/auth/register', {
+    email: 'invalid-email',
+    password: 'testPassword123',
+  });
+
+  assertEquals(response2.status, 400, 'Status code should be 400 for invalid email');
+
+  // Test short password
+  const response3 = await makeRequest('POST', '/api/auth/register', {
+    email: 'test3@example.com',
+    password: 'short',
+  });
+
+  assertEquals(response3.status, 400, 'Status code should be 400 for short password');
+}
+
+// ============================================================================
 // Type Management Tests
 // ============================================================================
 
@@ -3781,6 +3857,11 @@ async function runTests() {
     testResponseFormattingValidationError,
     testResponseFormattingUnauthorized,
     testResponseFormattingForbidden,
+
+    // Authentication tests
+    testUserRegistration,
+    testUserRegistrationDuplicateEmail,
+    testUserRegistrationValidation,
 
     // Type Management tests
     testCreateTypeEntity,
