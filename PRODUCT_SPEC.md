@@ -318,7 +318,7 @@ Implement basic link search endpoint:
 - Return paginated results
 - Include link type and connected entity information in results
 
-#### 🟦 Type-ahead Suggestions
+#### ✅ Type-ahead Suggestions
 ```
 GET    /api/search/suggest         # Type-ahead suggestions for entity names
 ```

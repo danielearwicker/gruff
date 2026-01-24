@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { validateJson } from '../middleware/validation.js';
-import { searchEntitiesSchema, searchLinksSchema } from '../schemas/index.js';
+import { validateJson, validateQuery } from '../middleware/validation.js';
+import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 
@@ -318,6 +318,89 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
   } catch (error) {
     logger.error('Link search failed', error as Error);
     return c.json(response.error('Link search failed', 'SEARCH_ERROR'), 500);
+  }
+});
+
+/**
+ * GET /api/search/suggest
+ * Type-ahead suggestions for entity properties
+ */
+search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
+  const params = c.get('validated_query') as any;
+  const db = c.env.DB;
+  const logger = getLogger(c);
+
+  logger.info('Generating type-ahead suggestions', { params });
+
+  try {
+    // Build the WHERE clause dynamically
+    const whereClauses: string[] = ['e.is_latest = 1', 'e.is_deleted = 0'];
+    const bindings: any[] = [];
+
+    // Type filter
+    if (params.type_id) {
+      whereClauses.push('e.type_id = ?');
+      bindings.push(params.type_id);
+    }
+
+    // Build the search clause based on property path
+    // For simplicity, we'll use LIKE with % wildcards for partial matching
+    // The property_path parameter determines which JSON property to search
+    const propertyPath = params.property_path;
+    const searchQuery = `%${params.query}%`;
+
+    // Use json_extract to get the property value and match against it
+    whereClauses.push(`json_extract(e.properties, '$.${propertyPath}') LIKE ?`);
+    bindings.push(searchQuery);
+
+    const whereClause = whereClauses.join(' AND ');
+
+    // Query for matching entities
+    // We select the entity ID, type info, and the matched property value
+    const query = `
+      SELECT
+        e.id,
+        e.type_id,
+        t.name as type_name,
+        json_extract(e.properties, '$.${propertyPath}') as matched_value,
+        e.properties
+      FROM entities e
+      LEFT JOIN types t ON e.type_id = t.id
+      WHERE ${whereClause}
+      ORDER BY
+        CASE
+          WHEN json_extract(e.properties, '$.${propertyPath}') LIKE ? THEN 1
+          ELSE 2
+        END,
+        json_extract(e.properties, '$.${propertyPath}')
+      LIMIT ?
+    `;
+
+    // Add binding for prefix match (for better sorting - exact prefix matches first)
+    bindings.push(`${params.query}%`, params.limit);
+
+    const results = await db.prepare(query).bind(...bindings).all();
+
+    // Format the suggestions
+    const suggestions = results.results.map((row: any) => ({
+      entity_id: row.id,
+      type_id: row.type_id,
+      type_name: row.type_name,
+      matched_value: row.matched_value,
+      property_path: propertyPath,
+      // Optionally include full properties for additional context
+      properties: row.properties ? JSON.parse(row.properties) : {},
+    }));
+
+    logger.info('Type-ahead suggestions generated', {
+      query: params.query,
+      count: suggestions.length
+    });
+
+    return c.json(response.success(suggestions));
+  } catch (error) {
+    logger.error('Type-ahead suggestions failed', error as Error);
+    return c.json(response.error('Type-ahead suggestions failed', 'SUGGEST_ERROR'), 500);
   }
 });
 

@@ -5068,6 +5068,166 @@ async function testSearchLinksWithEntityInfo() {
   assert(link.type, 'Should include link type info');
 }
 
+async function testTypeAheadSuggestions() {
+  logTest('Type-ahead Suggestions - Basic Partial Matching');
+
+  // Create test type
+  const cityType = await makeRequest('POST', '/api/types', {
+    name: 'SuggestCityType',
+    category: 'entity'
+  });
+  const cityTypeId = cityType.data.data.id;
+
+  // Create test entities with names for matching
+  await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'San Francisco' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'San Diego' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'Santa Clara' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: cityTypeId,
+    properties: { name: 'Los Angeles' }
+  });
+
+  // Test partial match for "San"
+  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=San&property_path=name`);
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data, 'Should have data field');
+  assert(data.data.length >= 3, 'Should find at least 3 cities starting with/containing "San"');
+
+  // Verify all results contain "San"
+  const allContainSan = data.data.every(item =>
+    item.matched_value && item.matched_value.includes('San')
+  );
+  assert(allContainSan, 'All suggestions should contain "San" in the matched value');
+}
+
+async function testTypeAheadSuggestionsWithTypeFilter() {
+  logTest('Type-ahead Suggestions - With Type Filter');
+
+  // Create two different types
+  const carType = await makeRequest('POST', '/api/types', {
+    name: 'SuggestCarType',
+    category: 'entity'
+  });
+  const carTypeId = carType.data.data.id;
+
+  const bikeType = await makeRequest('POST', '/api/types', {
+    name: 'SuggestBikeType',
+    category: 'entity'
+  });
+  const bikeTypeId = bikeType.data.data.id;
+
+  // Create entities of different types with similar names
+  await makeRequest('POST', '/api/entities', {
+    type_id: carTypeId,
+    properties: { name: 'Honda Civic' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: carTypeId,
+    properties: { name: 'Honda Accord' }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: bikeTypeId,
+    properties: { name: 'Honda CB500' }
+  });
+
+  // Search only for cars with "Honda"
+  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`);
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data.length >= 2, 'Should find at least 2 Honda cars');
+
+  // Verify all results are of car type
+  const allCars = data.data.every(item => item.type_id === carTypeId);
+  assert(allCars, 'All suggestions should be of car type');
+}
+
+async function testTypeAheadSuggestionsLimit() {
+  logTest('Type-ahead Suggestions - Respect Limit Parameter');
+
+  // Create test type
+  const colorType = await makeRequest('POST', '/api/types', {
+    name: 'SuggestColorType',
+    category: 'entity'
+  });
+  const colorTypeId = colorType.data.data.id;
+
+  // Create many entities
+  const colors = ['Red', 'Rose', 'Ruby', 'Rust', 'Raspberry', 'Rouge', 'Redwood', 'Reddish'];
+  for (const color of colors) {
+    await makeRequest('POST', '/api/entities', {
+      type_id: colorTypeId,
+      properties: { name: color }
+    });
+  }
+
+  // Request with limit of 3
+  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=R&property_path=name&limit=3`);
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(data.data.length, 3, 'Should return exactly 3 suggestions');
+}
+
+async function testTypeAheadSuggestionsCustomProperty() {
+  logTest('Type-ahead Suggestions - Search Custom Property Path');
+
+  // Create test type
+  const bookType = await makeRequest('POST', '/api/types', {
+    name: 'SuggestBookType',
+    category: 'entity'
+  });
+  const bookTypeId = bookType.data.data.id;
+
+  // Create entities with different properties
+  await makeRequest('POST', '/api/entities', {
+    type_id: bookTypeId,
+    properties: {
+      title: 'The Great Gatsby',
+      author: 'F. Scott Fitzgerald'
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: bookTypeId,
+    properties: {
+      title: '1984',
+      author: 'George Orwell'
+    }
+  });
+  await makeRequest('POST', '/api/entities', {
+    type_id: bookTypeId,
+    properties: {
+      title: 'Animal Farm',
+      author: 'George Orwell'
+    }
+  });
+
+  // Search by author property instead of name
+  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=George&property_path=author`);
+  const data = await response.json();
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(data.data.length >= 2, 'Should find at least 2 books by George');
+
+  // Verify matched_value contains the searched property
+  const allMatchGeorge = data.data.every(item =>
+    item.matched_value && item.matched_value.includes('George')
+  );
+  assert(allMatchGeorge, 'All suggestions should have "George" in author field');
+  assertEquals(data.data[0].property_path, 'author', 'Should indicate matched property path');
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -5255,6 +5415,12 @@ async function runTests() {
     testSearchLinksBasic,
     testSearchLinksBySourceEntity,
     testSearchLinksWithEntityInfo,
+
+    // Type-ahead suggestions tests
+    testTypeAheadSuggestions,
+    testTypeAheadSuggestionsWithTypeFilter,
+    testTypeAheadSuggestionsLimit,
+    testTypeAheadSuggestionsCustomProperty,
 
     // Add new test functions here as features are implemented
     // Example:
