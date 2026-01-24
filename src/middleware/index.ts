@@ -7,3 +7,4 @@ export * from './rate-limit.js';
 export * from './security.js';
 export * from './etag.js';
 export * from './response-time.js';
+export * from './query-tracking.js';

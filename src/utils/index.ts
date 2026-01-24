@@ -10,3 +10,4 @@ export * from './sanitize.js';
 export * from './error-tracking.js';
 export * from './field-selection.js';
 export * from './response-time-tracking.js';
+export * from './query-performance-tracking.js';

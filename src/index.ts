@@ -11,6 +11,7 @@ import {
 } from './middleware/security.js';
 import { etag } from './middleware/etag.js';
 import { responseTime } from './middleware/response-time.js';
+import { queryTracking } from './middleware/query-tracking.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
@@ -137,6 +138,14 @@ app.use('/api/*', rateLimit({
     }
     return false;
   },
+}));
+
+// Query performance tracking middleware - tracks database query execution times
+// Writes metrics to Analytics Engine for query performance trend analysis
+// Tracks slow queries (configurable threshold, default >100ms)
+app.use('/api/*', queryTracking({
+  slowQueryThreshold: 100, // Mark queries > 100ms as slow
+  minDurationMs: 0, // Track all queries (set higher to filter out fast queries)
 }));
 
 // ETag middleware for conditional requests - applied to data retrieval endpoints

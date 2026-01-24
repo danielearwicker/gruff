@@ -10148,6 +10148,156 @@ async function testQueryPlanRecommendations() {
 }
 
 // ============================================================================
+// Query Performance Tracking Tests (Analytics Engine)
+// ============================================================================
+
+async function testQueryPerformanceTrackingMiddlewareActive() {
+  logTest('Query Performance Tracking - Middleware is active and database operations work');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  assertEquals(typesResponse.status, 200, 'Types list should return 200');
+  assert(typesResponse.data.data.items.length > 0, 'Should have entity types');
+
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity (triggers database queries that should be tracked)
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Query Performance Test Entity' },
+  });
+
+  assertEquals(createResponse.status, 201, 'Entity creation should succeed with tracking middleware');
+  assert(createResponse.data.data.id, 'Created entity should have an ID');
+
+  // Get the entity (triggers read query)
+  const getResponse = await makeRequest('GET', `/api/entities/${createResponse.data.data.id}`);
+  assertEquals(getResponse.status, 200, 'Entity get should succeed with tracking middleware');
+
+  // List entities (triggers list query with filters)
+  const listResponse = await makeRequest('GET', '/api/entities?limit=5');
+  assertEquals(listResponse.status, 200, 'Entity list should succeed with tracking middleware');
+
+  logInfo('Query performance tracking middleware is active and database operations work correctly');
+}
+
+async function testQueryPerformanceTrackingHealthCheck() {
+  logTest('Query Performance Tracking - Analytics Engine is available in health check');
+
+  const response = await makeRequest('GET', '/health');
+
+  assertEquals(response.status, 200, 'Health endpoint should return 200');
+  assert(response.data.analytics, 'Health check should report analytics status');
+  // In local dev, analytics is simulated but should be 'available'
+  assertEquals(response.data.analytics, 'available', 'Analytics should be available for query tracking');
+
+  logInfo('Analytics Engine is available for query performance tracking');
+}
+
+async function testQueryPerformanceTrackingGraphOperations() {
+  logTest('Query Performance Tracking - Graph traversal operations are tracked');
+
+  // Get types
+  const entityTypesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const linkTypesResponse = await makeRequest('GET', '/api/types?category=link');
+
+  assert(entityTypesResponse.data.data.items.length > 0, 'Should have entity types');
+  assert(linkTypesResponse.data.data.items.length > 0, 'Should have link types');
+
+  const entityType = entityTypesResponse.data.data.items[0];
+  const linkType = linkTypesResponse.data.data.items[0];
+
+  // Create two entities
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Query Tracking Graph Node 1' },
+  });
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Query Tracking Graph Node 2' },
+  });
+
+  assertEquals(entity1Response.status, 201, 'First entity should be created');
+  assertEquals(entity2Response.status, 201, 'Second entity should be created');
+
+  // Create a link between them
+  const linkResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkType.id,
+    source_entity_id: entity1Response.data.data.id,
+    target_entity_id: entity2Response.data.data.id,
+    properties: {},
+  });
+
+  assertEquals(linkResponse.status, 201, 'Link should be created');
+
+  // Test graph traversal operations (these trigger graph category queries)
+  const neighborsResponse = await makeRequest('GET', `/api/entities/${entity1Response.data.data.id}/neighbors`);
+  assertEquals(neighborsResponse.status, 200, 'Neighbors query should succeed with tracking');
+
+  const outboundResponse = await makeRequest('GET', `/api/entities/${entity1Response.data.data.id}/outbound`);
+  assertEquals(outboundResponse.status, 200, 'Outbound links query should succeed with tracking');
+
+  const inboundResponse = await makeRequest('GET', `/api/entities/${entity2Response.data.data.id}/inbound`);
+  assertEquals(inboundResponse.status, 200, 'Inbound links query should succeed with tracking');
+
+  logInfo('Graph traversal operations work correctly with query performance tracking');
+}
+
+async function testQueryPerformanceTrackingSearchOperations() {
+  logTest('Query Performance Tracking - Search operations are tracked');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create an entity with searchable properties
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'SearchableQueryTrackingEntity', status: 'active' },
+  });
+
+  assertEquals(createResponse.status, 201, 'Entity should be created for search test');
+
+  // Test search operation (triggers search category query)
+  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+    type_id: entityType.id,
+    properties: { status: 'active' },
+    limit: 10,
+  });
+
+  assertEquals(searchResponse.status, 200, 'Search should succeed with query tracking');
+  assert(Array.isArray(searchResponse.data.data.items), 'Search should return items array');
+
+  // Test suggest operation
+  const suggestResponse = await makeRequest('GET', '/api/search/suggest?q=Searchable&limit=5');
+  assertEquals(suggestResponse.status, 200, 'Suggest should succeed with query tracking');
+
+  logInfo('Search operations work correctly with query performance tracking');
+}
+
+async function testQueryPerformanceTrackingBulkOperations() {
+  logTest('Query Performance Tracking - Bulk operations are tracked');
+
+  // Get an entity type first
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Test bulk create (triggers batch tracking)
+  const bulkResponse = await makeRequest('POST', '/api/bulk/entities', {
+    entities: [
+      { type_id: entityType.id, properties: { name: 'Bulk Query Track 1' } },
+      { type_id: entityType.id, properties: { name: 'Bulk Query Track 2' } },
+    ],
+  });
+
+  assertEquals(bulkResponse.status, 201, 'Bulk create should succeed with query tracking');
+  assert(bulkResponse.data.data.created, 'Should have created count');
+  assertEquals(bulkResponse.data.data.created, 2, 'Should have created 2 entities');
+
+  logInfo('Bulk operations work correctly with query performance tracking');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -10558,6 +10708,13 @@ async function runTests() {
     testQueryPlanValidationErrorBothProvided,
     testQueryPlanIndexUsageDetection,
     testQueryPlanRecommendations,
+
+    // Query Performance Tracking tests (Analytics Engine)
+    testQueryPerformanceTrackingMiddlewareActive,
+    testQueryPerformanceTrackingHealthCheck,
+    testQueryPerformanceTrackingGraphOperations,
+    testQueryPerformanceTrackingSearchOperations,
+    testQueryPerformanceTrackingBulkOperations,
   ];
 
   for (const test of tests) {

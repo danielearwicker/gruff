@@ -689,13 +689,27 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - `src/utils/query-plan.ts` - Query plan analysis utilities
   - `src/schemas/generated-columns.ts` - Schema definitions
 
-#### 🟦 Query Performance Tracking via Analytics Engine
+#### ✅ Query Performance Tracking via Analytics Engine
 - Track query execution times for database operations
+  - Middleware-based tracking (`src/middleware/query-tracking.ts`)
+  - Utility module (`src/utils/query-performance-tracking.ts`)
+  - Automatic SQL analysis to detect table names and query categories
 - Write metrics to Cloudflare Analytics Engine
-- Include query categorization (read, write, search, graph traversal)
+  - Environment-based partitioning for query analysis
+  - Metrics include: duration, table name, category, operation type, row count
+  - Request context: request ID, user ID
+- Include query categorization (read, write, search, graph, schema, auth, audit)
+  - Automatic detection from SQL patterns
+  - Explicit context override for search and graph operations
 - Track slow queries (configurable threshold, default >100ms)
+  - Configurable via `slowQueryThreshold` option
+  - Slow query flag included in metrics
 - Include table name and operation type in metrics
+  - Tables: entities, links, types, users, audit_log, multiple, other
+  - Operations: first, all, run, batch
 - Enable trend analysis for database performance over time
+  - Analytics Engine writes with timestamp for time-series analysis
+  - Configurable minimum duration to filter fast queries
 
 ### ✅ Caching Strategy
 - Cloudflare KV for frequently accessed data
