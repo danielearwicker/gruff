@@ -653,12 +653,49 @@ This feature enhances property filtering capabilities beyond basic equality matc
 
 ## Performance Optimization
 
-### 🟦 Database Query Optimization
-- Query analysis and optimization using D1's query plan analyzer
-- Automatic connection management by D1
-- Index optimization for common query patterns
-- Database monitoring via Workers Analytics
-- Note: D1 is single-threaded per database (~1,000 queries/sec for 1ms queries)
+### Database Query Optimization
+
+Note: D1 provides automatic connection management and is single-threaded per database (~1,000 queries/sec for 1ms queries).
+
+#### ✅ Index Optimization for Common Query Patterns
+- Generated columns for frequently queried JSON properties (see Generated Columns section)
+- Composite indexes for common filter combinations
+- Partial indexes for is_latest and is_deleted flags
+
+#### ✅ Query Plan Analysis Endpoint
+```
+POST   /api/schema/query-plan          # Analyze query execution plan
+GET    /api/schema/query-plan/templates         # List available query templates
+GET    /api/schema/query-plan/templates/{name}  # Get specific template details
+```
+- Accept SQL query or predefined template in request body
+- Execute EXPLAIN QUERY PLAN via D1 to analyze query execution
+- Return query plan with index usage information
+- Identify full table scans vs index lookups
+- Provide optimization recommendations based on:
+  - Index usage detection
+  - Missing is_latest/is_deleted filters
+  - JSON property filter optimization potential
+  - ORDER BY without index detection
+  - LIMIT without ORDER BY warnings
+- Support 10 predefined query templates:
+  - entity_by_id, entity_by_type, entity_by_property
+  - links_by_source, links_by_target, links_by_type
+  - neighbors_outbound, neighbors_inbound
+  - search_entities, search_links
+- Security: Only SELECT statements allowed for custom SQL analysis
+- Implementation files:
+  - `src/routes/query-plan.ts` - API endpoints
+  - `src/utils/query-plan.ts` - Query plan analysis utilities
+  - `src/schemas/generated-columns.ts` - Schema definitions
+
+#### 🟦 Query Performance Tracking via Analytics Engine
+- Track query execution times for database operations
+- Write metrics to Cloudflare Analytics Engine
+- Include query categorization (read, write, search, graph traversal)
+- Track slow queries (configurable threshold, default >100ms)
+- Include table name and operation type in metrics
+- Enable trend analysis for database performance over time
 
 ### ✅ Caching Strategy
 - Cloudflare KV for frequently accessed data

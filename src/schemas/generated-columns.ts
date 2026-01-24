@@ -63,3 +63,72 @@ export const queryOptimizationInfoSchema = z.object({
 });
 
 export type QueryOptimizationInfo = z.infer<typeof queryOptimizationInfoSchema>;
+
+/**
+ * Predefined query templates for common operations
+ */
+export const queryTemplateSchema = z.enum([
+  'entity_by_id',
+  'entity_by_type',
+  'entity_by_property',
+  'links_by_source',
+  'links_by_target',
+  'links_by_type',
+  'neighbors_outbound',
+  'neighbors_inbound',
+  'search_entities',
+  'search_links',
+]);
+
+export type QueryTemplate = z.infer<typeof queryTemplateSchema>;
+
+/**
+ * Schema for query plan analysis request body
+ */
+export const analyzeQueryPlanSchema = z.object({
+  // Either provide a template or a custom SQL query
+  template: queryTemplateSchema.optional(),
+  // Parameters for the template (type_id, entity_id, property_path, etc.)
+  parameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  // Or provide a custom SQL query for analysis (restricted to SELECT statements)
+  sql: z.string().optional(),
+}).refine(
+  (data) => data.template || data.sql,
+  { message: 'Either template or sql must be provided' }
+).refine(
+  (data) => !(data.template && data.sql),
+  { message: 'Cannot provide both template and sql' }
+);
+
+export type AnalyzeQueryPlanRequest = z.infer<typeof analyzeQueryPlanSchema>;
+
+/**
+ * Schema for query plan step from EXPLAIN QUERY PLAN
+ */
+export const queryPlanStepSchema = z.object({
+  id: z.number(),
+  parent: z.number(),
+  notUsed: z.number().optional(),
+  detail: z.string(),
+});
+
+export type QueryPlanStep = z.infer<typeof queryPlanStepSchema>;
+
+/**
+ * Schema for query plan analysis response
+ */
+export const queryPlanResponseSchema = z.object({
+  sql: z.string(),
+  template: queryTemplateSchema.optional(),
+  plan: z.array(queryPlanStepSchema),
+  analysis: z.object({
+    uses_index: z.boolean(),
+    indexes_used: z.array(z.string()),
+    estimated_rows_scanned: z.string().optional(),
+    has_table_scan: z.boolean(),
+    tables_accessed: z.array(z.string()),
+  }),
+  recommendations: z.array(z.string()),
+});
+
+export type QueryPlanResponse = z.infer<typeof queryPlanResponseSchema>;

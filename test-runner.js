@@ -9960,6 +9960,194 @@ async function testResponseTimeIsReasonable() {
 }
 
 // ============================================================================
+// Query Plan Analysis Tests
+// ============================================================================
+
+async function testQueryPlanTemplatesEndpoint() {
+  logTest('Query Plan - List available query templates');
+
+  const response = await makeRequest('GET', '/api/schema/query-plan/templates');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+  assert(response.data.data.templates, 'Should return templates array');
+  assert(response.data.data.templates.length > 0, 'Should have at least one template');
+
+  // Check that known templates exist
+  const templateNames = response.data.data.templates.map(t => t.name);
+  assert(templateNames.includes('entity_by_id'), 'Should have entity_by_id template');
+  assert(templateNames.includes('entity_by_type'), 'Should have entity_by_type template');
+  assert(templateNames.includes('links_by_source'), 'Should have links_by_source template');
+
+  // Check template structure
+  const firstTemplate = response.data.data.templates[0];
+  assert(firstTemplate.name, 'Template should have name');
+  assert(firstTemplate.description, 'Template should have description');
+  assert(Array.isArray(firstTemplate.parameters), 'Template should have parameters array');
+
+  logInfo(`Found ${response.data.data.templates.length} query templates`);
+}
+
+async function testQueryPlanTemplateDetails() {
+  logTest('Query Plan - Get specific template details');
+
+  const response = await makeRequest('GET', '/api/schema/query-plan/templates/entity_by_type');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+  assertEquals(response.data.data.name, 'entity_by_type', 'Should return correct template name');
+  assert(response.data.data.sql, 'Template should have SQL');
+  assert(response.data.data.description, 'Template should have description');
+  assert(response.data.data.parameters.includes('type_id'), 'Should require type_id parameter');
+}
+
+async function testQueryPlanTemplateNotFound() {
+  logTest('Query Plan - Template not found returns error');
+
+  const response = await makeRequest('GET', '/api/schema/query-plan/templates/nonexistent_template');
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.data.success, 'Response should indicate failure');
+  assertEquals(response.data.code, 'INVALID_TEMPLATE', 'Should return INVALID_TEMPLATE error code');
+}
+
+async function testQueryPlanAnalyzeWithTemplate() {
+  logTest('Query Plan - Analyze query using template');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    template: 'entity_by_type',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+  assert(response.data.data.sql, 'Should return SQL');
+  assertEquals(response.data.data.template, 'entity_by_type', 'Should return template name');
+  assert(Array.isArray(response.data.data.plan), 'Should return plan array');
+  assert(response.data.data.analysis, 'Should return analysis');
+  assert(typeof response.data.data.analysis.uses_index === 'boolean', 'Analysis should have uses_index');
+  assert(typeof response.data.data.analysis.has_table_scan === 'boolean', 'Analysis should have has_table_scan');
+  assert(Array.isArray(response.data.data.analysis.indexes_used), 'Analysis should have indexes_used array');
+  assert(Array.isArray(response.data.data.analysis.tables_accessed), 'Analysis should have tables_accessed array');
+  assert(Array.isArray(response.data.data.recommendations), 'Should return recommendations array');
+
+  logInfo(`Query uses indexes: ${response.data.data.analysis.uses_index}`);
+  logInfo(`Indexes used: ${response.data.data.analysis.indexes_used.join(', ') || 'none'}`);
+}
+
+async function testQueryPlanAnalyzeWithCustomSQL() {
+  logTest('Query Plan - Analyze query using custom SQL');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    sql: 'SELECT * FROM entities WHERE is_latest = 1 LIMIT 10',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+  assert(response.data.data.sql, 'Should return SQL');
+  assert(!response.data.data.template, 'Should not have template name for custom SQL');
+  assert(Array.isArray(response.data.data.plan), 'Should return plan array');
+  assert(response.data.data.analysis, 'Should return analysis');
+  assert(response.data.data.analysis.tables_accessed.includes('entities'), 'Should access entities table');
+}
+
+async function testQueryPlanRejectsNonSelectSQL() {
+  logTest('Query Plan - Rejects non-SELECT SQL statements');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    sql: 'DELETE FROM entities WHERE id = "test"',
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.data.success, 'Response should indicate failure');
+  assertEquals(response.data.code, 'INVALID_SQL', 'Should return INVALID_SQL error code');
+}
+
+async function testQueryPlanRejectsInsertSQL() {
+  logTest('Query Plan - Rejects INSERT SQL statements');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    sql: 'INSERT INTO entities (id) VALUES ("test")',
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.data.success, 'Response should indicate failure');
+  assertEquals(response.data.code, 'INVALID_SQL', 'Should return INVALID_SQL error code');
+}
+
+async function testQueryPlanRejectsDropSQL() {
+  logTest('Query Plan - Rejects DROP SQL statements');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    sql: 'SELECT * FROM entities; DROP TABLE entities;',
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assert(!response.data.success, 'Response should indicate failure');
+  assertEquals(response.data.code, 'INVALID_SQL', 'Should return INVALID_SQL error code');
+}
+
+async function testQueryPlanValidationError() {
+  logTest('Query Plan - Validation error for missing template and sql');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {});
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  // Should fail validation since neither template nor sql provided
+}
+
+async function testQueryPlanValidationErrorBothProvided() {
+  logTest('Query Plan - Validation error when both template and sql provided');
+
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    template: 'entity_by_type',
+    sql: 'SELECT * FROM entities',
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  // Should fail validation since both template and sql provided
+}
+
+async function testQueryPlanIndexUsageDetection() {
+  logTest('Query Plan - Detects index usage for optimized queries');
+
+  // This template should use the idx_links_source_latest_deleted index
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    template: 'links_by_source',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+
+  // The links_by_source query filters on source_entity_id with is_latest and is_deleted
+  // which should use the idx_links_source_latest_deleted index
+  assert(response.data.data.analysis.tables_accessed.includes('links'), 'Should access links table');
+
+  logInfo(`Tables accessed: ${response.data.data.analysis.tables_accessed.join(', ')}`);
+  logInfo(`Has table scan: ${response.data.data.analysis.has_table_scan}`);
+}
+
+async function testQueryPlanRecommendations() {
+  logTest('Query Plan - Provides recommendations for query optimization');
+
+  // Query without is_deleted filter should trigger recommendation
+  const response = await makeRequest('POST', '/api/schema/query-plan', {
+    sql: 'SELECT * FROM entities WHERE is_latest = 1',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.success, 'Response should be successful');
+  assert(Array.isArray(response.data.data.recommendations), 'Should return recommendations array');
+
+  // Should recommend adding is_deleted filter
+  const hasDeletedRecommendation = response.data.data.recommendations.some(r =>
+    r.toLowerCase().includes('is_deleted')
+  );
+  assert(hasDeletedRecommendation, 'Should recommend adding is_deleted filter');
+
+  logInfo(`Recommendations: ${response.data.data.recommendations.length}`);
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -10356,6 +10544,20 @@ async function runTests() {
     testResponseTimeHeaderOnHealthEndpoint,
     testResponseTimeHeaderOnAuthEndpoint,
     testResponseTimeIsReasonable,
+
+    // Query Plan Analysis tests
+    testQueryPlanTemplatesEndpoint,
+    testQueryPlanTemplateDetails,
+    testQueryPlanTemplateNotFound,
+    testQueryPlanAnalyzeWithTemplate,
+    testQueryPlanAnalyzeWithCustomSQL,
+    testQueryPlanRejectsNonSelectSQL,
+    testQueryPlanRejectsInsertSQL,
+    testQueryPlanRejectsDropSQL,
+    testQueryPlanValidationError,
+    testQueryPlanValidationErrorBothProvided,
+    testQueryPlanIndexUsageDetection,
+    testQueryPlanRecommendations,
   ];
 
   for (const test of tests) {

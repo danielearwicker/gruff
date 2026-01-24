@@ -34,6 +34,7 @@ import exportRouter from './routes/export.js';
 import auditRouter from './routes/audit.js';
 import docsRouter from './routes/docs.js';
 import generatedColumnsRouter from './routes/generated-columns.js';
+import queryPlanRouter from './routes/query-plan.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -396,8 +397,9 @@ app.route('/api/export', exportRouter);
 // Mount audit log routes
 app.route('/api/audit', auditRouter);
 
-// Mount schema information routes (generated columns, optimization info)
+// Mount schema information routes (generated columns, optimization info, query plan analysis)
 app.route('/api/schema/generated-columns', generatedColumnsRouter);
+app.route('/api/schema/query-plan', queryPlanRouter);
 
 // Mount API documentation routes (OpenAPI spec and Scalar UI)
 app.route('/docs', docsRouter);
