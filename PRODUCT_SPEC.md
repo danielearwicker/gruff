@@ -679,12 +679,38 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - CacheStatsTracker for monitoring
 - Integration with types, entities, and links routes
 
-### 🟦 API Response Optimization
-- Automatic compression via Cloudflare's edge network
-- ETag support for conditional requests
-- Partial response/field selection
-- Response time monitoring via Workers Analytics
-- Global edge deployment for low latency
+### API Response Optimization
+
+#### ✅ Automatic Compression
+- Compression handled automatically via Cloudflare's edge network
+- No implementation required - Cloudflare automatically applies gzip/brotli compression
+
+#### ✅ ETag Support for Conditional Requests
+- Generate ETag header for GET responses containing data
+- Support If-None-Match request header for conditional requests
+- Return 304 Not Modified when ETag matches
+- Apply to entity, link, type, and user endpoints
+- Use content hash (SHA-256 truncated) for ETag generation
+- Middleware-based implementation for consistent behavior across routes
+- Skip auth endpoints, bulk operations, exports, audit, and search for freshness
+- Support multiple ETags and wildcard (*) in If-None-Match header
+- Weak ETags (W/"...") by default for semantic equivalence
+
+#### 🟦 Partial Response / Field Selection
+- Support `fields` query parameter on GET endpoints
+- Allow comma-separated list of fields to include in response
+- Reduce payload size for bandwidth-constrained clients
+- Apply to entities, links, types, and users endpoints
+
+#### 🟦 Response Time Monitoring via Workers Analytics
+- Track response times for all API endpoints
+- Write metrics to Analytics Engine
+- Categorize by endpoint type (read, write, search, graph)
+- Enable performance trend analysis
+
+#### ✅ Global Edge Deployment
+- Handled automatically by Cloudflare Workers
+- No implementation required - Workers deploy globally by default
 
 ## Monitoring and Observability
 

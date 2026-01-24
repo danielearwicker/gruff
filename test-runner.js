@@ -89,6 +89,30 @@ async function makeRequest(method, path, body = null) {
   };
 }
 
+async function makeRequestWithHeaders(method, path, customHeaders = {}, body = null) {
+  const options = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...customHeaders,
+    },
+  };
+
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${DEV_SERVER_URL}${path}`, options);
+  const data = await response.json().catch(() => null);
+
+  return {
+    status: response.status,
+    ok: response.ok,
+    data,
+    headers: response.headers,
+  };
+}
+
 function assert(condition, message) {
   if (condition) {
     logSuccess(message);
@@ -9161,6 +9185,290 @@ async function testCachingLinkInvalidationOnUpdate() {
 }
 
 // ============================================================================
+// ETag and Conditional Request Tests
+// ============================================================================
+
+async function testETagHeaderOnTypeGet() {
+  logTest('ETag - Type GET returns ETag header');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagTestType',
+    category: 'entity',
+    description: 'Type for ETag testing'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // GET request should include ETag header
+  const response = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response.status, 200, 'GET should succeed');
+
+  const etag = response.headers.get('ETag');
+  assert(etag, 'Response should include ETag header');
+  assert(etag.startsWith('W/"'), 'ETag should be a weak ETag (W/"...)');
+  assert(etag.endsWith('"'), 'ETag should end with quote');
+  logInfo(`ETag value: ${etag}`);
+}
+
+async function testETagHeaderOnEntityGet() {
+  logTest('ETag - Entity GET returns ETag header');
+
+  // First ensure we have a type
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagEntityType',
+    category: 'entity'
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'ETagTest Entity' }
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // GET request should include ETag header
+  const response = await makeRequest('GET', `/api/entities/${entityId}`);
+  assertEquals(response.status, 200, 'GET should succeed');
+
+  const etag = response.headers.get('ETag');
+  assert(etag, 'Response should include ETag header');
+  assert(etag.startsWith('W/"'), 'ETag should be a weak ETag');
+}
+
+async function testETagHeaderOnLinkGet() {
+  logTest('ETag - Link GET returns ETag header');
+
+  // Create types and entities
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagLinkEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entity1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source' }
+  });
+  const entity1Id = entity1Response.data.data.id;
+
+  const entity2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target' }
+  });
+  const entity2Id = entity2Response.data.data.id;
+
+  // Create a link
+  const createResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entity1Id,
+    target_entity_id: entity2Id,
+    properties: { relationship: 'connected' }
+  });
+
+  const linkId = createResponse.data.data.id;
+
+  // GET request should include ETag header
+  const response = await makeRequest('GET', `/api/links/${linkId}`);
+  assertEquals(response.status, 200, 'GET should succeed');
+
+  const etag = response.headers.get('ETag');
+  assert(etag, 'Response should include ETag header');
+  assert(etag.startsWith('W/"'), 'ETag should be a weak ETag');
+}
+
+async function testETagConditionalRequestNotModified() {
+  logTest('ETag - Conditional Request returns 304 Not Modified when ETag matches');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETag304TestType',
+    category: 'entity',
+    description: 'Type for 304 testing'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET to get the ETag
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+
+  const etag = response1.headers.get('ETag');
+  assert(etag, 'First response should include ETag header');
+
+  // Second GET with If-None-Match header
+  const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
+    'If-None-Match': etag
+  });
+
+  assertEquals(response2.status, 304, 'Second GET with matching ETag should return 304 Not Modified');
+  assertEquals(response2.data, null, 'Body should be empty for 304 response');
+}
+
+async function testETagConditionalRequestModified() {
+  logTest('ETag - Conditional Request returns 200 when content has changed');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagModifiedTestType',
+    category: 'entity',
+    description: 'Original description'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET to get the ETag
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+
+  const etag1 = response1.headers.get('ETag');
+  assert(etag1, 'First response should include ETag header');
+
+  // Update the type
+  const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
+    description: 'Updated description'
+  });
+  assertEquals(updateResponse.status, 200, 'Update should succeed');
+
+  // Third GET with old If-None-Match - should return 200 with new data
+  const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
+    'If-None-Match': etag1
+  });
+
+  assertEquals(response2.status, 200, 'GET after update should return 200 (content changed)');
+  assert(response2.data.data, 'Should return full response body');
+  assertEquals(response2.data.data.description, 'Updated description', 'Should return updated data');
+
+  // The new ETag should be different
+  const etag2 = response2.headers.get('ETag');
+  assert(etag2, 'Response should include new ETag');
+  assert(etag1 !== etag2, 'New ETag should be different from old ETag');
+}
+
+async function testETagConsistentAcrossRequests() {
+  logTest('ETag - Same resource returns consistent ETag');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagConsistentType',
+    category: 'entity',
+    description: 'Consistency test'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+  const etag1 = response1.headers.get('ETag');
+
+  // Second GET (without If-None-Match)
+  const response2 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response2.status, 200, 'Second GET should succeed');
+  const etag2 = response2.headers.get('ETag');
+
+  assertEquals(etag1, etag2, 'ETag should be consistent for unchanged resource');
+}
+
+async function testETagOnTypesList() {
+  logTest('ETag - Types list endpoint returns ETag');
+
+  const response = await makeRequest('GET', '/api/types');
+  assertEquals(response.status, 200, 'GET types list should succeed');
+
+  const etag = response.headers.get('ETag');
+  assert(etag, 'Types list should include ETag header');
+  assert(etag.startsWith('W/"'), 'ETag should be a weak ETag');
+}
+
+async function testETagOnEntitiesList() {
+  logTest('ETag - Entities list endpoint returns ETag');
+
+  const response = await makeRequest('GET', '/api/entities');
+  assertEquals(response.status, 200, 'GET entities list should succeed');
+
+  const etag = response.headers.get('ETag');
+  assert(etag, 'Entities list should include ETag header');
+  assert(etag.startsWith('W/"'), 'ETag should be a weak ETag');
+}
+
+async function testETagSkippedForAuthEndpoints() {
+  logTest('ETag - Auth endpoints should not have ETag headers');
+
+  // Register a user first
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `etag-auth-test-${Date.now()}@example.com`,
+    password: 'securePassword123',
+    display_name: 'ETag Test User'
+  });
+  assertEquals(registerResponse.status, 201, 'Registration should succeed');
+
+  const token = registerResponse.data.data.access_token;
+
+  // GET /api/auth/me should not have ETag (auth endpoints are skipped)
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', {
+    'Authorization': `Bearer ${token}`
+  });
+  assertEquals(meResponse.status, 200, 'GET /api/auth/me should succeed');
+
+  const etag = meResponse.headers.get('ETag');
+  assertEquals(etag, null, 'Auth endpoints should not include ETag header');
+}
+
+async function testETagWithMultipleETags() {
+  logTest('ETag - If-None-Match with multiple ETags');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagMultipleType',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // First GET to get the ETag
+  const response1 = await makeRequest('GET', `/api/types/${typeId}`);
+  assertEquals(response1.status, 200, 'First GET should succeed');
+
+  const etag = response1.headers.get('ETag');
+  assert(etag, 'Response should include ETag header');
+
+  // Send multiple ETags in If-None-Match (one valid, one invalid)
+  const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
+    'If-None-Match': `"invalid-etag", ${etag}, "another-invalid"`
+  });
+
+  assertEquals(response2.status, 304, 'Should return 304 when one of the ETags matches');
+}
+
+async function testETagWithStarWildcard() {
+  logTest('ETag - If-None-Match with * wildcard');
+
+  // Create a type
+  const createResponse = await makeRequest('POST', '/api/types', {
+    name: 'ETagWildcardType',
+    category: 'entity'
+  });
+
+  const typeId = createResponse.data.data.id;
+
+  // GET with * wildcard in If-None-Match (should always return 304 for existing resources)
+  const response = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
+    'If-None-Match': '*'
+  });
+
+  assertEquals(response.status, 304, 'Should return 304 for * wildcard on existing resource');
+}
+
+// ============================================================================
 // Generated Columns Tests
 // ============================================================================
 
@@ -9700,6 +10008,19 @@ async function runTests() {
     testCachingEntityInvalidationOnRestore,
     testCachingLinkGet,
     testCachingLinkInvalidationOnUpdate,
+
+    // ETag and Conditional Request tests
+    testETagHeaderOnTypeGet,
+    testETagHeaderOnEntityGet,
+    testETagHeaderOnLinkGet,
+    testETagConditionalRequestNotModified,
+    testETagConditionalRequestModified,
+    testETagConsistentAcrossRequests,
+    testETagOnTypesList,
+    testETagOnEntitiesList,
+    testETagSkippedForAuthEndpoints,
+    testETagWithMultipleETags,
+    testETagWithStarWildcard,
 
     // Generated Columns tests
     testGeneratedColumnsEndpoint,

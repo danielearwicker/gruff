@@ -9,6 +9,7 @@ import {
   getDevelopmentSecurityConfig,
   getProductionSecurityConfig,
 } from './middleware/security.js';
+import { etag } from './middleware/etag.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
@@ -122,6 +123,38 @@ app.use('/api/*', rateLimit({
   skip: (c) => {
     // Skip rate limiting for version endpoint (lightweight, informational)
     if (c.req.path === '/api/version') {
+      return true;
+    }
+    return false;
+  },
+}));
+
+// ETag middleware for conditional requests - applied to data retrieval endpoints
+// Generates ETag headers and returns 304 Not Modified for unchanged resources
+// Skip paths that don't benefit from caching (auth, bulk operations, exports)
+app.use('/api/*', etag({
+  weak: true, // Use weak ETags for semantic equivalence (appropriate for JSON APIs)
+  maxSize: 1048576, // Skip ETag generation for responses > 1MB
+  skip: (c) => {
+    const path = c.req.path;
+    // Skip auth endpoints (security-sensitive, session-based)
+    if (path.startsWith('/api/auth')) {
+      return true;
+    }
+    // Skip bulk operations (typically POST/PUT, dynamic content)
+    if (path.startsWith('/api/bulk')) {
+      return true;
+    }
+    // Skip export operations (large payloads, dynamic content)
+    if (path.startsWith('/api/export')) {
+      return true;
+    }
+    // Skip audit endpoints (time-sensitive, always fresh)
+    if (path.startsWith('/api/audit')) {
+      return true;
+    }
+    // Skip search endpoints (query results should be fresh)
+    if (path.startsWith('/api/search')) {
       return true;
     }
     return false;

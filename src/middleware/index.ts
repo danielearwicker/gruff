@@ -5,3 +5,4 @@ export * from './request-context.js';
 export * from './auth.js';
 export * from './rate-limit.js';
 export * from './security.js';
+export * from './etag.js';
