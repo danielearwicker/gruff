@@ -115,7 +115,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Use appropriate iteration counts and salt generation
 - Timing-safe comparison to prevent timing attacks
 
-#### 🟦 JWT Token Service
+#### ✅ JWT Token Service
 - Implement JWT creation and validation using Web Crypto API
 - Support both access tokens (short-lived) and refresh tokens (long-lived)
 - Include user ID and metadata in token payload
