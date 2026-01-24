@@ -3541,6 +3541,193 @@ async function testPaginationMaxLimit() {
 }
 
 // ============================================================================
+// Filtering Tests
+// ============================================================================
+
+async function testFilterEntitiesByJsonPropertyString() {
+  logTest('Filter Entities by JSON Property (String)');
+
+  // First, get the person type ID from seed data
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+  assert(personType, 'Person type should exist in seed data');
+
+  // Create entities with different string properties
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Alice', role: 'Engineer' }
+  });
+  assert(entity1.ok, 'Should create first entity');
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Bob', role: 'Manager' }
+  });
+  assert(entity2.ok, 'Should create second entity');
+
+  // Filter by name property
+  const filterResponse = await makeRequest('GET', '/api/entities?property_name=Alice');
+  assertEquals(filterResponse.status, 200, 'Should return 200');
+  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with name Alice');
+
+  const aliceEntity = filterResponse.data.items.find(e => e.properties.name === 'Alice');
+  assert(aliceEntity, 'Should find Alice in filtered results');
+  assertEquals(aliceEntity.properties.role, 'Engineer', 'Should have correct role');
+}
+
+async function testFilterEntitiesByJsonPropertyNumber() {
+  logTest('Filter Entities by JSON Property (Number)');
+
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+
+  // Create entities with numeric properties
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Charlie', age: 25 }
+  });
+  assert(entity1.ok, 'Should create first entity');
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Diana', age: 30 }
+  });
+  assert(entity2.ok, 'Should create second entity');
+
+  // Filter by age property
+  const filterResponse = await makeRequest('GET', '/api/entities?property_age=25');
+  assertEquals(filterResponse.status, 200, 'Should return 200');
+  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with age 25');
+
+  const charlieEntity = filterResponse.data.items.find(e => e.properties.name === 'Charlie');
+  assert(charlieEntity, 'Should find Charlie in filtered results');
+  assertEquals(charlieEntity.properties.age, 25, 'Should have correct age');
+}
+
+async function testFilterEntitiesByJsonPropertyBoolean() {
+  logTest('Filter Entities by JSON Property (Boolean)');
+
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+
+  // Create entities with boolean properties
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Eve', active: true }
+  });
+  assert(entity1.ok, 'Should create first entity');
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Frank', active: false }
+  });
+  assert(entity2.ok, 'Should create second entity');
+
+  // Filter by active property
+  const filterResponse = await makeRequest('GET', '/api/entities?property_active=true');
+  assertEquals(filterResponse.status, 200, 'Should return 200');
+  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with active=true');
+
+  const eveEntity = filterResponse.data.items.find(e => e.properties.name === 'Eve');
+  assert(eveEntity, 'Should find Eve in filtered results');
+  assertEquals(eveEntity.properties.active, true, 'Should have active=true');
+}
+
+async function testFilterLinksByJsonPropertyString() {
+  logTest('Filter Links by JSON Property (String)');
+
+  // Get type IDs
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+  const knowsType = typesResponse.data.items.find(t => t.name === 'Knows');
+
+  // Create entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'George' }
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Hannah' }
+  });
+
+  // Create links with different properties
+  const link1 = await makeRequest('POST', '/api/links', {
+    type_id: knowsType.id,
+    source_entity_id: entity1.data.id,
+    target_entity_id: entity2.data.id,
+    properties: { relationship: 'colleague', since: 2020 }
+  });
+  assert(link1.ok, 'Should create first link');
+
+  // Create another pair to have multiple links
+  const entity3 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Ian' }
+  });
+  const link2 = await makeRequest('POST', '/api/links', {
+    type_id: knowsType.id,
+    source_entity_id: entity1.data.id,
+    target_entity_id: entity3.data.id,
+    properties: { relationship: 'friend', since: 2015 }
+  });
+  assert(link2.ok, 'Should create second link');
+
+  // Filter by relationship property
+  const filterResponse = await makeRequest('GET', '/api/links?property_relationship=colleague');
+  assertEquals(filterResponse.status, 200, 'Should return 200');
+  assert(filterResponse.data.items.length >= 1, 'Should find at least one link with relationship=colleague');
+
+  const colleagueLink = filterResponse.data.items.find(l => l.properties.relationship === 'colleague');
+  assert(colleagueLink, 'Should find colleague link in filtered results');
+  assertEquals(colleagueLink.properties.since, 2020, 'Should have correct since year');
+}
+
+async function testFilterEntitiesByMultipleProperties() {
+  logTest('Filter Entities by Multiple JSON Properties');
+
+  const typesResponse = await makeRequest('GET', '/api/types');
+  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+
+  // Create entities with multiple properties
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Jack', department: 'Engineering', level: 3 }
+  });
+  assert(entity1.ok, 'Should create first entity');
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Karen', department: 'Engineering', level: 5 }
+  });
+  assert(entity2.ok, 'Should create second entity');
+
+  const entity3 = await makeRequest('POST', '/api/entities', {
+    type_id: personType.id,
+    properties: { name: 'Laura', department: 'Marketing', level: 3 }
+  });
+  assert(entity3.ok, 'Should create third entity');
+
+  // Filter by multiple properties (department AND level)
+  const filterResponse = await makeRequest('GET', '/api/entities?property_department=Engineering&property_level=3');
+  assertEquals(filterResponse.status, 200, 'Should return 200');
+  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity matching both filters');
+
+  const jackEntity = filterResponse.data.items.find(e => e.properties.name === 'Jack');
+  assert(jackEntity, 'Should find Jack in filtered results');
+  assertEquals(jackEntity.properties.department, 'Engineering', 'Should have correct department');
+  assertEquals(jackEntity.properties.level, 3, 'Should have correct level');
+
+  // Verify Karen is not in results (different level)
+  const karenEntity = filterResponse.data.items.find(e => e.properties.name === 'Karen');
+  assert(!karenEntity, 'Should not find Karen (wrong level)');
+
+  // Verify Laura is not in results (different department)
+  const lauraEntity = filterResponse.data.items.find(e => e.properties.name === 'Laura');
+  assert(!lauraEntity, 'Should not find Laura (wrong department)');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -3679,6 +3866,13 @@ async function runTests() {
     testTypesPaginationCursor,
     testPaginationDefaultLimit,
     testPaginationMaxLimit,
+
+    // Filtering tests
+    testFilterEntitiesByJsonPropertyString,
+    testFilterEntitiesByJsonPropertyNumber,
+    testFilterEntitiesByJsonPropertyBoolean,
+    testFilterLinksByJsonPropertyString,
+    testFilterEntitiesByMultipleProperties,
 
     // Add new test functions here as features are implemented
     // Example:

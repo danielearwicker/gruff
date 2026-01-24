@@ -145,6 +145,30 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
       bindings.push(query.created_before);
     }
 
+    // JSON property filters: extract property_<key> query parameters
+    const allQueryParams = c.req.query();
+    for (const [key, value] of Object.entries(allQueryParams)) {
+      if (key.startsWith('property_')) {
+        const propertyKey = key.substring('property_'.length);
+        // Use SQLite's JSON1 extension to filter by property value
+        // Try to parse value as number or boolean, otherwise treat as string
+        let filterValue: string | number | boolean = value as string;
+
+        // Check if value is a number
+        const numValue = Number(value);
+        if (!isNaN(numValue) && value !== '') {
+          filterValue = numValue;
+        } else if (value === 'true' || value === 'false') {
+          // Check if value is a boolean
+          filterValue = value === 'true';
+        }
+
+        // Use json_extract to get the value and compare
+        sql += ' AND json_extract(properties, ?) = ?';
+        bindings.push(`$.${propertyKey}`, JSON.stringify(filterValue));
+      }
+    }
+
     // Cursor-based pagination: cursor is "created_at:id" for stable ordering
     if (query.cursor) {
       try {

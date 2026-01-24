@@ -249,7 +249,7 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 - Include total count in responses (optional, for performance)
 - Default (20) and max (100) page size limits
 
-### 🟦 Filtering System
+### ✅ Filtering System
 - Filter entities/links by type
 - Filter by creation date range
 - Filter by creator
