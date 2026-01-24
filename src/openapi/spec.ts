@@ -321,6 +321,106 @@ export function generateOpenApiSpec() {
           },
         },
       },
+      '/api/auth/providers': {
+        get: {
+          tags: ['Authentication'],
+          summary: 'List authentication providers',
+          description:
+            'Returns a list of all available authentication providers, including local authentication and configured OAuth2 providers',
+          operationId: 'listAuthProviders',
+          responses: {
+            200: {
+              description: 'List of available authentication providers',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: true },
+                      data: {
+                        type: 'object',
+                        properties: {
+                          providers: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                id: {
+                                  type: 'string',
+                                  description: 'Unique identifier for the provider',
+                                  example: 'google',
+                                },
+                                name: {
+                                  type: 'string',
+                                  description: 'Display name for the provider',
+                                  example: 'Google',
+                                },
+                                type: {
+                                  type: 'string',
+                                  enum: ['local', 'oauth2'],
+                                  description: 'Type of authentication provider',
+                                  example: 'oauth2',
+                                },
+                                enabled: {
+                                  type: 'boolean',
+                                  description: 'Whether this provider is currently enabled',
+                                  example: true,
+                                },
+                                authorize_url: {
+                                  type: 'string',
+                                  description:
+                                    'Relative URL to initiate OAuth2 flow (only for enabled OAuth2 providers)',
+                                  example: '/api/auth/google',
+                                },
+                              },
+                              required: ['id', 'name', 'type', 'enabled'],
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  example: {
+                    success: true,
+                    data: {
+                      providers: [
+                        {
+                          id: 'local',
+                          name: 'Email & Password',
+                          type: 'local',
+                          enabled: true,
+                        },
+                        {
+                          id: 'google',
+                          name: 'Google',
+                          type: 'oauth2',
+                          enabled: true,
+                          authorize_url: '/api/auth/google',
+                        },
+                        {
+                          id: 'github',
+                          name: 'GitHub',
+                          type: 'oauth2',
+                          enabled: true,
+                          authorize_url: '/api/auth/github',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            500: {
+              description: 'Server error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/Error' },
+                },
+              },
+            },
+          },
+        },
+      },
 
       // Users
       '/api/users': {

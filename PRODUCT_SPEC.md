@@ -215,16 +215,16 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - GITHUB_CLIENT_SECRET - OAuth client secret (stored as secret)
   - GITHUB_REDIRECT_URI - Callback URL for OAuth flow
 
+#### ✅ OAuth2 - Auth Providers Discovery
+- GET /api/auth/providers endpoint to list available providers
+  - Returns all authentication providers (local, Google, GitHub, etc.)
+  - Indicates which providers are enabled based on environment configuration
+  - Includes provider name, type (local/oauth2), and authorize URL for OAuth providers
+  - Allows clients to dynamically discover available authentication methods
+
 #### 🟦 OAuth2 - Additional Providers
 - Support for Microsoft, Apple, or other OIDC-compliant providers
-- Configurable provider registry
-- GET /api/auth/providers endpoint to list available providers
-
-#### 🟦 OAuth2 - Callback Handler
-- GET /api/auth/{provider}/callback endpoint
-- Handle OAuth2 authorization code flow
-- Create or link user accounts
-- Issue JWT tokens after successful OAuth
+- Configurable provider registry for easy addition of new OAuth providers
 
 ### ✅ Type Management Endpoints
 

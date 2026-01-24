@@ -1015,4 +1015,78 @@ authRouter.get('/github/callback', async (c) => {
   }
 });
 
+// =============================================================================
+// Auth Providers Discovery Endpoint
+// =============================================================================
+
+/**
+ * Provider information returned by the providers endpoint
+ */
+interface AuthProvider {
+  id: string;
+  name: string;
+  type: 'local' | 'oauth2';
+  enabled: boolean;
+  authorize_url?: string;
+}
+
+/**
+ * GET /api/auth/providers
+ *
+ * Returns a list of available authentication providers.
+ * This allows clients to discover which auth methods are configured and available.
+ */
+authRouter.get('/providers', async (c) => {
+  const logger = getLogger(c);
+
+  try {
+    const providers: AuthProvider[] = [];
+
+    // Local authentication is always available
+    providers.push({
+      id: 'local',
+      name: 'Email & Password',
+      type: 'local',
+      enabled: true,
+    });
+
+    // Check if Google OAuth is configured
+    const googleConfigured = !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_REDIRECT_URI);
+    providers.push({
+      id: 'google',
+      name: 'Google',
+      type: 'oauth2',
+      enabled: googleConfigured,
+      authorize_url: googleConfigured ? '/api/auth/google' : undefined,
+    });
+
+    // Check if GitHub OAuth is configured
+    const githubConfigured = !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_REDIRECT_URI);
+    providers.push({
+      id: 'github',
+      name: 'GitHub',
+      type: 'oauth2',
+      enabled: githubConfigured,
+      authorize_url: githubConfigured ? '/api/auth/github' : undefined,
+    });
+
+    logger.info('Auth providers retrieved', {
+      totalProviders: providers.length,
+      enabledProviders: providers.filter((p) => p.enabled).length,
+    });
+
+    return c.json(
+      response.success({
+        providers,
+      })
+    );
+  } catch (error) {
+    logger.error('Error retrieving auth providers', error as Error);
+    return c.json(
+      response.error('Failed to retrieve auth providers', 'PROVIDERS_RETRIEVAL_FAILED'),
+      500
+    );
+  }
+});
+
 export default authRouter;

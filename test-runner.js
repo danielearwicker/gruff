@@ -1270,6 +1270,77 @@ async function testGitHubOAuthCallbackExpiredState() {
 }
 
 // ============================================================================
+// Auth Providers Discovery Tests
+// ============================================================================
+
+async function testAuthProvidersEndpoint() {
+  logTest('Auth Providers - List Available Providers');
+
+  const response = await makeRequest('GET', '/api/auth/providers');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.providers, 'Should have providers array');
+  assert(Array.isArray(response.data.data.providers), 'Providers should be an array');
+
+  const providers = response.data.data.providers;
+
+  // Should have at least local, google, and github providers
+  assert(providers.length >= 3, 'Should have at least 3 providers');
+
+  // Find each expected provider
+  const localProvider = providers.find(p => p.id === 'local');
+  const googleProvider = providers.find(p => p.id === 'google');
+  const githubProvider = providers.find(p => p.id === 'github');
+
+  // Validate local provider
+  assert(localProvider, 'Should have local provider');
+  assertEquals(localProvider.name, 'Email & Password', 'Local provider should have correct name');
+  assertEquals(localProvider.type, 'local', 'Local provider should have type local');
+  assertEquals(localProvider.enabled, true, 'Local provider should always be enabled');
+
+  // Validate Google provider structure
+  assert(googleProvider, 'Should have Google provider');
+  assertEquals(googleProvider.name, 'Google', 'Google provider should have correct name');
+  assertEquals(googleProvider.type, 'oauth2', 'Google provider should have type oauth2');
+  assertEquals(typeof googleProvider.enabled, 'boolean', 'Google provider enabled should be boolean');
+  if (googleProvider.enabled) {
+    assertEquals(googleProvider.authorize_url, '/api/auth/google', 'Google provider should have authorize_url when enabled');
+  }
+
+  // Validate GitHub provider structure
+  assert(githubProvider, 'Should have GitHub provider');
+  assertEquals(githubProvider.name, 'GitHub', 'GitHub provider should have correct name');
+  assertEquals(githubProvider.type, 'oauth2', 'GitHub provider should have type oauth2');
+  assertEquals(typeof githubProvider.enabled, 'boolean', 'GitHub provider enabled should be boolean');
+  if (githubProvider.enabled) {
+    assertEquals(githubProvider.authorize_url, '/api/auth/github', 'GitHub provider should have authorize_url when enabled');
+  }
+}
+
+async function testAuthProvidersAllEnabled() {
+  logTest('Auth Providers - OAuth Providers Enabled in Local Dev');
+
+  // In local development with placeholder OAuth credentials, providers should be enabled
+  const response = await makeRequest('GET', '/api/auth/providers');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  const providers = response.data.data.providers;
+  const googleProvider = providers.find(p => p.id === 'google');
+  const githubProvider = providers.find(p => p.id === 'github');
+
+  // In local dev, OAuth providers should be enabled (configured in .dev.vars or wrangler.toml)
+  assert(googleProvider.enabled, 'Google provider should be enabled in local dev');
+  assert(googleProvider.authorize_url, 'Google provider should have authorize_url');
+
+  assert(githubProvider.enabled, 'GitHub provider should be enabled in local dev');
+  assert(githubProvider.authorize_url, 'GitHub provider should have authorize_url');
+}
+
+// ============================================================================
 // Type Management Tests
 // ============================================================================
 
@@ -8842,6 +8913,10 @@ async function runTests() {
     testGitHubOAuthCallbackInvalidState,
     testGitHubOAuthCallbackErrorResponse,
     testGitHubOAuthCallbackExpiredState,
+
+    // Auth Providers Discovery tests
+    testAuthProvidersEndpoint,
+    testAuthProvidersAllEnabled,
 
     // User Management tests
     testListUsers,
