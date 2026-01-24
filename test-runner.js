@@ -907,6 +907,68 @@ async function testTokenRefreshMissingToken() {
   assert(response.data.error, 'Should have error message');
 }
 
+async function testLogout() {
+  logTest('Authentication - Logout');
+
+  // First, register a user to get tokens
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'logouttest@example.com',
+    password: 'testPassword123',
+    display_name: 'Logout Test User',
+  });
+
+  assertEquals(registerResponse.status, 201, 'Registration should succeed');
+  assert(registerResponse.data.success, 'Should have success: true');
+  assert(registerResponse.data.data.refresh_token, 'Should return refresh token');
+
+  const refreshToken = registerResponse.data.data.refresh_token;
+
+  // Logout using the refresh token
+  const logoutResponse = await makeRequest('POST', '/api/auth/logout', {
+    refresh_token: refreshToken,
+  });
+
+  assertEquals(logoutResponse.status, 200, 'Status code should be 200 OK');
+  assert(logoutResponse.ok, 'Response should be OK');
+  assertEquals(logoutResponse.data.success, true, 'Should have success: true');
+  assertEquals(logoutResponse.data.data.message, 'Logged out successfully', 'Should return success message');
+
+  // Try to refresh using the invalidated token
+  const refreshAfterLogout = await makeRequest('POST', '/api/auth/refresh', {
+    refresh_token: refreshToken,
+  });
+
+  assertEquals(refreshAfterLogout.status, 401, 'Refresh should fail after logout with 401 Unauthorized');
+  assert(!refreshAfterLogout.ok, 'Refresh response should not be OK');
+  assertEquals(refreshAfterLogout.data.success, false, 'Should have success: false');
+}
+
+async function testLogoutInvalidToken() {
+  logTest('Authentication - Logout with Invalid Token');
+
+  // Test with a completely invalid token
+  const response = await makeRequest('POST', '/api/auth/logout', {
+    refresh_token: 'invalid.token.here',
+  });
+
+  assertEquals(response.status, 401, 'Status code should be 401 Unauthorized');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.success, false, 'Should have success: false');
+}
+
+async function testLogoutMissingToken() {
+  logTest('Authentication - Logout with Missing Token');
+
+  // Test with missing refresh token
+  const response = await makeRequest('POST', '/api/auth/logout', {
+    // refresh_token missing
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+}
+
 // ============================================================================
 // Type Management Tests
 // ============================================================================
@@ -4029,6 +4091,9 @@ async function runTests() {
     testTokenRefresh,
     testTokenRefreshInvalidToken,
     testTokenRefreshMissingToken,
+    testLogout,
+    testLogoutInvalidToken,
+    testLogoutMissingToken,
 
     // Type Management tests
     testCreateTypeEntity,

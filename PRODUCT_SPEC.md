@@ -150,7 +150,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Issue new access token
 - Return new access token with same refresh token
 
-#### 🟦 Logout Endpoint
+#### ✅ Logout Endpoint
 - POST /api/auth/logout endpoint
 - Invalidate refresh token in KV
 - Clear session data

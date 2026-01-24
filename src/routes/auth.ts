@@ -6,10 +6,10 @@
 
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
-import { createUserSchema, loginSchema, refreshTokenSchema } from '../schemas/index.js';
+import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema } from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
 import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
-import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, rotateRefreshToken } from '../utils/session.js';
+import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, rotateRefreshToken, invalidateSession } from '../utils/session.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 
@@ -295,6 +295,61 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
     logger.error('Error during token refresh', error as Error);
     return c.json(
       response.error('Failed to refresh token', 'REFRESH_FAILED'),
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ *
+ * Logout by invalidating the refresh token
+ */
+authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
+  const logger = getLogger(c);
+  const validated = c.get('validated_json') as any;
+
+  const { refresh_token } = validated;
+
+  try {
+    // Get JWT secret from environment
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error('JWT_SECRET not configured');
+      return c.json(
+        response.error('Server configuration error', 'CONFIG_ERROR'),
+        500
+      );
+    }
+
+    // Verify the refresh token JWT signature and expiration
+    const payload = await verifyRefreshToken(refresh_token, jwtSecret);
+
+    if (!payload) {
+      logger.warn('Logout attempt with invalid or expired refresh token');
+      return c.json(
+        response.error('Invalid or expired refresh token', 'INVALID_TOKEN'),
+        401
+      );
+    }
+
+    const { user_id } = payload;
+
+    // Invalidate the session in KV store
+    await invalidateSession(c.env.KV, user_id);
+
+    logger.info('User logged out successfully', { userId: user_id });
+
+    // Return success response
+    return c.json(
+      response.success({
+        message: 'Logged out successfully',
+      })
+    );
+  } catch (error) {
+    logger.error('Error during logout', error as Error);
+    return c.json(
+      response.error('Failed to logout', 'LOGOUT_FAILED'),
       500
     );
   }
