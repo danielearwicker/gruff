@@ -423,7 +423,7 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 - ✅ D1 database connectivity check
 - ✅ KV connectivity check
 - ✅ System health status
-- 🟦 Version information endpoint
+- ✅ Version information endpoint
 - 🟦 Workers runtime status
 
 ### 🟦 Metrics and Monitoring

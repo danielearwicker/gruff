@@ -298,6 +298,26 @@ async function testApiEndpoint() {
   assert(response.data.message, 'Should have message');
 }
 
+async function testVersionEndpoint() {
+  logTest('Version Information Endpoint');
+
+  const response = await makeRequest('GET', '/api/version');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data !== null, 'Response should have JSON body');
+  assertEquals(response.data.version, '1.0.0', 'Should have correct version');
+  assertEquals(response.data.name, 'gruff', 'Should have correct name');
+  assert(response.data.description, 'Should have description');
+  assert(response.data.runtime, 'Should have runtime information');
+  assertEquals(response.data.runtime.platform, 'cloudflare-workers', 'Should specify platform');
+  assertEquals(response.data.runtime.database, 'd1', 'Should specify database');
+  assert(response.data.runtime.environment, 'Should have environment');
+  assert(response.data.api, 'Should have API information');
+  assert(response.data.dependencies, 'Should have dependencies');
+  assert(response.data.timestamp, 'Should have timestamp');
+}
+
 async function test404NotFound() {
   logTest('404 Not Found');
 
@@ -3316,6 +3336,7 @@ async function runTests() {
     testHealthEndpoint,
     testRootEndpoint,
     testApiEndpoint,
+    testVersionEndpoint,
     test404NotFound,
     testVersionAutoIncrementEntities,
     testVersionAutoIncrementLinks,

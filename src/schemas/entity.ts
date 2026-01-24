@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema } from './common.js';
+import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
 // Entity database model schema
 export const entitySchema = z.object({
@@ -39,7 +39,7 @@ export const entityResponseSchema = z.object({
 });
 
 // Entity query filters (for query parameters - handles string coercion)
-export const entityQuerySchema = z.object({
+export const entityQuerySchema = paginationQuerySchema.extend({
   type_id: z.string().uuid().optional(),
   created_by: z.string().uuid().optional(),
   created_after: z
@@ -52,12 +52,6 @@ export const entityQuerySchema = z.object({
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
-  include_deleted: z
-    .string()
-    .optional()
-    .default('false')
-    .transform((val) => val === 'true')
-    .pipe(z.boolean()),
 });
 
 // Entity restore schema

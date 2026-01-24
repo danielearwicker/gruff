@@ -103,6 +103,29 @@ app.get('/health', async (c) => {
   }
 });
 
+// Version information endpoint
+app.get('/api/version', (c) => {
+  return c.json({
+    version: '1.0.0',
+    name: 'gruff',
+    description: 'Entity-Relationship Graph Database with Versioning',
+    runtime: {
+      platform: 'cloudflare-workers',
+      database: 'd1',
+      environment: c.env.ENVIRONMENT || 'unknown',
+    },
+    api: {
+      version: 'v1',
+      documentation: '/api',
+    },
+    dependencies: {
+      hono: '^4.11.5',
+      zod: '^4.3.6',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Root endpoint
 app.get('/', (c) => {
   return c.json({
@@ -111,6 +134,7 @@ app.get('/', (c) => {
     endpoints: {
       health: '/health',
       api: '/api',
+      version: '/api/version',
     },
   });
 });
