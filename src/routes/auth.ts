@@ -6,6 +6,7 @@
 
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
+import { requireAuth } from '../middleware/auth.js';
 import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema } from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
 import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
@@ -350,6 +351,68 @@ authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
     logger.error('Error during logout', error as Error);
     return c.json(
       response.error('Failed to logout', 'LOGOUT_FAILED'),
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/auth/me
+ *
+ * Get the authenticated user's profile information
+ * Requires valid JWT in Authorization header
+ */
+authRouter.get('/me', requireAuth(), async (c) => {
+  const logger = getLogger(c);
+
+  // Get the authenticated user from context (set by requireAuth middleware)
+  const user = c.get('user');
+
+  try {
+    // Fetch the full user profile from the database
+    const userRecord = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE id = ?'
+    )
+      .bind(user.user_id)
+      .first();
+
+    if (!userRecord) {
+      logger.warn('User not found in database', { userId: user.user_id });
+      return c.json(
+        response.error('User not found', 'USER_NOT_FOUND'),
+        404
+      );
+    }
+
+    // Check if account is active
+    if (!userRecord.is_active) {
+      logger.warn('Inactive user attempted to access profile', { userId: user.user_id });
+      return c.json(
+        response.error('Account is not active', 'ACCOUNT_INACTIVE'),
+        403
+      );
+    }
+
+    logger.info('User profile retrieved', { userId: user.user_id });
+
+    // Return user profile
+    return c.json(
+      response.success({
+        user: {
+          id: userRecord.id,
+          email: userRecord.email,
+          display_name: userRecord.display_name,
+          provider: userRecord.provider,
+          created_at: userRecord.created_at,
+          updated_at: userRecord.updated_at,
+          is_active: !!userRecord.is_active,
+        },
+      })
+    );
+  } catch (error) {
+    logger.error('Error retrieving user profile', error as Error, { userId: user.user_id });
+    return c.json(
+      response.error('Failed to retrieve user profile', 'PROFILE_RETRIEVAL_FAILED'),
       500
     );
   }

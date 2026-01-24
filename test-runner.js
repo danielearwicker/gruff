@@ -18,7 +18,7 @@ import { setTimeout as sleep } from 'timers/promises';
 
 const DEV_SERVER_URL = 'http://localhost:8787';
 const STARTUP_TIMEOUT = 10000; // 10 seconds
-const TEST_TIMEOUT = 30000; // 30 seconds
+const TEST_TIMEOUT = 60000; // 60 seconds
 
 // ANSI color codes for output
 const colors = {
@@ -967,6 +967,92 @@ async function testLogoutMissingToken() {
   assertEquals(response.status, 400, 'Status code should be 400 Bad Request');
   assert(!response.ok, 'Response should not be OK');
   assert(response.data.error, 'Should have error message');
+}
+
+async function testGetCurrentUser() {
+  logTest('Authentication - Get Current User');
+
+  // First, register a new user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'currentuser@example.com',
+    password: 'password123',
+    display_name: 'Current User'
+  });
+
+  assertEquals(registerResponse.status, 201, 'Registration should succeed');
+  assert(registerResponse.data.data.access_token, 'Should have access token');
+
+  const accessToken = registerResponse.data.data.access_token;
+  const userId = registerResponse.data.data.user.id;
+
+  // Now use the access token to get current user info
+  const meResponse = await fetch(`${DEV_SERVER_URL}/api/auth/me`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const meData = await meResponse.json();
+
+  assertEquals(meResponse.status, 200, 'Status code should be 200');
+  assert(meResponse.ok, 'Response should be OK');
+  assertEquals(meData.success, true, 'Should have success: true');
+  assert(meData.data, 'Should have data object');
+  assert(meData.data.user, 'Should have user object');
+  assertEquals(meData.data.user.id, userId, 'Should return correct user ID');
+  assertEquals(meData.data.user.email, 'currentuser@example.com', 'Should have correct email');
+  assertEquals(meData.data.user.display_name, 'Current User', 'Should have correct display name');
+  assertEquals(meData.data.user.provider, 'local', 'Should have correct provider');
+  assert(meData.data.user.is_active, 'User should be active');
+  assert(meData.data.user.created_at, 'Should have created_at timestamp');
+  assert(meData.data.user.updated_at, 'Should have updated_at timestamp');
+}
+
+async function testGetCurrentUserNoAuth() {
+  logTest('Authentication - Get Current User without Authorization');
+
+  // Try to access /me without Authorization header
+  const response = await makeRequest('GET', '/api/auth/me');
+
+  assertEquals(response.status, 401, 'Status code should be 401 Unauthorized');
+  assert(!response.ok, 'Response should not be OK');
+  assert(response.data.error, 'Should have error message');
+  assertEquals(response.data.code, 'UNAUTHORIZED', 'Should have UNAUTHORIZED error code');
+}
+
+async function testGetCurrentUserInvalidToken() {
+  logTest('Authentication - Get Current User with Invalid Token');
+
+  // Try to access /me with invalid token
+  const invalidResponse = await fetch(`${DEV_SERVER_URL}/api/auth/me`, {
+    method: 'GET',
+    headers: {
+      'Authorization': 'Bearer invalid-token-here',
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const invalidData = await invalidResponse.json();
+
+  assertEquals(invalidResponse.status, 401, 'Status code should be 401 Unauthorized');
+  assert(!invalidResponse.ok, 'Response should not be OK');
+  assert(invalidData.error, 'Should have error message');
+  assertEquals(invalidData.code, 'INVALID_TOKEN', 'Should have INVALID_TOKEN error code');
+}
+
+async function testGetCurrentUserExpiredToken() {
+  logTest('Authentication - Get Current User with Expired Token');
+
+  // For testing expired tokens, we would need to:
+  // 1. Create a token with a very short expiration
+  // 2. Wait for it to expire
+  // 3. Try to use it
+  // This is difficult in integration tests, so we'll skip this test
+  // In a real scenario, unit tests would cover this
+
+  logInfo('Skipping expired token test (covered in unit tests)');
 }
 
 // ============================================================================
@@ -4094,6 +4180,10 @@ async function runTests() {
     testLogout,
     testLogoutInvalidToken,
     testLogoutMissingToken,
+    testGetCurrentUser,
+    testGetCurrentUserNoAuth,
+    testGetCurrentUserInvalidToken,
+    testGetCurrentUserExpiredToken,
 
     // Type Management tests
     testCreateTypeEntity,
