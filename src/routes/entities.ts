@@ -3,6 +3,7 @@ import { validateJson, validateQuery } from '../middleware/validation.js';
 import { createEntitySchema, updateEntitySchema, entityQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 
 type Bindings = {
   DB: D1Database;
@@ -65,13 +66,30 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
   const systemUserId = 'test-user-001';
 
   try {
-    // Check if type_id exists
-    const typeExists = await db.prepare('SELECT id FROM types WHERE id = ?')
+    // Check if type_id exists and get its json_schema
+    const typeRecord = await db.prepare('SELECT id, json_schema FROM types WHERE id = ?')
       .bind(data.type_id)
       .first();
 
-    if (!typeExists) {
+    if (!typeRecord) {
       return c.json(response.error('Type not found', 'TYPE_NOT_FOUND'), 404);
+    }
+
+    // Validate properties against the type's JSON schema (if defined)
+    const schemaValidation = validatePropertiesAgainstSchema(
+      data.properties,
+      typeRecord.json_schema as string | null
+    );
+
+    if (!schemaValidation.valid) {
+      return c.json(
+        response.error(
+          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          'SCHEMA_VALIDATION_FAILED',
+          { validation_errors: schemaValidation.errors }
+        ),
+        400
+      );
     }
 
     // Convert properties to string
@@ -275,6 +293,28 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
       return c.json(
         response.error('Cannot update deleted entity. Use restore endpoint first.', 'ENTITY_DELETED'),
         409
+      );
+    }
+
+    // Fetch the type's JSON schema for validation
+    const typeRecord = await db.prepare('SELECT json_schema FROM types WHERE id = ?')
+      .bind(currentVersion.type_id)
+      .first();
+
+    // Validate properties against the type's JSON schema (if defined)
+    const schemaValidation = validatePropertiesAgainstSchema(
+      data.properties,
+      typeRecord?.json_schema as string | null
+    );
+
+    if (!schemaValidation.valid) {
+      return c.json(
+        response.error(
+          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          'SCHEMA_VALIDATION_FAILED',
+          { validation_errors: schemaValidation.errors }
+        ),
+        400
       );
     }
 

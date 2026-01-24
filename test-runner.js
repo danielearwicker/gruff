@@ -7280,6 +7280,334 @@ async function testExportImportRoundTrip() {
 }
 
 // ============================================================================
+// Type Schema Validation Tests
+// ============================================================================
+
+async function testSchemaValidationCreateEntitySuccess() {
+  logTest('Schema Validation - Create Entity with Valid Properties');
+
+  // Create a type with strict JSON schema
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SchemaValidatedProduct',
+    category: 'entity',
+    description: 'A product with strict schema validation',
+    json_schema: JSON.stringify({
+      type: 'object',
+      properties: {
+        name: { type: 'string', minLength: 1 },
+        price: { type: 'number', minimum: 0 },
+        inStock: { type: 'boolean' }
+      },
+      required: ['name', 'price']
+    })
+  });
+
+  assertEquals(typeResponse.status, 201, 'Type creation should succeed');
+  const typeId = typeResponse.data.data.id;
+
+  // Create entity with valid properties
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Test Product',
+      price: 29.99,
+      inStock: true
+    }
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity creation should succeed with valid properties');
+  assertEquals(entityResponse.data.data.properties.name, 'Test Product', 'Name should be saved');
+  assertEquals(entityResponse.data.data.properties.price, 29.99, 'Price should be saved');
+  assertEquals(entityResponse.data.data.properties.inStock, true, 'inStock should be saved');
+}
+
+async function testSchemaValidationCreateEntityMissingRequired() {
+  logTest('Schema Validation - Create Entity Missing Required Property');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Try to create entity without required 'price' property
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Incomplete Product'
+      // missing 'price' which is required
+    }
+  });
+
+  assertEquals(entityResponse.status, 400, 'Should fail with 400');
+  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assert(entityResponse.data.error.includes('price'), 'Error should mention missing price property');
+}
+
+async function testSchemaValidationCreateEntityWrongType() {
+  logTest('Schema Validation - Create Entity with Wrong Property Type');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Try to create entity with wrong type for 'price' (string instead of number)
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Bad Product',
+      price: 'not a number'
+    }
+  });
+
+  assertEquals(entityResponse.status, 400, 'Should fail with 400');
+  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assert(entityResponse.data.error.includes('type'), 'Error should mention type mismatch');
+}
+
+async function testSchemaValidationCreateEntityMinimumViolation() {
+  logTest('Schema Validation - Create Entity Violating Minimum Constraint');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Try to create entity with negative price (violates minimum: 0)
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Negative Price Product',
+      price: -5.00
+    }
+  });
+
+  assertEquals(entityResponse.status, 400, 'Should fail with 400');
+  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assert(entityResponse.data.error.includes('minimum') || entityResponse.data.error.includes('>='), 'Error should mention minimum constraint');
+}
+
+async function testSchemaValidationUpdateEntity() {
+  logTest('Schema Validation - Update Entity with Invalid Properties');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Create a valid entity first
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Update Test Product',
+      price: 49.99
+    }
+  });
+  assertEquals(createResponse.status, 201, 'Entity creation should succeed');
+  const entityId = createResponse.data.data.id;
+
+  // Try to update with invalid properties
+  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: {
+      name: '', // empty string, violates minLength: 1
+      price: 29.99
+    }
+  });
+
+  assertEquals(updateResponse.status, 400, 'Update should fail with 400');
+  assertEquals(updateResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+}
+
+async function testSchemaValidationCreateLinkSuccess() {
+  logTest('Schema Validation - Create Link with Valid Properties');
+
+  // Create a link type with schema
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SchemaValidatedConnection',
+    category: 'link',
+    description: 'A connection with strict schema validation',
+    json_schema: JSON.stringify({
+      type: 'object',
+      properties: {
+        strength: { type: 'string', enum: ['weak', 'medium', 'strong'] },
+        createdDate: { type: 'string', format: 'date' }
+      },
+      required: ['strength']
+    })
+  });
+
+  assertEquals(linkTypeResponse.status, 201, 'Link type creation should succeed');
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Get entity type for creating test entities
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  // Create two entities
+  const e1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Source', price: 10 }
+  });
+  const e1Id = e1Response.data.data.id;
+
+  const e2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Link Target', price: 20 }
+  });
+  const e2Id = e2Response.data.data.id;
+
+  // Create link with valid properties
+  const linkResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: e1Id,
+    target_entity_id: e2Id,
+    properties: {
+      strength: 'strong',
+      createdDate: '2025-01-01'
+    }
+  });
+
+  assertEquals(linkResponse.status, 201, 'Link creation should succeed');
+  assertEquals(linkResponse.data.data.properties.strength, 'strong', 'Strength should be saved');
+}
+
+async function testSchemaValidationCreateLinkInvalidEnum() {
+  logTest('Schema Validation - Create Link with Invalid Enum Value');
+
+  // Get the link type
+  const linkTypeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedConnection');
+  const linkTypeId = linkTypeResponse.data.data[0].id;
+
+  // Get entity type
+  const entityTypeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const entityTypeId = entityTypeResponse.data.data[0].id;
+
+  // Create two entities
+  const e1Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Enum Test Source', price: 10 }
+  });
+  const e1Id = e1Response.data.data.id;
+
+  const e2Response = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Enum Test Target', price: 20 }
+  });
+  const e2Id = e2Response.data.data.id;
+
+  // Create link with invalid enum value
+  const linkResponse = await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: e1Id,
+    target_entity_id: e2Id,
+    properties: {
+      strength: 'invalid-value' // not in ['weak', 'medium', 'strong']
+    }
+  });
+
+  assertEquals(linkResponse.status, 400, 'Should fail with 400');
+  assertEquals(linkResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assert(linkResponse.data.error.includes('one of') || linkResponse.data.error.includes('enum'), 'Error should mention allowed values');
+}
+
+async function testSchemaValidationNoSchemaType() {
+  logTest('Schema Validation - Create Entity for Type without Schema');
+
+  // Create a type without JSON schema
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FlexibleProduct',
+    category: 'entity',
+    description: 'A product without schema validation'
+    // No json_schema
+  });
+
+  assertEquals(typeResponse.status, 201, 'Type creation should succeed');
+  const typeId = typeResponse.data.data.id;
+
+  // Create entity with any properties (should succeed since no schema)
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      anything: 'goes',
+      nested: { deep: { data: 123 } },
+      array: [1, 2, 3]
+    }
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity creation should succeed with any properties');
+  assertEquals(entityResponse.data.data.properties.anything, 'goes', 'Arbitrary properties should be saved');
+}
+
+async function testSchemaValidationBulkCreateEntitiesWithSchema() {
+  logTest('Schema Validation - Bulk Create Entities with Schema');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Bulk create - mixed valid and invalid entities
+  const bulkResponse = await makeRequest('POST', '/api/bulk/entities', {
+    entities: [
+      {
+        type_id: typeId,
+        properties: { name: 'Valid Bulk Product 1', price: 15.00 },
+        client_id: 'bulk-valid-1'
+      },
+      {
+        type_id: typeId,
+        properties: { name: 'Invalid - No Price' },  // missing required 'price'
+        client_id: 'bulk-invalid-1'
+      },
+      {
+        type_id: typeId,
+        properties: { name: 'Valid Bulk Product 2', price: 25.00 },
+        client_id: 'bulk-valid-2'
+      }
+    ]
+  });
+
+  assertEquals(bulkResponse.status, 201, 'Bulk operation should complete');
+  assertEquals(bulkResponse.data.data.summary.successful, 2, 'Should have 2 successful');
+  assertEquals(bulkResponse.data.data.summary.failed, 1, 'Should have 1 failed');
+
+  // Check the failed one has correct error code
+  const failedResult = bulkResponse.data.data.results.find(r => r.client_id === 'bulk-invalid-1');
+  assertEquals(failedResult.success, false, 'Invalid entity should fail');
+  assertEquals(failedResult.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+}
+
+async function testSchemaValidationImportWithSchema() {
+  logTest('Schema Validation - Import Entities with Schema');
+
+  // Get the SchemaValidatedProduct type
+  const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
+  const typeId = typeResponse.data.data[0].id;
+
+  // Import with mixed valid and invalid entities
+  const importResponse = await makeRequest('POST', '/api/export', {
+    types: [],
+    entities: [
+      {
+        client_id: 'import-valid-1',
+        type_id: typeId,
+        properties: { name: 'Imported Product', price: 99.99 }
+      },
+      {
+        client_id: 'import-invalid-1',
+        type_id: typeId,
+        properties: { name: 'Invalid Import', price: -10 }  // violates minimum
+      }
+    ],
+    links: []
+  });
+
+  assertEquals(importResponse.status, 201, 'Import should complete');
+  assertEquals(importResponse.data.data.summary.entities.successful, 1, 'Should have 1 successful');
+  assertEquals(importResponse.data.data.summary.entities.failed, 1, 'Should have 1 failed');
+
+  // Check the failed one has correct error code
+  const failedResult = importResponse.data.data.entity_results.find(r => r.client_id === 'import-invalid-1');
+  assertEquals(failedResult.success, false, 'Invalid entity should fail');
+  assertEquals(failedResult.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -7550,6 +7878,18 @@ async function runTests() {
     testImportExistingType,
     testImportEmptyRequest,
     testExportImportRoundTrip,
+
+    // Type Schema Validation tests
+    testSchemaValidationCreateEntitySuccess,
+    testSchemaValidationCreateEntityMissingRequired,
+    testSchemaValidationCreateEntityWrongType,
+    testSchemaValidationCreateEntityMinimumViolation,
+    testSchemaValidationUpdateEntity,
+    testSchemaValidationCreateLinkSuccess,
+    testSchemaValidationCreateLinkInvalidEnum,
+    testSchemaValidationNoSchemaType,
+    testSchemaValidationBulkCreateEntitiesWithSchema,
+    testSchemaValidationImportWithSchema,
   ];
 
   for (const test of tests) {

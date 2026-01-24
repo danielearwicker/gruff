@@ -440,11 +440,23 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - Maximum 100 items per import request
 - Validation during import with clear error codes
 
-### 🟦 Type Schema Validation
+### ✅ Type Schema Validation
 - Optional JSON schema validation for entity/link properties
-- Validation on create and update
-- Clear error messages for validation failures
-- Schema migration support
+- Validation on create and update for entities and links
+- Validation in bulk operations (create/update)
+- Validation in import operations
+- Clear error messages with detailed validation errors
+- Support for JSON Schema Draft-07 subset:
+  - Type validation (string, number, boolean, array, object, null)
+  - Required properties
+  - Minimum/maximum constraints for numbers
+  - MinLength/maxLength for strings
+  - Pattern matching for strings
+  - Enum constraints
+  - Format validation (email, date, date-time, uri, uuid, etc.)
+  - Array item validation
+  - Nested object validation
+  - allOf, anyOf, oneOf, not logical operators
 
 ### 🟦 Audit Logging
 - Comprehensive audit log of all operations

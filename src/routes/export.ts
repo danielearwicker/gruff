@@ -11,6 +11,7 @@ import {
 } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 
 type Bindings = {
   DB: D1Database;
@@ -307,26 +308,33 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
       }
     }
 
-    // Phase 2: Resolve entity type IDs and validate
+    // Phase 2: Resolve entity type IDs and validate (including JSON schema validation)
     const resolvedEntities: Array<{
       clientId: string;
       typeId: string;
       properties: Record<string, unknown>;
     }> = [];
 
-    // Load existing entity types for validation
+    // Load existing entity types for validation (including json_schema)
     const { results: existingEntityTypes } = await db.prepare(
-      "SELECT id, name FROM types WHERE category = 'entity'"
+      "SELECT id, name, json_schema FROM types WHERE category = 'entity'"
     ).all();
     const entityTypeByName: Map<string, string> = new Map();
     const entityTypeById: Set<string> = new Set();
+    const entityTypeSchemas: Map<string, string | null> = new Map();
     for (const t of existingEntityTypes) {
       entityTypeByName.set(t.name as string, t.id as string);
       entityTypeById.add(t.id as string);
+      entityTypeSchemas.set(t.id as string, t.json_schema as string | null);
     }
-    // Also include newly created types
+    // Also include newly created types (with their schemas from the import data)
     for (const [key, id] of typeIdMap) {
       entityTypeById.add(id);
+      // Find the schema from the imported types
+      const importedType = data.types.find(t => t.name === key || t.client_id === key);
+      if (importedType) {
+        entityTypeSchemas.set(id, importedType.json_schema || null);
+      }
     }
 
     for (const entity of data.entities) {
@@ -346,6 +354,22 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
           success: false,
           error: `Entity type not found: ${entity.type_name || entity.type_id}`,
           code: 'TYPE_NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        entity.properties,
+        entityTypeSchemas.get(typeId)
+      );
+
+      if (!schemaValidation.valid) {
+        entityResults.push({
+          client_id: entity.client_id,
+          success: false,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
         });
         continue;
       }
@@ -398,7 +422,7 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
       }
     }
 
-    // Phase 4: Resolve link types and entity references, then import links
+    // Phase 4: Resolve link types and entity references, then import links (including JSON schema validation)
     const resolvedLinks: Array<{
       clientId?: string;
       typeId: string;
@@ -407,19 +431,26 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
       properties: Record<string, unknown>;
     }> = [];
 
-    // Load existing link types for validation
+    // Load existing link types for validation (including json_schema)
     const { results: existingLinkTypes } = await db.prepare(
-      "SELECT id, name FROM types WHERE category = 'link'"
+      "SELECT id, name, json_schema FROM types WHERE category = 'link'"
     ).all();
     const linkTypeByName: Map<string, string> = new Map();
     const linkTypeById: Set<string> = new Set();
+    const linkTypeSchemas: Map<string, string | null> = new Map();
     for (const t of existingLinkTypes) {
       linkTypeByName.set(t.name as string, t.id as string);
       linkTypeById.add(t.id as string);
+      linkTypeSchemas.set(t.id as string, t.json_schema as string | null);
     }
-    // Also include newly created types
+    // Also include newly created types (with their schemas from the import data)
     for (const [key, id] of typeIdMap) {
       linkTypeById.add(id);
+      // Find the schema from the imported types
+      const importedType = data.types.find(t => t.name === key || t.client_id === key);
+      if (importedType) {
+        linkTypeSchemas.set(id, importedType.json_schema || null);
+      }
     }
 
     // Load existing entities for reference resolution
@@ -453,6 +484,22 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
           success: false,
           error: `Link type not found: ${link.type_name || link.type_id}`,
           code: 'TYPE_NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        link.properties,
+        linkTypeSchemas.get(typeId)
+      );
+
+      if (!schemaValidation.valid) {
+        linkResults.push({
+          client_id: link.client_id,
+          success: false,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
         });
         continue;
       }

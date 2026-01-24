@@ -10,6 +10,7 @@ import {
 } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 
 type Bindings = {
   DB: D1Database;
@@ -92,13 +93,14 @@ bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async (c) => {
   const entityData: Array<{ id: string; index: number; client_id?: string }> = [];
 
   try {
-    // First, validate all type_ids exist
+    // First, validate all type_ids exist and get their schemas
     const typeIds = [...new Set(data.entities.map(e => e.type_id))];
     const typeCheckPlaceholders = typeIds.map(() => '?').join(',');
     const { results: existingTypes } = await db.prepare(
-      `SELECT id FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'entity'`
+      `SELECT id, json_schema FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'entity'`
     ).bind(...typeIds).all();
     const validTypeIds = new Set(existingTypes.map((t: any) => t.id));
+    const typeSchemas = new Map(existingTypes.map((t: any) => [t.id, t.json_schema as string | null]));
 
     // Process each entity
     for (let i = 0; i < data.entities.length; i++) {
@@ -112,6 +114,23 @@ bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async (c) => {
           client_id: entity.client_id,
           error: 'Type not found',
           code: 'TYPE_NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        entity.properties,
+        typeSchemas.get(entity.type_id)
+      );
+
+      if (!schemaValidation.valid) {
+        results.push({
+          index: i,
+          success: false,
+          client_id: entity.client_id,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
         });
         continue;
       }
@@ -196,13 +215,14 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async (c) => {
   const linkData: Array<{ id: string; index: number; client_id?: string }> = [];
 
   try {
-    // Validate all type_ids exist
+    // Validate all type_ids exist and get their schemas
     const typeIds = [...new Set(data.links.map(l => l.type_id))];
     const typeCheckPlaceholders = typeIds.map(() => '?').join(',');
     const { results: existingTypes } = await db.prepare(
-      `SELECT id FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'link'`
+      `SELECT id, json_schema FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'link'`
     ).bind(...typeIds).all();
     const validTypeIds = new Set(existingTypes.map((t: any) => t.id));
+    const typeSchemas = new Map(existingTypes.map((t: any) => [t.id, t.json_schema as string | null]));
 
     // Validate all source and target entities exist
     const allEntityIds = [...new Set([
@@ -227,6 +247,23 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async (c) => {
           client_id: link.client_id,
           error: 'Link type not found',
           code: 'TYPE_NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        link.properties,
+        typeSchemas.get(link.type_id)
+      );
+
+      if (!schemaValidation.valid) {
+        results.push({
+          index: i,
+          success: false,
+          client_id: link.client_id,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
         });
         continue;
       }
@@ -335,8 +372,10 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async (c) => {
   const updateData: Array<{ originalId: string; newId: string; newVersion: number; index: number }> = [];
 
   try {
-    // First, fetch all current versions
+    // First, fetch all current versions and collect type IDs
     const currentVersions: Map<string, any> = new Map();
+    const typeIdsToFetch: Set<string> = new Set();
+
     for (let i = 0; i < data.entities.length; i++) {
       const entity = data.entities[i];
       const currentVersion = await findLatestEntityVersion(db, entity.id);
@@ -364,11 +403,43 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async (c) => {
       }
 
       currentVersions.set(entity.id, { currentVersion, index: i });
+      typeIdsToFetch.add(currentVersion.type_id as string);
+    }
+
+    // Fetch type schemas for validation
+    const typeSchemas: Map<string, string | null> = new Map();
+    if (typeIdsToFetch.size > 0) {
+      const typeIdArray = [...typeIdsToFetch];
+      const typePlaceholders = typeIdArray.map(() => '?').join(',');
+      const { results: types } = await db.prepare(
+        `SELECT id, json_schema FROM types WHERE id IN (${typePlaceholders})`
+      ).bind(...typeIdArray).all();
+      for (const t of types) {
+        typeSchemas.set(t.id as string, t.json_schema as string | null);
+      }
     }
 
     // Create update statements for valid entities
     for (const [entityId, { currentVersion, index }] of currentVersions) {
       const entity = data.entities.find(e => e.id === entityId)!;
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        entity.properties,
+        typeSchemas.get(currentVersion.type_id as string)
+      );
+
+      if (!schemaValidation.valid) {
+        results.push({
+          index,
+          success: false,
+          id: entity.id,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+        continue;
+      }
+
       const newVersion = (currentVersion.version as number) + 1;
       const propertiesString = JSON.stringify(entity.properties);
       const newId = generateUUID();
@@ -458,8 +529,10 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async (c) => {
   const updateData: Array<{ originalId: string; newId: string; newVersion: number; index: number }> = [];
 
   try {
-    // First, fetch all current versions
+    // First, fetch all current versions and collect type IDs
     const currentVersions: Map<string, any> = new Map();
+    const typeIdsToFetch: Set<string> = new Set();
+
     for (let i = 0; i < data.links.length; i++) {
       const link = data.links[i];
       const currentVersion = await findLatestLinkVersion(db, link.id);
@@ -487,11 +560,43 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async (c) => {
       }
 
       currentVersions.set(link.id, { currentVersion, index: i });
+      typeIdsToFetch.add(currentVersion.type_id as string);
+    }
+
+    // Fetch type schemas for validation
+    const typeSchemas: Map<string, string | null> = new Map();
+    if (typeIdsToFetch.size > 0) {
+      const typeIdArray = [...typeIdsToFetch];
+      const typePlaceholders = typeIdArray.map(() => '?').join(',');
+      const { results: types } = await db.prepare(
+        `SELECT id, json_schema FROM types WHERE id IN (${typePlaceholders})`
+      ).bind(...typeIdArray).all();
+      for (const t of types) {
+        typeSchemas.set(t.id as string, t.json_schema as string | null);
+      }
     }
 
     // Create update statements for valid links
     for (const [linkId, { currentVersion, index }] of currentVersions) {
       const link = data.links.find(l => l.id === linkId)!;
+
+      // Validate properties against the type's JSON schema
+      const schemaValidation = validatePropertiesAgainstSchema(
+        link.properties,
+        typeSchemas.get(currentVersion.type_id as string)
+      );
+
+      if (!schemaValidation.valid) {
+        results.push({
+          index,
+          success: false,
+          id: link.id,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+        });
+        continue;
+      }
+
       const newVersion = (currentVersion.version as number) + 1;
       const propertiesString = JSON.stringify(link.properties);
       const newId = generateUUID();
