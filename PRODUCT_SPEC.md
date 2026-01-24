@@ -136,7 +136,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Hash password before storage
 - Return access and refresh tokens
 
-#### 🟦 User Login Endpoint
+#### ✅ User Login Endpoint
 - POST /api/auth/login endpoint
 - Verify email and password
 - Generate access and refresh tokens

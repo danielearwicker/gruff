@@ -747,6 +747,99 @@ async function testUserRegistrationValidation() {
   assertEquals(response3.status, 400, 'Status code should be 400 for short password');
 }
 
+async function testUserLogin() {
+  logTest('Authentication - User Login');
+
+  // First, register a user
+  await makeRequest('POST', '/api/auth/register', {
+    email: 'logintest@example.com',
+    password: 'testPassword123',
+    display_name: 'Login Test User',
+  });
+
+  // Now login with the same credentials
+  const response = await makeRequest('POST', '/api/auth/login', {
+    email: 'logintest@example.com',
+    password: 'testPassword123',
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200 OK');
+  assert(response.data.success, 'Should have success: true');
+  assert(response.data.data, 'Should have data object');
+  assert(response.data.data.user, 'Should have user object');
+  assertEquals(response.data.data.user.email, 'logintest@example.com', 'Should have correct email');
+  assertEquals(response.data.data.user.display_name, 'Login Test User', 'Should have correct display name');
+  assertEquals(response.data.data.user.provider, 'local', 'Should have provider: local');
+  assert(response.data.data.user.id, 'Should have user ID');
+  assert(response.data.data.access_token, 'Should have access token');
+  assert(response.data.data.refresh_token, 'Should have refresh token');
+  assertEquals(response.data.data.token_type, 'Bearer', 'Should have token_type: Bearer');
+  assert(response.data.data.expires_in, 'Should have expires_in');
+}
+
+async function testUserLoginInvalidEmail() {
+  logTest('Authentication - User Login with Invalid Email');
+
+  // Attempt login with non-existent email
+  const response = await makeRequest('POST', '/api/auth/login', {
+    email: 'nonexistent@example.com',
+    password: 'testPassword123',
+  });
+
+  assertEquals(response.status, 401, 'Status code should be 401 Unauthorized');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'INVALID_CREDENTIALS', 'Should have INVALID_CREDENTIALS code');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testUserLoginInvalidPassword() {
+  logTest('Authentication - User Login with Invalid Password');
+
+  // First, register a user
+  await makeRequest('POST', '/api/auth/register', {
+    email: 'wrongpass@example.com',
+    password: 'correctPassword123',
+  });
+
+  // Attempt login with wrong password
+  const response = await makeRequest('POST', '/api/auth/login', {
+    email: 'wrongpass@example.com',
+    password: 'wrongPassword456',
+  });
+
+  assertEquals(response.status, 401, 'Status code should be 401 Unauthorized');
+  assertEquals(response.data.success, false, 'Should have success: false');
+  assertEquals(response.data.code, 'INVALID_CREDENTIALS', 'Should have INVALID_CREDENTIALS code');
+  assert(response.data.error, 'Should have error message');
+}
+
+async function testUserLoginValidation() {
+  logTest('Authentication - User Login Validation');
+
+  // Test missing password
+  const response1 = await makeRequest('POST', '/api/auth/login', {
+    email: 'test@example.com',
+    // password missing
+  });
+
+  assertEquals(response1.status, 400, 'Status code should be 400 for missing password');
+
+  // Test invalid email format
+  const response2 = await makeRequest('POST', '/api/auth/login', {
+    email: 'invalid-email',
+    password: 'testPassword123',
+  });
+
+  assertEquals(response2.status, 400, 'Status code should be 400 for invalid email');
+
+  // Test missing email
+  const response3 = await makeRequest('POST', '/api/auth/login', {
+    password: 'testPassword123',
+  });
+
+  assertEquals(response3.status, 400, 'Status code should be 400 for missing email');
+}
+
 // ============================================================================
 // Type Management Tests
 // ============================================================================
@@ -3862,6 +3955,10 @@ async function runTests() {
     testUserRegistration,
     testUserRegistrationDuplicateEmail,
     testUserRegistrationValidation,
+    testUserLogin,
+    testUserLoginInvalidEmail,
+    testUserLoginInvalidPassword,
+    testUserLoginValidation,
 
     // Type Management tests
     testCreateTypeEntity,
