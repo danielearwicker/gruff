@@ -9,6 +9,7 @@ import {
   cleanupExpiredSessions,
   type SessionData,
 } from '../../src/utils/session.js';
+import { hashToken } from '../../src/utils/sensitive-data.js';
 
 // Mock KV namespace
 class MockKVNamespace implements KVNamespace {
@@ -64,7 +65,7 @@ describe('Session Store', () => {
   });
 
   describe('storeRefreshToken', () => {
-    it('should store a refresh token in KV', async () => {
+    it('should store a hashed refresh token in KV', async () => {
       await storeRefreshToken(kv, userId, email, refreshToken);
 
       const key = `session:${userId}`;
@@ -76,7 +77,10 @@ describe('Session Store', () => {
         const sessionData: SessionData = JSON.parse(stored);
         expect(sessionData.userId).toBe(userId);
         expect(sessionData.email).toBe(email);
-        expect(sessionData.refreshToken).toBe(refreshToken);
+        // The stored value should be a hash, not the plain token
+        expect(sessionData.refreshTokenHash).not.toBe(refreshToken);
+        // Verify it's a valid SHA-256 base64 hash (44 chars with padding)
+        expect(sessionData.refreshTokenHash.length).toBe(44);
         expect(sessionData.createdAt).toBeGreaterThan(0);
         expect(sessionData.expiresAt).toBeGreaterThan(sessionData.createdAt);
       }
@@ -112,7 +116,7 @@ describe('Session Store', () => {
   });
 
   describe('getSession', () => {
-    it('should retrieve a stored session', async () => {
+    it('should retrieve a stored session with hashed token', async () => {
       await storeRefreshToken(kv, userId, email, refreshToken);
 
       const session = await getSession(kv, userId);
@@ -120,7 +124,9 @@ describe('Session Store', () => {
       expect(session).not.toBeNull();
       expect(session?.userId).toBe(userId);
       expect(session?.email).toBe(email);
-      expect(session?.refreshToken).toBe(refreshToken);
+      // Session now stores hash, not plain token
+      expect(session?.refreshTokenHash).not.toBe(refreshToken);
+      expect(session?.refreshTokenHash.length).toBe(44);
     });
 
     it('should return null for non-existent session', async () => {
@@ -203,6 +209,27 @@ describe('Session Store', () => {
       expect(isValidShort).toBe(false);
       expect(isValidLong).toBe(false);
     });
+
+    it('should handle legacy sessions (backward compatibility)', async () => {
+      // Manually store a legacy session with plain text refreshToken
+      const legacySession = {
+        userId,
+        email,
+        refreshToken: 'legacy-plain-token',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 1000 * 60 * 60, // 1 hour from now
+      };
+      const key = `session:${userId}`;
+      await kv.put(key, JSON.stringify(legacySession));
+
+      // Should still validate the plain text token
+      const isValid = await validateRefreshToken(kv, userId, 'legacy-plain-token');
+      expect(isValid).toBe(true);
+
+      // Should reject wrong token
+      const isWrongValid = await validateRefreshToken(kv, userId, 'wrong-token');
+      expect(isWrongValid).toBe(false);
+    });
   });
 
   describe('invalidateSession', () => {
@@ -238,7 +265,7 @@ describe('Session Store', () => {
   });
 
   describe('rotateRefreshToken', () => {
-    it('should update session with new refresh token', async () => {
+    it('should update session with new hashed refresh token', async () => {
       await storeRefreshToken(kv, userId, email, refreshToken);
 
       const newToken = 'new-refresh-token-abc';
@@ -246,8 +273,13 @@ describe('Session Store', () => {
 
       expect(success).toBe(true);
 
-      const session = await getSession(kv, userId);
-      expect(session?.refreshToken).toBe(newToken);
+      // Validate with the new token
+      const isValid = await validateRefreshToken(kv, userId, newToken);
+      expect(isValid).toBe(true);
+
+      // Old token should no longer work
+      const isOldValid = await validateRefreshToken(kv, userId, refreshToken);
+      expect(isOldValid).toBe(false);
     });
 
     it('should return false for non-existent session', async () => {
@@ -344,9 +376,12 @@ describe('Session Store', () => {
         rotateRefreshToken(kv, userId, token2),
       ]);
 
-      // One of the tokens should be stored (last write wins)
-      const session = await getSession(kv, userId);
-      expect(session?.refreshToken).toMatch(/^token-[12]$/);
+      // One of the tokens should be valid (last write wins)
+      const isValid1 = await validateRefreshToken(kv, userId, token1);
+      const isValid2 = await validateRefreshToken(kv, userId, token2);
+
+      // Only one should be valid
+      expect(isValid1 !== isValid2).toBe(true);
     });
 
     it('should handle very long user IDs and tokens', async () => {
@@ -355,8 +390,9 @@ describe('Session Store', () => {
 
       await storeRefreshToken(kv, longUserId, email, longToken);
 
-      const session = await getSession(kv, longUserId);
-      expect(session?.refreshToken).toBe(longToken);
+      // Validate the token works (hash comparison)
+      const isValid = await validateRefreshToken(kv, longUserId, longToken);
+      expect(isValid).toBe(true);
     });
 
     it('should handle special characters in data', async () => {
@@ -367,7 +403,9 @@ describe('Session Store', () => {
 
       const session = await getSession(kv, userId);
       expect(session?.email).toBe(specialEmail);
-      expect(session?.refreshToken).toBe(specialToken);
+      // Validate with special character token
+      const isValid = await validateRefreshToken(kv, userId, specialToken);
+      expect(isValid).toBe(true);
     });
   });
 });

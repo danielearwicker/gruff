@@ -3,14 +3,31 @@
  *
  * This module provides session management functionality using Cloudflare KV
  * for storing refresh tokens with TTL. Supports token invalidation for logout.
+ *
+ * SECURITY: Refresh tokens are hashed (SHA-256) before storage to protect
+ * against data breaches. The actual token is never stored in plain text.
  */
 
 import { TOKEN_EXPIRY } from './jwt.js';
+import { hashToken, verifyTokenHash } from './sensitive-data.js';
 
 /**
  * Session data stored in KV
+ * Note: refreshTokenHash stores a SHA-256 hash, not the actual token
  */
 export interface SessionData {
+  userId: string;
+  email: string;
+  refreshTokenHash: string; // SHA-256 hash of the refresh token
+  createdAt: number;
+  expiresAt: number;
+}
+
+/**
+ * Legacy session data format (for backward compatibility during migration)
+ * @deprecated Will be removed in future version
+ */
+interface LegacySessionData {
   userId: string;
   email: string;
   refreshToken: string;
@@ -48,10 +65,14 @@ function getSessionKey(userId: string, prefix: string = DEFAULT_CONFIG.keyPrefix
 /**
  * Store a refresh token in KV
  *
+ * SECURITY: The refresh token is hashed using SHA-256 before storage.
+ * The actual token is never stored in plain text, protecting against
+ * data breaches. Validation is done by comparing hashes.
+ *
  * @param kv - KV namespace binding
  * @param userId - User ID
  * @param email - User email
- * @param refreshToken - Refresh token to store
+ * @param refreshToken - Refresh token to store (will be hashed)
  * @param config - Optional configuration
  * @returns Promise<void>
  */
@@ -65,12 +86,15 @@ export async function storeRefreshToken(
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   const now = Date.now();
 
+  // Hash the refresh token for secure storage
+  const refreshTokenHash = await hashToken(refreshToken);
+
   const sessionData: SessionData = {
     userId,
     email,
-    refreshToken,
+    refreshTokenHash,
     createdAt: now,
-    expiresAt: now + (mergedConfig.refreshTokenTtl * 1000),
+    expiresAt: now + mergedConfig.refreshTokenTtl * 1000,
   };
 
   const key = getSessionKey(userId, mergedConfig.keyPrefix);
@@ -82,7 +106,23 @@ export async function storeRefreshToken(
 }
 
 /**
+ * Check if session data is in legacy format (has refreshToken instead of refreshTokenHash)
+ */
+function isLegacySession(data: unknown): data is LegacySessionData {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'refreshToken' in data &&
+    !('refreshTokenHash' in data)
+  );
+}
+
+/**
  * Retrieve a session by user ID
+ *
+ * Handles both new (hashed) and legacy (plain) session formats for backward
+ * compatibility during migration. Legacy sessions will be upgraded on next
+ * token rotation.
  *
  * @param kv - KV namespace binding
  * @param userId - User ID
@@ -104,7 +144,25 @@ export async function getSession(
   }
 
   try {
-    const sessionData = JSON.parse(value) as SessionData;
+    const parsed = JSON.parse(value);
+
+    // Handle legacy format (plain text refresh token)
+    // This provides backward compatibility during migration
+    if (isLegacySession(parsed)) {
+      // Return a compatible format - the validateRefreshToken function
+      // will handle legacy validation appropriately
+      return {
+        userId: parsed.userId,
+        email: parsed.email,
+        refreshTokenHash: parsed.refreshToken, // Legacy: this is actually the plain token
+        createdAt: parsed.createdAt,
+        expiresAt: parsed.expiresAt,
+        // Mark as legacy for special handling in validation
+        _legacy: true,
+      } as SessionData & { _legacy?: boolean };
+    }
+
+    const sessionData = parsed as SessionData;
 
     // Validate that the session hasn't expired (double-check beyond KV TTL)
     const now = Date.now();
@@ -125,6 +183,10 @@ export async function getSession(
 /**
  * Validate a refresh token against stored session
  *
+ * SECURITY: Uses hash-based comparison to validate tokens without storing
+ * the actual token. Also supports legacy plain-text comparison for backward
+ * compatibility during migration period.
+ *
  * @param kv - KV namespace binding
  * @param userId - User ID
  * @param refreshToken - Refresh token to validate
@@ -137,14 +199,20 @@ export async function validateRefreshToken(
   refreshToken: string,
   config?: SessionConfig
 ): Promise<boolean> {
-  const session = await getSession(kv, userId, config);
+  const session = await getSession(kv, userId, config) as (SessionData & { _legacy?: boolean }) | null;
 
   if (!session) {
     return false;
   }
 
-  // Timing-safe comparison to prevent timing attacks
-  return timingSafeEqual(session.refreshToken, refreshToken);
+  // Handle legacy sessions (plain text comparison) for backward compatibility
+  if (session._legacy) {
+    // For legacy sessions, refreshTokenHash actually contains the plain token
+    return timingSafeEqual(session.refreshTokenHash, refreshToken);
+  }
+
+  // New format: verify against hash
+  return verifyTokenHash(refreshToken, session.refreshTokenHash);
 }
 
 /**

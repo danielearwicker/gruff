@@ -574,11 +574,26 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Exposed headers for rate limit and request tracking
 - Cloudflare's built-in DDoS protection
 
-### 🟦 Sensitive Data Protection
-- Don't log sensitive data (passwords, tokens)
+### ✅ Sensitive Data Protection
+- Automatic redaction of sensitive data from logs (passwords, tokens, API keys, etc.)
+  - Logger class with built-in sensitive data redaction (enabled by default)
+  - `redactSensitiveData()` utility for custom redaction
+  - `safeLogContext()` helper for logging request/user data
+  - JWT tokens automatically detected and redacted from log strings
+  - Bearer token prefixes handled appropriately
 - Secure token storage
+  - Refresh tokens hashed with SHA-256 before KV storage
+  - Tokens never stored in plain text, only hashes
+  - Backward compatibility with legacy sessions during migration
+  - Timing-safe comparison for token validation
 - Environment secrets management
-- Regular security dependency updates
+  - Startup validation of required environment variables (JWT_SECRET)
+  - Minimum length requirements for secrets (16 chars default, 32 in production)
+  - Detection of development/test values in production environment
+  - Clear error messages for configuration issues
+  - Production mode fails fast on invalid configuration
+  - Development mode logs warnings but continues
+- Regular security dependency updates (npm audit for dependency scanning)
 
 ## Performance Optimization
 

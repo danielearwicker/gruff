@@ -1,7 +1,12 @@
 /**
  * Structured logging utility for Cloudflare Workers
  * Provides consistent JSON-formatted logs with timestamps, levels, and context
+ *
+ * SECURITY: Automatic redaction of sensitive data (passwords, tokens, etc.)
+ * is enabled by default to prevent accidental exposure in logs.
  */
+
+import { redactSensitiveData, safeLogContext } from './sensitive-data.js';
 
 export enum LogLevel {
   DEBUG = 'debug',
@@ -13,7 +18,7 @@ export enum LogLevel {
 export interface LogContext {
   requestId?: string;
   userId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface LogEntry {
@@ -28,23 +33,37 @@ export interface LogEntry {
   };
 }
 
+export interface LoggerOptions {
+  /**
+   * Enable automatic redaction of sensitive data in log context
+   * Default: true
+   */
+  redactSensitiveData?: boolean;
+}
+
 export class Logger {
   private context: LogContext;
   private minLevel: LogLevel;
+  private options: Required<LoggerOptions>;
 
-  constructor(context: LogContext = {}, minLevel: LogLevel = LogLevel.INFO) {
+  constructor(
+    context: LogContext = {},
+    minLevel: LogLevel = LogLevel.INFO,
+    options: LoggerOptions = {}
+  ) {
     this.context = context;
     this.minLevel = minLevel;
+    this.options = {
+      redactSensitiveData: options.redactSensitiveData ?? true, // Secure by default
+    };
   }
 
   /**
    * Create a child logger with additional context
+   * Inherits redaction settings from parent
    */
   child(additionalContext: LogContext): Logger {
-    return new Logger(
-      { ...this.context, ...additionalContext },
-      this.minLevel
-    );
+    return new Logger({ ...this.context, ...additionalContext }, this.minLevel, this.options);
   }
 
   /**
@@ -78,6 +97,9 @@ export class Logger {
 
   /**
    * Core logging method
+   *
+   * SECURITY: Automatically redacts sensitive data from context if enabled.
+   * This prevents accidental logging of passwords, tokens, and other secrets.
    */
   private log(
     level: LogLevel,
@@ -90,15 +112,31 @@ export class Logger {
       return;
     }
 
+    // Merge contexts
+    let mergedContext = { ...this.context, ...context };
+
+    // Apply sensitive data redaction if enabled
+    if (this.options.redactSensitiveData) {
+      mergedContext = safeLogContext(mergedContext);
+    }
+
     const logEntry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       message,
-      context: { ...this.context, ...context },
+      context: mergedContext,
     };
 
     if (error) {
-      logEntry.error = error;
+      // Redact any sensitive data that might appear in error messages
+      if (this.options.redactSensitiveData && error.message) {
+        logEntry.error = {
+          ...error,
+          message: redactSensitiveData(error.message),
+        };
+      } else {
+        logEntry.error = error;
+      }
     }
 
     // Output to console based on level
@@ -161,13 +199,31 @@ export class Logger {
 }
 
 /**
- * Default logger instance
+ * Default logger instance with sensitive data redaction enabled
  */
 export const logger = new Logger();
 
 /**
  * Create a logger with specific context
+ *
+ * @param context - Initial context for all log entries
+ * @param minLevel - Minimum log level to output
+ * @param options - Logger options (e.g., redaction settings)
  */
-export function createLogger(context: LogContext, minLevel?: LogLevel): Logger {
-  return new Logger(context, minLevel);
+export function createLogger(
+  context: LogContext,
+  minLevel?: LogLevel,
+  options?: LoggerOptions
+): Logger {
+  return new Logger(context, minLevel, options);
+}
+
+/**
+ * Create a logger with sensitive data redaction disabled
+ * Use with caution - only for debugging when you need to see actual values
+ *
+ * WARNING: Never use in production with real user data
+ */
+export function createUnsafeLogger(context: LogContext, minLevel?: LogLevel): Logger {
+  return new Logger(context, minLevel, { redactSensitiveData: false });
 }

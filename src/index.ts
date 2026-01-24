@@ -11,7 +11,8 @@ import {
 } from './middleware/security.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
-import { createLogger } from './utils/logger.js';
+import { createLogger, LogLevel } from './utils/logger.js';
+import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
@@ -39,6 +40,47 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Request context middleware - must be first to add requestId and logger to all requests
 app.use('*', requestContextMiddleware);
+
+// Environment validation middleware - validates required secrets on first request
+// This ensures configuration errors are caught early
+let envValidated = false;
+app.use('*', async (c, next) => {
+  if (!envValidated) {
+    const validation = validateEnvironment(c.env as Record<string, unknown>, DEFAULT_ENV_VALIDATION);
+    const startupLogger = createLogger({ component: 'startup' }, LogLevel.INFO);
+
+    // Log warnings (non-fatal issues)
+    for (const warning of validation.warnings) {
+      startupLogger.warn(warning);
+    }
+
+    // In production, fail on validation errors
+    // In development, log errors but continue
+    if (!validation.valid) {
+      const isDevelopment = c.env?.ENVIRONMENT === 'development' || !c.env?.ENVIRONMENT;
+      if (!isDevelopment) {
+        // Production: return error response
+        startupLogger.error('Environment validation failed', new Error(validation.errors.join('; ')));
+        return c.json(
+          {
+            error: 'Server configuration error',
+            code: 'CONFIGURATION_ERROR',
+            message: 'Required environment variables are missing or invalid',
+          },
+          500
+        );
+      } else {
+        // Development: log errors and continue
+        for (const error of validation.errors) {
+          startupLogger.warn(`[DEV MODE] ${error}`);
+        }
+      }
+    }
+
+    envValidated = true;
+  }
+  await next();
+});
 
 // Security middleware - environment-aware configuration
 // In production: strict security headers and CORS
