@@ -130,7 +130,7 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
 
 /**
  * GET /api/links
- * List links with optional filtering
+ * List links with optional filtering and cursor-based pagination
  */
 links.get('/', validateQuery(linkQuerySchema), async (c) => {
   const query = c.get('validated_query') as any;
@@ -175,19 +175,51 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
       bindings.push(query.created_before);
     }
 
-    sql += ' ORDER BY created_at DESC';
+    // Cursor-based pagination: cursor is "created_at:id" for stable ordering
+    if (query.cursor) {
+      try {
+        const [cursorTimestamp, cursorId] = query.cursor.split(':');
+        const timestamp = parseInt(cursorTimestamp, 10);
+        if (!isNaN(timestamp) && cursorId) {
+          // Get records where created_at < cursor OR (created_at = cursor AND id < cursorId)
+          sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+          bindings.push(timestamp, timestamp, cursorId);
+        }
+      } catch (e) {
+        // Invalid cursor format, ignore and continue without cursor
+        console.warn('[Links] Invalid cursor format:', query.cursor);
+      }
+    }
+
+    sql += ' ORDER BY created_at DESC, id DESC';
+
+    // Fetch limit + 1 to check if there are more results
+    const limit = query.limit || 20;
+    sql += ' LIMIT ?';
+    bindings.push(limit + 1);
 
     const { results } = await db.prepare(sql).bind(...bindings).all();
 
+    // Check if there are more results
+    const hasMore = results.length > limit;
+    const items = hasMore ? results.slice(0, limit) : results;
+
     // Parse properties for each link
-    const linksData = results.map(link => ({
+    const linksData = items.map(link => ({
       ...link,
       properties: link.properties ? JSON.parse(link.properties as string) : {},
       is_deleted: link.is_deleted === 1,
       is_latest: link.is_latest === 1,
     }));
 
-    return c.json(response.success(linksData));
+    // Generate next cursor from the last item
+    let nextCursor: string | null = null;
+    if (hasMore && items.length > 0) {
+      const lastItem = items[items.length - 1];
+      nextCursor = `${lastItem.created_at}:${lastItem.id}`;
+    }
+
+    return c.json(response.cursorPaginated(linksData, nextCursor, hasMore));
   } catch (error) {
     console.error('[Links] Error listing links:', error);
     throw error;

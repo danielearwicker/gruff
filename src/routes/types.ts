@@ -82,7 +82,7 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
 
 /**
  * GET /api/types
- * List all types with optional filtering
+ * List all types with optional filtering and cursor-based pagination
  */
 types.get('/', validateQuery(typeQuerySchema), async (c) => {
   const query = c.get('validated_query') as any;
@@ -103,17 +103,49 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
       bindings.push(`%${query.name}%`);
     }
 
-    sql += ' ORDER BY created_at DESC';
+    // Cursor-based pagination: cursor is "created_at:id" for stable ordering
+    if (query.cursor) {
+      try {
+        const [cursorTimestamp, cursorId] = query.cursor.split(':');
+        const timestamp = parseInt(cursorTimestamp, 10);
+        if (!isNaN(timestamp) && cursorId) {
+          // Get records where created_at < cursor OR (created_at = cursor AND id < cursorId)
+          sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+          bindings.push(timestamp, timestamp, cursorId);
+        }
+      } catch (e) {
+        // Invalid cursor format, ignore and continue without cursor
+        console.warn('[Types] Invalid cursor format:', query.cursor);
+      }
+    }
+
+    sql += ' ORDER BY created_at DESC, id DESC';
+
+    // Fetch limit + 1 to check if there are more results
+    const limit = query.limit || 20;
+    sql += ' LIMIT ?';
+    bindings.push(limit + 1);
 
     const { results } = await db.prepare(sql).bind(...bindings).all();
 
+    // Check if there are more results
+    const hasMore = results.length > limit;
+    const items = hasMore ? results.slice(0, limit) : results;
+
     // Parse json_schema for each type
-    const types = results.map(type => ({
+    const typesData = items.map(type => ({
       ...type,
       json_schema: type.json_schema ? JSON.parse(type.json_schema as string) : null,
     }));
 
-    return c.json(response.success(types));
+    // Generate next cursor from the last item
+    let nextCursor: string | null = null;
+    if (hasMore && items.length > 0) {
+      const lastItem = items[items.length - 1];
+      nextCursor = `${lastItem.created_at}:${lastItem.id}`;
+    }
+
+    return c.json(response.cursorPaginated(typesData, nextCursor, hasMore));
   } catch (error) {
     console.error('[Types] Error listing types:', error);
     throw error;

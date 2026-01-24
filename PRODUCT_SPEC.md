@@ -243,11 +243,11 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 
 ## Core Features
 
-### 🟦 Pagination System
+### ✅ Pagination System
 - Cursor-based pagination for all list endpoints
-- Support for page size configuration
+- Support for page size configuration (limit parameter)
 - Include total count in responses (optional, for performance)
-- Default and max page size limits
+- Default (20) and max (100) page size limits
 
 ### 🟦 Filtering System
 - Filter entities/links by type

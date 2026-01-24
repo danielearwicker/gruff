@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema } from './common.js';
+import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
 // Link database model schema
 export const linkSchema = z.object({
@@ -44,15 +44,22 @@ export const linkResponseSchema = z.object({
   is_latest: z.boolean(),
 });
 
-// Link query filters
-export const linkQuerySchema = z.object({
-  type_id: uuidSchema.optional(),
-  source_entity_id: uuidSchema.optional(),
-  target_entity_id: uuidSchema.optional(),
-  created_by: uuidSchema.optional(),
-  created_after: timestampSchema.optional(),
-  created_before: timestampSchema.optional(),
-  include_deleted: z.boolean().optional().default(false),
+// Link query filters (for query parameters - handles string coercion)
+export const linkQuerySchema = paginationQuerySchema.extend({
+  type_id: z.string().uuid().optional(),
+  source_entity_id: z.string().uuid().optional(),
+  target_entity_id: z.string().uuid().optional(),
+  created_by: z.string().uuid().optional(),
+  created_after: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().positive())
+    .optional(),
+  created_before: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().positive())
+    .optional(),
 });
 
 // Types derived from schemas

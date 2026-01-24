@@ -3326,6 +3326,221 @@ async function testGetNeighborsBidirectionalConnection() {
 }
 
 // ============================================================================
+// Pagination Tests
+// ============================================================================
+
+async function testEntitiesPaginationLimit() {
+  logTest('Entities Pagination - Limit Parameter');
+
+  // Create a type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'pagination-test-entity',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create 5 entities
+  for (let i = 0; i < 5; i++) {
+    await makeRequest('POST', '/api/entities', {
+      type_id: typeId,
+      properties: { index: i },
+    });
+  }
+
+  // Request with limit=3
+  const response = await makeRequest('GET', '/api/entities?limit=3');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should return exactly 3 items');
+  assert(response.data.metadata, 'Should have metadata');
+  assertEquals(response.data.metadata.hasMore, true, 'Should indicate more items available');
+  assert(response.data.metadata.cursor, 'Should include next cursor');
+}
+
+async function testEntitiesPaginationCursor() {
+  logTest('Entities Pagination - Cursor Navigation');
+
+  // Use entities from previous test
+  const page1 = await makeRequest('GET', '/api/entities?limit=2');
+
+  assertEquals(page1.status, 200, 'Page 1 status should be 200');
+  assertEquals(page1.data.data.length, 2, 'Page 1 should have 2 items');
+  assert(page1.data.metadata.cursor, 'Page 1 should have cursor');
+
+  // Use cursor to get next page
+  const cursor = page1.data.metadata.cursor;
+  const page2 = await makeRequest('GET', `/api/entities?limit=2&cursor=${encodeURIComponent(cursor)}`);
+
+  assertEquals(page2.status, 200, 'Page 2 status should be 200');
+  assertEquals(page2.data.data.length, 2, 'Page 2 should have 2 items');
+
+  // Verify pages don't overlap
+  const page1Ids = page1.data.data.map(e => e.id);
+  const page2Ids = page2.data.data.map(e => e.id);
+  const overlap = page1Ids.some(id => page2Ids.includes(id));
+  assert(!overlap, 'Pages should not have overlapping items');
+}
+
+async function testLinksPaginationLimit() {
+  logTest('Links Pagination - Limit Parameter');
+
+  // Create a type for testing
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'pagination-test-link',
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'pagination-link-entity',
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  // Create 2 entities to link
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 1' },
+  });
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity 2' },
+  });
+
+  const entityId1 = entity1.data.data.id;
+  const entityId2 = entity2.data.data.id;
+
+  // Create 5 links
+  for (let i = 0; i < 5; i++) {
+    await makeRequest('POST', '/api/links', {
+      type_id: linkTypeId,
+      source_entity_id: entityId1,
+      target_entity_id: entityId2,
+      properties: { index: i },
+    });
+  }
+
+  // Request with limit=3
+  const response = await makeRequest('GET', '/api/links?limit=3');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should return exactly 3 items');
+  assert(response.data.metadata, 'Should have metadata');
+  assertEquals(response.data.metadata.hasMore, true, 'Should indicate more items available');
+  assert(response.data.metadata.cursor, 'Should include next cursor');
+}
+
+async function testLinksPaginationCursor() {
+  logTest('Links Pagination - Cursor Navigation');
+
+  const page1 = await makeRequest('GET', '/api/links?limit=2');
+
+  assertEquals(page1.status, 200, 'Page 1 status should be 200');
+  assertEquals(page1.data.data.length, 2, 'Page 1 should have 2 items');
+  assert(page1.data.metadata.cursor, 'Page 1 should have cursor');
+
+  // Use cursor to get next page
+  const cursor = page1.data.metadata.cursor;
+  const page2 = await makeRequest('GET', `/api/links?limit=2&cursor=${encodeURIComponent(cursor)}`);
+
+  assertEquals(page2.status, 200, 'Page 2 status should be 200');
+  assertEquals(page2.data.data.length, 2, 'Page 2 should have 2 items');
+
+  // Verify pages don't overlap
+  const page1Ids = page1.data.data.map(l => l.id);
+  const page2Ids = page2.data.data.map(l => l.id);
+  const overlap = page1Ids.some(id => page2Ids.includes(id));
+  assert(!overlap, 'Pages should not have overlapping items');
+}
+
+async function testTypesPaginationLimit() {
+  logTest('Types Pagination - Limit Parameter');
+
+  // Create 5 types
+  for (let i = 0; i < 5; i++) {
+    await makeRequest('POST', '/api/types', {
+      name: `pagination-type-${i}`,
+      category: 'entity',
+    });
+  }
+
+  // Request with limit=3
+  const response = await makeRequest('GET', '/api/types?limit=3');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.success, true, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assertEquals(response.data.data.length, 3, 'Should return exactly 3 items');
+  assert(response.data.metadata, 'Should have metadata');
+  assertEquals(response.data.metadata.hasMore, true, 'Should indicate more items available');
+  assert(response.data.metadata.cursor, 'Should include next cursor');
+}
+
+async function testTypesPaginationCursor() {
+  logTest('Types Pagination - Cursor Navigation');
+
+  const page1 = await makeRequest('GET', '/api/types?limit=2');
+
+  assertEquals(page1.status, 200, 'Page 1 status should be 200');
+  assert(page1.data.data.length >= 2, 'Page 1 should have at least 2 items');
+
+  if (page1.data.metadata.cursor) {
+    // Use cursor to get next page
+    const cursor = page1.data.metadata.cursor;
+    const page2 = await makeRequest('GET', `/api/types?limit=2&cursor=${encodeURIComponent(cursor)}`);
+
+    assertEquals(page2.status, 200, 'Page 2 status should be 200');
+
+    // Verify pages don't overlap
+    const page1Ids = page1.data.data.map(t => t.id);
+    const page2Ids = page2.data.data.map(t => t.id);
+    const overlap = page1Ids.some(id => page2Ids.includes(id));
+    assert(!overlap, 'Pages should not have overlapping items');
+  } else {
+    logInfo('Not enough types to test cursor navigation');
+  }
+}
+
+async function testPaginationDefaultLimit() {
+  logTest('Pagination - Default Limit');
+
+  // Test entities default limit
+  const entitiesResponse = await makeRequest('GET', '/api/entities');
+  assertEquals(entitiesResponse.status, 200, 'Entities status should be 200');
+  assert(entitiesResponse.data.data.length <= 20, 'Should respect default limit of 20');
+
+  // Test links default limit
+  const linksResponse = await makeRequest('GET', '/api/links');
+  assertEquals(linksResponse.status, 200, 'Links status should be 200');
+  assert(linksResponse.data.data.length <= 20, 'Should respect default limit of 20');
+
+  // Test types default limit
+  const typesResponse = await makeRequest('GET', '/api/types');
+  assertEquals(typesResponse.status, 200, 'Types status should be 200');
+  assert(typesResponse.data.data.length <= 20, 'Should respect default limit of 20');
+}
+
+async function testPaginationMaxLimit() {
+  logTest('Pagination - Maximum Limit Validation');
+
+  // Test that limit over 100 is rejected with validation error
+  const response = await makeRequest('GET', '/api/entities?limit=200');
+
+  // Should return validation error for limit > 100
+  assertEquals(response.status, 400, 'Should reject limit over 100');
+  assert(response.data.error || !response.data.success, 'Should have error indication');
+
+  // Test that limit=100 works
+  const validResponse = await makeRequest('GET', '/api/entities?limit=100');
+  assertEquals(validResponse.status, 200, 'Should accept limit=100');
+  assert(validResponse.data.data.length <= 100, 'Should return at most 100 items');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -3454,6 +3669,16 @@ async function runTests() {
     testGetNeighborsFilterByLinkType,
     testGetNeighborsEntityNotFound,
     testGetNeighborsBidirectionalConnection,
+
+    // Pagination tests
+    testEntitiesPaginationLimit,
+    testEntitiesPaginationCursor,
+    testLinksPaginationLimit,
+    testLinksPaginationCursor,
+    testTypesPaginationLimit,
+    testTypesPaginationCursor,
+    testPaginationDefaultLimit,
+    testPaginationMaxLimit,
 
     // Add new test functions here as features are implemented
     // Example:

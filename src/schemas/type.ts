@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, jsonPropertiesSchema } from './common.js';
+import { uuidSchema, timestampSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
 // Type category enum
 export const typeCategorySchema = z.enum(['entity', 'link']);
@@ -30,8 +30,8 @@ export const updateTypeSchema = z.object({
   json_schema: jsonPropertiesSchema.nullable().optional(),
 });
 
-// Type query filters
-export const typeQuerySchema = z.object({
+// Type query filters (for query parameters - handles string coercion)
+export const typeQuerySchema = paginationQuerySchema.extend({
   category: typeCategorySchema.optional(),
   name: z.string().optional(),
 });
