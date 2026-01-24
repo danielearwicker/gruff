@@ -3659,6 +3659,264 @@ async function testGetNeighborsEntityNotFound() {
   assert(!response.ok, 'Response should not be OK');
 }
 
+async function testShortestPath() {
+  logTest('Graph Traversal - Find Shortest Path Between Entities');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ShortestPathTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ShortestPathTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create a linear path: A -> B -> C -> D
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  const entityD = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity D' }
+  });
+  const entityDId = entityD.data.data.id;
+
+  // Create links: A->B, B->C, C->D
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: { step: 1 }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityBId,
+    target_entity_id: entityCId,
+    properties: { step: 2 }
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityCId,
+    target_entity_id: entityDId,
+    properties: { step: 3 }
+  });
+
+  // Test: Find shortest path from A to D
+  const response = await makeRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityDId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.data.length, 4, 'Path should have 4 entities (A, B, C, D)');
+  assertEquals(response.data.data.from, entityAId, 'From should match source entity');
+  assertEquals(response.data.data.to, entityDId, 'To should match target entity');
+  assertEquals(response.data.data.path[0].entity.id, entityAId, 'Path should start with entity A');
+  assertEquals(response.data.data.path[3].entity.id, entityDId, 'Path should end with entity D');
+  assert(response.data.data.path[0].link === null, 'First entity should have no link');
+  assert(response.data.data.path[1].link !== null, 'Second entity should have a link');
+  assert(response.data.data.path[2].link !== null, 'Third entity should have a link');
+  assert(response.data.data.path[3].link !== null, 'Fourth entity should have a link');
+}
+
+async function testShortestPathSameEntity() {
+  logTest('Graph Traversal - Shortest Path When Source Equals Target');
+
+  // Create type
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'SameEntityTestType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  // Create a single entity
+  const entity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Same Entity' }
+  });
+  const entityId = entity.data.data.id;
+
+  // Test: Find path from entity to itself
+  const response = await makeRequest('GET', `/api/graph/path?from=${entityId}&to=${entityId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.length, 0, 'Path length should be 0 for same entity');
+  assertEquals(response.data.data.path.length, 1, 'Path should contain single entity');
+  assertEquals(response.data.data.path[0].entity.id, entityId, 'Path should contain the entity');
+  assert(response.data.data.path[0].link === null, 'Entity should have no link');
+}
+
+async function testShortestPathNoPath() {
+  logTest('Graph Traversal - No Path Found Returns 404');
+
+  // Create type
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'NoPathTestType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  // Create two disconnected entities
+  const entity1 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Isolated Entity 1' }
+  });
+  const entity1Id = entity1.data.data.id;
+
+  const entity2 = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Isolated Entity 2' }
+  });
+  const entity2Id = entity2.data.data.id;
+
+  // Test: Find path between disconnected entities
+  const response = await makeRequest('GET', `/api/graph/path?from=${entity1Id}&to=${entity2Id}`);
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+  assertEquals(response.data.code, 'NO_PATH_FOUND', 'Error code should be NO_PATH_FOUND');
+}
+
+async function testShortestPathWithLinkTypeFilter() {
+  logTest('Graph Traversal - Shortest Path With Link Type Filter');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'FilterPathTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterPathTestLinkType1',
+    category: 'link'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterPathTestLinkType2',
+    category: 'link'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create entities: A -> B -> C (using type1), and A -> C (using type2)
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  // Create links
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: entityBId,
+    target_entity_id: entityCId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: entityAId,
+    target_entity_id: entityCId,
+    properties: {}
+  });
+
+  // Test: Find path using only linkType1 (should go A->B->C)
+  const response = await makeRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityCId}&type_id=${linkType1Id}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.path.length, 3, 'Path should have 3 entities (A, B, C) when filtered');
+  assertEquals(response.data.data.length, 2, 'Path length should be 2 hops');
+}
+
+async function testShortestPathInvalidSourceEntity() {
+  logTest('Graph Traversal - Shortest Path With Invalid Source Entity');
+
+  // Create type and valid entity
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidSourceTestType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const entity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Valid Entity' }
+  });
+  const entityId = entity.data.data.id;
+
+  const invalidId = '00000000-0000-0000-0000-000000000000';
+
+  // Test: Find path from invalid entity
+  const response = await makeRequest('GET', `/api/graph/path?from=${invalidId}&to=${entityId}`);
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
+async function testShortestPathInvalidTargetEntity() {
+  logTest('Graph Traversal - Shortest Path With Invalid Target Entity');
+
+  // Create type and valid entity
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'InvalidTargetTestType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const entity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Valid Entity' }
+  });
+  const entityId = entity.data.data.id;
+
+  const invalidId = '00000000-0000-0000-0000-000000000000';
+
+  // Test: Find path to invalid entity
+  const response = await makeRequest('GET', `/api/graph/path?from=${entityId}&to=${invalidId}`);
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
 async function testGetNeighborsBidirectionalConnection() {
   logTest('Graph Navigation - Get Neighbors Handles Bidirectional Connections');
 
@@ -4270,6 +4528,14 @@ async function runTests() {
     testGetNeighborsFilterByLinkType,
     testGetNeighborsEntityNotFound,
     testGetNeighborsBidirectionalConnection,
+
+    // Graph Traversal tests
+    testShortestPath,
+    testShortestPathSameEntity,
+    testShortestPathNoPath,
+    testShortestPathWithLinkTypeFilter,
+    testShortestPathInvalidSourceEntity,
+    testShortestPathInvalidTargetEntity,
 
     // Pagination tests
     testEntitiesPaginationLimit,

@@ -193,6 +193,11 @@ const tests = [
   // Links
   testCreateLink,
   testGraphTraversal,
+
+  // Graph Traversal
+  testShortestPath,
+  testShortestPathSameEntity,
+  testShortestPathNoPath,
   // etc.
 ];
 ```
@@ -292,6 +297,45 @@ async function testValidation() {
     properties: {}
   });
   assertEquals(res2.status, 400, 'Should reject invalid UUID');
+}
+```
+
+#### Testing Graph Traversal
+
+```javascript
+async function testShortestPath() {
+  logTest('Graph Traversal - Find Shortest Path Between Entities');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ShortestPathTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ShortestPathTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create a linear path: A -> B -> C -> D
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  // ... create entities B, C, D and links between them
+
+  // Test: Find shortest path from A to D
+  const response = await makeRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityDId}`);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data.path, 'Should return path array');
+  assertEquals(response.data.data.length, 3, 'Path length should be 3 hops');
+  assertEquals(response.data.data.path[0].entity.id, entityAId, 'Path should start with entity A');
+  assertEquals(response.data.data.path[3].entity.id, entityDId, 'Path should end with entity D');
 }
 ```
 

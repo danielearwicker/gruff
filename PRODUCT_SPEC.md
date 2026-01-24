@@ -264,17 +264,37 @@ GET    /api/entities/{id}/neighbors       # Get connected entities
 ```
 Returns all entities connected to the specified entity (both inbound and outbound), with optional filtering by link type, entity type, and direction.
 
-#### 🟦 Advanced Graph Traversal
+#### Advanced Graph Traversal
+
+##### 🟦 Multi-hop Traversal Endpoint
 ```
 POST   /api/graph/traverse                # Advanced graph traversal queries
 ```
-Multi-hop traversal with depth limits and filtering at each step.
+Implement POST /api/graph/traverse endpoint that supports:
+- Configurable depth limits (max hops from starting entity)
+- Direction specification (outbound, inbound, or both)
+- Link type filtering at each hop
+- Entity type filtering for results
+- Return entities and the paths that led to them
 
-#### 🟦 Shortest Path Finding
+##### 🟦 Breadth-First Search Implementation
+Core traversal algorithm:
+- BFS traversal starting from a given entity
+- Track visited entities to avoid cycles
+- Respect depth limits
+- Apply filters at each step
+- Collect and return matching entities with metadata
+
+##### ✅ Shortest Path Finding
 ```
 GET    /api/graph/path                    # Find shortest path between entities
 ```
-Find the shortest path between two entities in the graph.
+Find the shortest path between two entities in the graph:
+- BFS-based shortest path algorithm
+- Query parameters: from (entity ID), to (entity ID)
+- Optional link type filtering
+- Return the path as array of entities and links
+- Return 404 if no path exists
 
 ### 🟦 Search and Query Endpoints
 
