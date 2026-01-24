@@ -8838,6 +8838,190 @@ async function testSanitizationImport() {
 }
 
 // ============================================================================
+// Generated Columns Tests
+// ============================================================================
+
+async function testGeneratedColumnsEndpoint() {
+  logTest('Generated Columns - List All Generated Columns');
+
+  const response = await makeRequest('GET', '/api/schema/generated-columns');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data array');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+
+  // Should have the default generated columns
+  const columns = response.data.data;
+  assert(columns.length >= 5, 'Should have at least 5 generated columns (3 for entities, 2 for links)');
+
+  // Check entity columns
+  const entityNameColumn = columns.find((c) => c.column_name === 'prop_name' && c.table_name === 'entities');
+  assert(entityNameColumn, 'Should have prop_name column for entities');
+  assertEquals(entityNameColumn.json_path, '$.name', 'prop_name should map to $.name');
+  assertEquals(entityNameColumn.data_type, 'TEXT', 'prop_name should be TEXT type');
+  assert(entityNameColumn.is_indexed === true, 'prop_name should be indexed');
+}
+
+async function testGeneratedColumnsFilterByTable() {
+  logTest('Generated Columns - Filter by Table Name');
+
+  // Test filtering by entities table
+  const entitiesResponse = await makeRequest('GET', '/api/schema/generated-columns?table_name=entities');
+
+  assertEquals(entitiesResponse.status, 200, 'Status code should be 200');
+  const entityColumns = entitiesResponse.data.data;
+  assert(Array.isArray(entityColumns), 'Data should be an array');
+  assert(entityColumns.every((c) => c.table_name === 'entities'), 'All columns should be for entities table');
+  assert(entityColumns.length >= 3, 'Should have at least 3 entity columns');
+
+  // Test filtering by links table
+  const linksResponse = await makeRequest('GET', '/api/schema/generated-columns?table_name=links');
+
+  assertEquals(linksResponse.status, 200, 'Status code should be 200');
+  const linkColumns = linksResponse.data.data;
+  assert(Array.isArray(linkColumns), 'Data should be an array');
+  assert(linkColumns.every((c) => c.table_name === 'links'), 'All columns should be for links table');
+  assert(linkColumns.length >= 2, 'Should have at least 2 link columns');
+}
+
+async function testGeneratedColumnsOptimizationInfo() {
+  logTest('Generated Columns - Query Optimization Info');
+
+  const response = await makeRequest('GET', '/api/schema/generated-columns/optimization');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data');
+  assert(response.data.data.entities, 'Should have entities optimization info');
+  assert(response.data.data.links, 'Should have links optimization info');
+  assert(response.data.data.usage, 'Should have usage information');
+
+  // Check entities optimization info
+  const entities = response.data.data.entities;
+  assert(Array.isArray(entities), 'Entities should be an array');
+  const nameColumn = entities.find((c) => c.json_path === '$.name');
+  assert(nameColumn, 'Should have name column in entities');
+  assertEquals(nameColumn.column_name, 'prop_name', 'Column name should be prop_name');
+
+  // Check links optimization info
+  const links = response.data.data.links;
+  assert(Array.isArray(links), 'Links should be an array');
+  const roleColumn = links.find((c) => c.json_path === '$.role');
+  assert(roleColumn, 'Should have role column in links');
+  assertEquals(roleColumn.column_name, 'prop_role', 'Column name should be prop_role');
+}
+
+async function testGeneratedColumnsAnalyze() {
+  logTest('Generated Columns - Analyze Query Path');
+
+  // Test analyzing a path with a generated column
+  const optimizedResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities&path=name');
+
+  assertEquals(optimizedResponse.status, 200, 'Status code should be 200');
+  const optimizedData = optimizedResponse.data.data;
+  assertEquals(optimizedData.table, 'entities', 'Table should be entities');
+  assertEquals(optimizedData.json_path, 'name', 'JSON path should be name');
+  assert(optimizedData.hasGeneratedColumn === true, 'Should have generated column');
+  assert(optimizedData.hasIndex === true, 'Should have index');
+  assertEquals(optimizedData.columnName, 'prop_name', 'Column name should be prop_name');
+  assertEquals(optimizedData.dataType, 'TEXT', 'Data type should be TEXT');
+
+  // Test analyzing a path without a generated column
+  const nonOptimizedResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities&path=description');
+
+  assertEquals(nonOptimizedResponse.status, 200, 'Status code should be 200');
+  const nonOptimizedData = nonOptimizedResponse.data.data;
+  assertEquals(nonOptimizedData.table, 'entities', 'Table should be entities');
+  assertEquals(nonOptimizedData.json_path, 'description', 'JSON path should be description');
+  assert(nonOptimizedData.hasGeneratedColumn === false, 'Should not have generated column');
+  assert(nonOptimizedData.hasIndex === false, 'Should not have index');
+  assert(nonOptimizedData.recommendation.includes('json_extract'), 'Recommendation should mention json_extract');
+}
+
+async function testGeneratedColumnsAnalyzeMissingParams() {
+  logTest('Generated Columns - Analyze Missing Parameters');
+
+  // Test missing table parameter
+  const missingTableResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?path=name');
+  assertEquals(missingTableResponse.status, 400, 'Should return 400 for missing table');
+
+  // Test missing path parameter
+  const missingPathResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities');
+  assertEquals(missingPathResponse.status, 400, 'Should return 400 for missing path');
+
+  // Test invalid table name
+  const invalidTableResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=invalid&path=name');
+  assertEquals(invalidTableResponse.status, 400, 'Should return 400 for invalid table');
+}
+
+async function testGeneratedColumnsMappings() {
+  logTest('Generated Columns - Static Mappings Endpoint');
+
+  const response = await makeRequest('GET', '/api/schema/generated-columns/mappings');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data');
+  assert(response.data.data.entities, 'Should have entities mappings');
+  assert(response.data.data.links, 'Should have links mappings');
+
+  // Check entities mappings
+  const entityMappings = response.data.data.entities;
+  assert(Array.isArray(entityMappings), 'Entities mappings should be an array');
+  const nameMapping = entityMappings.find((m) => m.json_path === '$.name');
+  assert(nameMapping, 'Should have name mapping');
+  assertEquals(nameMapping.column_name, 'prop_name', 'Should map to prop_name');
+  assertEquals(nameMapping.data_type, 'TEXT', 'Should be TEXT type');
+
+  // Check links mappings
+  const linkMappings = response.data.data.links;
+  assert(Array.isArray(linkMappings), 'Links mappings should be an array');
+  const roleMapping = linkMappings.find((m) => m.json_path === '$.role');
+  assert(roleMapping, 'Should have role mapping');
+  assertEquals(roleMapping.column_name, 'prop_role', 'Should map to prop_role');
+}
+
+async function testGeneratedColumnsQueryPerformance() {
+  logTest('Generated Columns - Query Performance with Indexed Columns');
+
+  // Create some test entities with the indexed properties
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create entities with name property
+  for (let i = 0; i < 5; i++) {
+    await makeRequest('POST', '/api/entities', {
+      type_id: entityType.id,
+      properties: {
+        name: `GenColTest Entity ${i}`,
+        status: i % 2 === 0 ? 'active' : 'inactive',
+        email: `gencoltest${i}@example.com`,
+      },
+    });
+  }
+
+  // Search using the name property (should use indexed generated column)
+  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+    property_filters: [
+      { path: 'name', operator: 'starts_with', value: 'GenColTest' },
+    ],
+    limit: 20,
+  });
+
+  assertEquals(searchResponse.status, 200, 'Search should succeed');
+  assert(searchResponse.data.data.length >= 5, 'Should find at least 5 entities');
+
+  // Search using the status property (should use indexed generated column)
+  const statusSearchResponse = await makeRequest('POST', '/api/search/entities', {
+    property_filters: [
+      { path: 'status', operator: 'eq', value: 'active' },
+    ],
+    limit: 20,
+  });
+
+  assertEquals(statusSearchResponse.status, 200, 'Status search should succeed');
+  assert(statusSearchResponse.data.data.length >= 1, 'Should find at least one active entity');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -9182,6 +9366,15 @@ async function runTests() {
     testSanitizationUpdate,
     testSanitizationSpecialCharactersPreserved,
     testSanitizationImport,
+
+    // Generated Columns tests
+    testGeneratedColumnsEndpoint,
+    testGeneratedColumnsFilterByTable,
+    testGeneratedColumnsOptimizationInfo,
+    testGeneratedColumnsAnalyze,
+    testGeneratedColumnsAnalyzeMissingParams,
+    testGeneratedColumnsMappings,
+    testGeneratedColumnsQueryPerformance,
   ];
 
   for (const test of tests) {

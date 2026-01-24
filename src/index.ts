@@ -31,6 +31,7 @@ import bulkRouter from './routes/bulk.js';
 import exportRouter from './routes/export.js';
 import auditRouter from './routes/audit.js';
 import docsRouter from './routes/docs.js';
+import generatedColumnsRouter from './routes/generated-columns.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -352,6 +353,9 @@ app.route('/api/export', exportRouter);
 
 // Mount audit log routes
 app.route('/api/audit', auditRouter);
+
+// Mount schema information routes (generated columns, optimization info)
+app.route('/api/schema/generated-columns', generatedColumnsRouter);
 
 // Mount API documentation routes (OpenAPI spec and Scalar UI)
 app.route('/docs', docsRouter);

@@ -413,11 +413,23 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Type guards: `isAndGroup()`, `isOrGroup()`, `isPropertyFilter()` for type-safe expression handling
 - Implemented via `buildFilterExpression()` function with recursive processing
 
-#### 🟦 Generated Columns and Indexes
-- Add migration to create generated columns for frequently queried properties
-- Create indexes on generated columns
-- Document which properties have generated columns
-- Provide utility to add new generated columns for specific use cases
+#### ✅ Generated Columns and Indexes
+- Migration `0006_generated_columns.sql` creates generated columns for frequently queried properties:
+  - Entities: `prop_name` ($.name), `prop_status` ($.status), `prop_email` ($.email)
+  - Links: `prop_role` ($.role), `prop_weight` ($.weight)
+- Partial indexes on generated columns for efficient filtered queries
+- Composite indexes for common query patterns (type + property with is_latest/is_deleted filters)
+- `generated_columns` metadata table tracks all generated columns with their JSON path mappings
+- API endpoints for schema introspection:
+  - GET `/api/schema/generated-columns` - List all generated columns
+  - GET `/api/schema/generated-columns/optimization` - Query optimization information
+  - GET `/api/schema/generated-columns/analyze` - Analyze if a JSON path has an optimized column
+  - GET `/api/schema/generated-columns/mappings` - Static mapping of JSON paths to columns
+- Utility module `src/utils/generated-columns.ts` provides:
+  - `hasGeneratedColumn()` - Check if a path has a generated column
+  - `getGeneratedColumnName()` - Get the column name for a path
+  - `buildOptimizedCondition()` - Build SQL using generated column when available
+  - `analyzeQueryPath()` - Analyze optimization potential for a query path
 
 ### ✅ Soft Delete Implementation
 - `is_deleted` flag on entities and links

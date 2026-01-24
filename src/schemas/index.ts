@@ -8,3 +8,4 @@ export * from './search.js';
 export * from './bulk.js';
 export * from './export.js';
 export * from './audit.js';
+export * from './generated-columns.js';
