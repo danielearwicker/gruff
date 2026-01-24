@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
+import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, sanitizedJsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
 // Entity database model schema
 export const entitySchema = z.object({
@@ -14,15 +14,15 @@ export const entitySchema = z.object({
   is_latest: sqliteBooleanSchema,
 });
 
-// Entity creation schema
+// Entity creation schema (with sanitization for XSS prevention)
 export const createEntitySchema = z.object({
   type_id: uuidSchema,
-  properties: jsonPropertiesSchema.optional().default({}),
+  properties: sanitizedJsonPropertiesSchema.optional().default({}),
 });
 
-// Entity update schema
+// Entity update schema (with sanitization for XSS prevention)
 export const updateEntitySchema = z.object({
-  properties: jsonPropertiesSchema,
+  properties: sanitizedJsonPropertiesSchema,
 });
 
 // Entity response schema (with parsed JSON properties)

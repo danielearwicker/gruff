@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sanitizeProperties, validateAndSanitize } from '../utils/sanitize.js';
 
 // Common UUID schema
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -11,6 +12,30 @@ export const sqliteBooleanSchema = z.union([z.literal(0), z.literal(1)]);
 
 // JSON properties schema (flexible object that can be validated further)
 export const jsonPropertiesSchema = z.record(z.string(), z.unknown());
+
+/**
+ * Sanitized JSON properties schema
+ * This schema automatically sanitizes all string values to prevent XSS attacks
+ * by escaping HTML special characters.
+ */
+export const sanitizedJsonPropertiesSchema = z
+  .record(z.string(), z.unknown())
+  .transform((props) => sanitizeProperties(props));
+
+/**
+ * JSON properties schema with dangerous content detection
+ * This schema sanitizes values and warns if dangerous content was detected
+ */
+export const jsonPropertiesWithValidationSchema = z
+  .record(z.string(), z.unknown())
+  .transform((props) => {
+    const result = validateAndSanitize(props);
+    return {
+      properties: result.sanitized as Record<string, unknown>,
+      hadDangerousContent: result.hadDangerousContent,
+      dangerousFields: result.dangerousFields,
+    };
+  });
 
 // Pagination schemas
 export const paginationQuerySchema = z.object({

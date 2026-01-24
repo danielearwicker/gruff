@@ -8257,6 +8257,302 @@ async function testSecurityHeadersOnAllEndpoints() {
 }
 
 // ============================================================================
+// Input Sanitization tests
+// ============================================================================
+
+async function testSanitizationEntityProperties() {
+  logTest('Input Sanitization - Entity Properties are Sanitized');
+
+  // First get a valid entity type
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Try to create an entity with XSS in properties
+  const xssPayload = {
+    type_id: entityType.id,
+    properties: {
+      name: '<script>alert("xss")</script>',
+      description: 'Test <img onerror=alert(1) src=x>',
+      nested: {
+        value: '<iframe src="evil.com"></iframe>',
+      },
+    },
+  };
+
+  const createResponse = await makeRequest('POST', '/api/entities', xssPayload);
+
+  assertEquals(createResponse.status, 201, 'Should create entity successfully');
+
+  // Verify the properties were sanitized
+  const entity = createResponse.data.data;
+
+  // Check that script tags are escaped
+  assert(
+    entity.properties.name.includes('&lt;script&gt;'),
+    'Script tags should be escaped in name'
+  );
+  assert(
+    !entity.properties.name.includes('<script>'),
+    'Raw script tags should not be present'
+  );
+
+  // Check that img tags with event handlers are escaped
+  assert(
+    entity.properties.description.includes('&lt;img'),
+    'Img tags should be escaped in description'
+  );
+
+  // Check nested objects
+  assert(
+    entity.properties.nested.value.includes('&lt;iframe'),
+    'Iframe tags should be escaped in nested properties'
+  );
+
+  logInfo(`Sanitized name: ${entity.properties.name.substring(0, 50)}...`);
+}
+
+async function testSanitizationLinkProperties() {
+  logTest('Input Sanitization - Link Properties are Sanitized');
+
+  // Get types and entities for the link
+  const typesResponse = await makeRequest('GET', '/api/types?category=link');
+  const linkType = typesResponse.data.data.items[0];
+
+  const entitiesResponse = await makeRequest('GET', '/api/entities?limit=2');
+  const entities = entitiesResponse.data.data.items;
+
+  if (entities.length < 2) {
+    logInfo('Skipping: need at least 2 entities');
+    return;
+  }
+
+  // Create a link with XSS in properties
+  const xssPayload = {
+    type_id: linkType.id,
+    source_entity_id: entities[0].id,
+    target_entity_id: entities[1].id,
+    properties: {
+      label: '<script>hack()</script>',
+      weight: 5, // numbers should pass through unchanged
+    },
+  };
+
+  const createResponse = await makeRequest('POST', '/api/links', xssPayload);
+
+  assertEquals(createResponse.status, 201, 'Should create link successfully');
+
+  const link = createResponse.data.data;
+
+  // Check that script tags are escaped
+  assert(
+    link.properties.label.includes('&lt;script&gt;'),
+    'Script tags should be escaped in label'
+  );
+
+  // Check that numbers are unchanged
+  assertEquals(link.properties.weight, 5, 'Numeric properties should be unchanged');
+
+  logInfo(`Sanitized label: ${link.properties.label}`);
+}
+
+async function testSanitizationTypeName() {
+  logTest('Input Sanitization - Type Name is Sanitized');
+
+  const xssPayload = {
+    name: 'Test<script>alert(1)</script>Type',
+    category: 'entity',
+    description: '<b>Bold</b> description with <a href="javascript:void(0)">link</a>',
+  };
+
+  const createResponse = await makeRequest('POST', '/api/types', xssPayload);
+
+  assertEquals(createResponse.status, 201, 'Should create type successfully');
+
+  const type = createResponse.data.data;
+
+  // Check that name is sanitized
+  assert(
+    type.name.includes('&lt;script&gt;'),
+    'Script tags should be escaped in type name'
+  );
+  assert(
+    !type.name.includes('<script>'),
+    'Raw script tags should not be present in type name'
+  );
+
+  // Check that description is sanitized
+  assert(
+    type.description.includes('&lt;b&gt;'),
+    'HTML tags should be escaped in description'
+  );
+
+  logInfo(`Sanitized type name: ${type.name}`);
+
+  // Clean up
+  await makeRequest('DELETE', `/api/types/${type.id}`);
+}
+
+async function testSanitizationBulkCreate() {
+  logTest('Input Sanitization - Bulk Create Sanitizes All Items');
+
+  // Get an entity type
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  const bulkPayload = {
+    entities: [
+      {
+        type_id: entityType.id,
+        properties: { title: '<script>xss1</script>' },
+        client_id: 'item1',
+      },
+      {
+        type_id: entityType.id,
+        properties: { title: '<img src=x onerror=alert(2)>' },
+        client_id: 'item2',
+      },
+    ],
+  };
+
+  const createResponse = await makeRequest('POST', '/api/bulk/entities', bulkPayload);
+
+  assertEquals(createResponse.status, 201, 'Should create entities successfully');
+
+  // Fetch created entities to verify sanitization
+  const results = createResponse.data.data.results;
+
+  for (const result of results) {
+    if (result.success) {
+      const entityResponse = await makeRequest('GET', `/api/entities/${result.id}`);
+      const entity = entityResponse.data.data;
+
+      assert(
+        !entity.properties.title.includes('<script>'),
+        'No raw script tags in bulk created entities'
+      );
+      assert(
+        !entity.properties.title.includes('onerror='),
+        'No event handlers in bulk created entities'
+      );
+    }
+  }
+}
+
+async function testSanitizationUpdate() {
+  logTest('Input Sanitization - Update Operations are Sanitized');
+
+  // Get an entity type and create an entity
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: entityType.id,
+    properties: { name: 'Safe name' },
+  });
+
+  const entityId = createResponse.data.data.id;
+
+  // Update with XSS payload
+  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: {
+      name: '<script>document.cookie</script>',
+      extra: 'javascript:alert(1)',
+    },
+  });
+
+  assertEquals(updateResponse.status, 200, 'Should update entity successfully');
+
+  const updated = updateResponse.data.data;
+
+  assert(
+    updated.properties.name.includes('&lt;script&gt;'),
+    'Script tags should be escaped after update'
+  );
+
+  logInfo(`Updated name: ${updated.properties.name}`);
+}
+
+async function testSanitizationSpecialCharactersPreserved() {
+  logTest('Input Sanitization - Normal Special Characters are Handled');
+
+  // Get an entity type
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  // Create entity with normal special chars (should be escaped but still work)
+  const payload = {
+    type_id: entityType.id,
+    properties: {
+      equation: 'x < y && y > z',
+      quote: 'He said "hello"',
+      ampersand: 'Tom & Jerry',
+    },
+  };
+
+  const createResponse = await makeRequest('POST', '/api/entities', payload);
+
+  assertEquals(createResponse.status, 201, 'Should create entity successfully');
+
+  const entity = createResponse.data.data;
+
+  // Verify characters are escaped
+  assert(
+    entity.properties.equation.includes('&lt;') && entity.properties.equation.includes('&gt;'),
+    'Less than and greater than should be escaped'
+  );
+  assert(
+    entity.properties.quote.includes('&quot;'),
+    'Quotes should be escaped'
+  );
+  assert(
+    entity.properties.ampersand.includes('&amp;'),
+    'Ampersands should be escaped'
+  );
+
+  logInfo('Special characters properly escaped');
+}
+
+async function testSanitizationImport() {
+  logTest('Input Sanitization - Import Operations are Sanitized');
+
+  // Get an entity type
+  const typesResponse = await makeRequest('GET', '/api/types?category=entity');
+  const entityType = typesResponse.data.data.items[0];
+
+  const importPayload = {
+    entities: [
+      {
+        client_id: 'xss-import-1',
+        type_id: entityType.id,
+        properties: {
+          title: '<script>imported_xss</script>',
+        },
+      },
+    ],
+    links: [],
+  };
+
+  const importResponse = await makeRequest('POST', '/api/export', importPayload);
+
+  assertEquals(importResponse.status, 201, 'Should import successfully');
+
+  // Verify the imported entity is sanitized
+  const entityResult = importResponse.data.data.entity_results.find(
+    (r) => r.client_id === 'xss-import-1'
+  );
+
+  if (entityResult && entityResult.success) {
+    const entityResponse = await makeRequest('GET', `/api/entities/${entityResult.id}`);
+    const entity = entityResponse.data.data;
+
+    assert(
+      entity.properties.title.includes('&lt;script&gt;'),
+      'Imported entity properties should be sanitized'
+    );
+  }
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -8574,6 +8870,15 @@ async function runTests() {
     testCorsHeadersOnActualRequest,
     testCorsExposedHeaders,
     testSecurityHeadersOnAllEndpoints,
+
+    // Input Sanitization tests
+    testSanitizationEntityProperties,
+    testSanitizationLinkProperties,
+    testSanitizationTypeName,
+    testSanitizationBulkCreate,
+    testSanitizationUpdate,
+    testSanitizationSpecialCharactersPreserved,
+    testSanitizationImport,
   ];
 
   for (const test of tests) {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
+import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, sanitizedJsonPropertiesSchema, paginationQuerySchema } from './common.js';
 
 // Link database model schema
 export const linkSchema = z.object({
@@ -16,17 +16,17 @@ export const linkSchema = z.object({
   is_latest: sqliteBooleanSchema,
 });
 
-// Link creation schema
+// Link creation schema (with sanitization for XSS prevention)
 export const createLinkSchema = z.object({
   type_id: uuidSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
-  properties: jsonPropertiesSchema.default({}),
+  properties: sanitizedJsonPropertiesSchema.default({}),
 });
 
-// Link update schema
+// Link update schema (with sanitization for XSS prevention)
 export const updateLinkSchema = z.object({
-  properties: jsonPropertiesSchema,
+  properties: sanitizedJsonPropertiesSchema,
 });
 
 // Link response schema (with parsed JSON properties)

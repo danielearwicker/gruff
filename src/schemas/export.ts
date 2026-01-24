@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { uuidSchema, jsonPropertiesSchema, timestampSchema } from './common.js';
+import { uuidSchema, jsonPropertiesSchema, sanitizedJsonPropertiesSchema, timestampSchema } from './common.js';
+import { escapeHtml } from '../utils/sanitize.js';
 
 // Maximum number of items in a single export (to prevent abuse and memory issues)
 export const MAX_EXPORT_ITEMS = 1000;
@@ -105,20 +106,20 @@ export const exportResponseSchema = z.object({
   }),
 });
 
-// Schema for a single entity in import request
+// Schema for a single entity in import request (with sanitization for XSS prevention)
 export const importEntityItemSchema = z.object({
   // Client-provided ID for cross-reference (will be mapped to new IDs)
   client_id: z.string(),
   // Type can be specified by ID (for existing types) or name (for included types)
   type_id: uuidSchema.optional(),
   type_name: z.string().optional(),
-  properties: jsonPropertiesSchema.optional().default({}),
+  properties: sanitizedJsonPropertiesSchema.optional().default({}),
 }).refine(
   (data) => data.type_id || data.type_name,
   { message: 'Either type_id or type_name must be provided' }
 );
 
-// Schema for a single link in import request
+// Schema for a single link in import request (with sanitization for XSS prevention)
 export const importLinkItemSchema = z.object({
   // Client-provided ID for cross-reference
   client_id: z.string().optional(),
@@ -130,7 +131,7 @@ export const importLinkItemSchema = z.object({
   source_entity_id: uuidSchema.optional(),
   target_entity_client_id: z.string().optional(),
   target_entity_id: uuidSchema.optional(),
-  properties: jsonPropertiesSchema.optional().default({}),
+  properties: sanitizedJsonPropertiesSchema.optional().default({}),
 }).refine(
   (data) => data.type_id || data.type_name,
   { message: 'Either type_id or type_name must be provided' }
@@ -142,13 +143,13 @@ export const importLinkItemSchema = z.object({
   { message: 'Either target_entity_client_id or target_entity_id must be provided' }
 );
 
-// Schema for type in import request (optional, for creating new types)
+// Schema for type in import request (with sanitization for XSS prevention)
 export const importTypeItemSchema = z.object({
   // Client-provided ID or name for cross-reference
   client_id: z.string().optional(),
-  name: z.string().min(1),
+  name: z.string().min(1).transform((val) => escapeHtml(val)),
   category: z.enum(['entity', 'link']),
-  description: z.string().optional(),
+  description: z.string().transform((val) => escapeHtml(val)).optional(),
   json_schema: z.string().optional(), // JSON schema stored as string
 });
 

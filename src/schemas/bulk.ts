@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { uuidSchema, jsonPropertiesSchema } from './common.js';
+import { uuidSchema, sanitizedJsonPropertiesSchema } from './common.js';
 
 // Maximum number of items in a single bulk operation (to prevent abuse and stay within D1 limits)
 export const MAX_BULK_ITEMS = 100;
 
-// Schema for a single entity in bulk create
+// Schema for a single entity in bulk create (with sanitization for XSS prevention)
 export const bulkCreateEntityItemSchema = z.object({
   type_id: uuidSchema,
-  properties: jsonPropertiesSchema.optional().default({}),
+  properties: sanitizedJsonPropertiesSchema.optional().default({}),
   // Optional client-provided ID for reference in response
   client_id: z.string().optional(),
 });
@@ -19,12 +19,12 @@ export const bulkCreateEntitiesSchema = z.object({
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} entities per request`),
 });
 
-// Schema for a single link in bulk create
+// Schema for a single link in bulk create (with sanitization for XSS prevention)
 export const bulkCreateLinkItemSchema = z.object({
   type_id: uuidSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
-  properties: jsonPropertiesSchema.optional().default({}),
+  properties: sanitizedJsonPropertiesSchema.optional().default({}),
   // Optional client-provided ID for reference in response
   client_id: z.string().optional(),
 });
@@ -36,10 +36,10 @@ export const bulkCreateLinksSchema = z.object({
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} links per request`),
 });
 
-// Schema for a single entity update in bulk update
+// Schema for a single entity update in bulk update (with sanitization for XSS prevention)
 export const bulkUpdateEntityItemSchema = z.object({
   id: uuidSchema,
-  properties: jsonPropertiesSchema,
+  properties: sanitizedJsonPropertiesSchema,
 });
 
 // Schema for bulk update entities request
@@ -49,10 +49,10 @@ export const bulkUpdateEntitiesSchema = z.object({
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} entities per request`),
 });
 
-// Schema for a single link update in bulk update
+// Schema for a single link update in bulk update (with sanitization for XSS prevention)
 export const bulkUpdateLinkItemSchema = z.object({
   id: uuidSchema,
-  properties: jsonPropertiesSchema,
+  properties: sanitizedJsonPropertiesSchema,
 });
 
 // Schema for bulk update links request

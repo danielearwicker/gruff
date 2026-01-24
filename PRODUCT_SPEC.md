@@ -557,12 +557,14 @@ This feature enhances property filtering capabilities beyond basic equality matc
 
 ## Security Considerations
 
-### 🟦 Input Validation and Sanitization
+### ✅ Input Validation and Sanitization
 - Validate all user inputs using Zod schemas
-- Sanitize JSON properties for XSS prevention
+- Sanitize JSON properties for XSS prevention via automatic HTML escaping in schemas
 - SQL injection prevention through D1 prepared statements
 - Type validation for all endpoints
 - Request size limits enforced by Workers platform
+- Sanitization applied to: entity properties, link properties, type names/descriptions, user display names, bulk operations, and import operations
+- All HTML special characters (&, <, >, ", ', `, =, /) escaped to prevent XSS attacks
 
 ### ✅ HTTPS and Security Headers
 - HTTPS enforcement (automatic with Cloudflare)
