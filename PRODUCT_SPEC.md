@@ -107,42 +107,93 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 
 ## Authentication & Authorization
 
-### 🟦 User Authentication System
-- JWT-based authentication using Web Crypto API
-- Refresh token mechanism for session management (stored in Cloudflare KV)
-- Password hashing with argon2 or scrypt (for local accounts)
+### Local Authentication - Core Infrastructure
 
-### 🟦 OAuth2 Integration - Google
+#### ✅ Password Hashing Utility
+- Implement password hashing using Web Crypto API (PBKDF2)
+- Create utility functions for hashing and verifying passwords
+- Use appropriate iteration counts and salt generation
+- Timing-safe comparison to prevent timing attacks
+
+#### 🟦 JWT Token Service
+- Implement JWT creation and validation using Web Crypto API
+- Support both access tokens (short-lived) and refresh tokens (long-lived)
+- Include user ID and metadata in token payload
+- Token expiration and renewal logic
+
+#### 🟦 KV-based Session Store
+- Set up Cloudflare KV binding for session management
+- Store refresh tokens with TTL in KV
+- Implement token invalidation (logout) functionality
+- Session lookup and validation utilities
+
+### Local Authentication - API Endpoints
+
+#### 🟦 User Registration Endpoint
+- POST /api/auth/register endpoint
+- Email and password validation using Zod
+- Create user record in database
+- Hash password before storage
+- Return access and refresh tokens
+
+#### 🟦 User Login Endpoint
+- POST /api/auth/login endpoint
+- Verify email and password
+- Generate access and refresh tokens
+- Store refresh token in KV
+- Return tokens and user info
+
+#### 🟦 Token Refresh Endpoint
+- POST /api/auth/refresh endpoint
+- Validate refresh token from KV
+- Issue new access token
+- Optionally rotate refresh token
+
+#### 🟦 Logout Endpoint
+- POST /api/auth/logout endpoint
+- Invalidate refresh token in KV
+- Clear session data
+
+#### 🟦 Current User Endpoint
+- GET /api/auth/me endpoint
+- Return authenticated user's profile
+- Require valid JWT in Authorization header
+
+### Authorization Infrastructure
+
+#### 🟦 JWT Authentication Middleware
+- Middleware to extract and validate JWT from Authorization header
+- Parse Bearer token format
+- Verify token signature and expiration
+- Attach user context to request
+
+#### 🟦 Protected Route Patterns
+- Apply authentication middleware to protected endpoints
+- Consistent error responses for unauthorized requests
+- Optional vs required authentication support
+
+### OAuth2 Integration
+
+#### 🟦 OAuth2 - Google Provider
 - Google OAuth2 sign-in flow
 - User provisioning from Google profile
+- Link Google account to existing users
 
-### 🟦 OAuth2 Integration - GitHub
+#### 🟦 OAuth2 - GitHub Provider
 - GitHub OAuth2 sign-in flow
 - User provisioning from GitHub profile
+- Link GitHub account to existing users
 
-### 🟦 OAuth2 Integration - Additional Providers
+#### 🟦 OAuth2 - Additional Providers
 - Support for Microsoft, Apple, or other OIDC-compliant providers
 - Configurable provider registry
+- GET /api/auth/providers endpoint to list available providers
 
-### 🟦 Authorization Middleware
-- JWT validation middleware
-- User context injection into requests
-- Protected route patterns
-
-## API Endpoints
-
-### 🟦 Authentication Endpoints
-
-```
-POST   /api/auth/register          # Local account registration
-POST   /api/auth/login             # Local account login
-POST   /api/auth/refresh           # Refresh access token
-POST   /api/auth/logout            # Invalidate refresh token
-GET    /api/auth/providers         # List available OAuth providers
-GET    /api/auth/{provider}        # Initiate OAuth flow
-GET    /api/auth/{provider}/callback # OAuth callback handler
-GET    /api/auth/me                # Get current user info
-```
+#### 🟦 OAuth2 - Callback Handler
+- GET /api/auth/{provider}/callback endpoint
+- Handle OAuth2 authorization code flow
+- Create or link user accounts
+- Issue JWT tokens after successful OAuth
 
 ### ✅ Type Management Endpoints
 
