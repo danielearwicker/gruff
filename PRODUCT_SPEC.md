@@ -192,15 +192,37 @@ GET    /api/links/{id}/versions/{version} # Get specific version
 GET    /api/links/{id}/history            # Get version history with diffs
 ```
 
-### 🟦 Graph Navigation Endpoints
+### Graph Navigation Endpoints
 
+#### ✅ Basic Graph Navigation - Outbound Links
 ```
-GET    /api/entities/{id}/outbound        # Get outbound links (paginated)
-GET    /api/entities/{id}/inbound         # Get inbound links (paginated)
-GET    /api/entities/{id}/neighbors       # Get connected entities (paginated)
+GET    /api/entities/{id}/outbound        # Get outbound links from an entity
+```
+Returns all links where the specified entity is the source, with optional filtering by link type.
+
+#### 🟦 Basic Graph Navigation - Inbound Links
+```
+GET    /api/entities/{id}/inbound         # Get inbound links to an entity
+```
+Returns all links where the specified entity is the target, with optional filtering by link type.
+
+#### 🟦 Basic Graph Navigation - Neighbors
+```
+GET    /api/entities/{id}/neighbors       # Get connected entities
+```
+Returns all entities connected to the specified entity (both inbound and outbound), with optional filtering.
+
+#### 🟦 Advanced Graph Traversal
+```
 POST   /api/graph/traverse                # Advanced graph traversal queries
+```
+Multi-hop traversal with depth limits and filtering at each step.
+
+#### 🟦 Shortest Path Finding
+```
 GET    /api/graph/path                    # Find shortest path between entities
 ```
+Find the shortest path between two entities in the graph.
 
 ### 🟦 Search and Query Endpoints
 
