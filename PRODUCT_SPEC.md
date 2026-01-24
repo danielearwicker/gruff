@@ -564,10 +564,12 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Type validation for all endpoints
 - Request size limits enforced by Workers platform
 
-### 🟦 HTTPS and Security Headers
+### ✅ HTTPS and Security Headers
 - HTTPS enforcement (automatic with Cloudflare)
-- Security headers (HSTS, CSP, X-Frame-Options) via Hono middleware
-- CORS configuration via Hono middleware
+- Security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy) via Hono middleware
+- Environment-aware configuration (stricter in production, relaxed for development)
+- CORS configuration via Hono middleware with configurable origins
+- Exposed headers for rate limit and request tracking
 - Cloudflare's built-in DDoS protection
 
 ### 🟦 Sensitive Data Protection

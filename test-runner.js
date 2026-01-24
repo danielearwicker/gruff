@@ -8079,6 +8079,184 @@ async function testDocsVersionEndpointIncludesDocsLink() {
 }
 
 // ============================================================================
+// Security Headers Tests
+// ============================================================================
+
+async function testSecurityHeadersPresent() {
+  logTest('Security Headers - Common Security Headers Present');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // Check X-Content-Type-Options
+  const xContentTypeOptions = response.headers.get('X-Content-Type-Options');
+  assertEquals(xContentTypeOptions, 'nosniff', 'Should have X-Content-Type-Options: nosniff');
+
+  // Check X-Frame-Options (DENY in production, SAMEORIGIN in dev)
+  const xFrameOptions = response.headers.get('X-Frame-Options');
+  assert(
+    xFrameOptions === 'DENY' || xFrameOptions === 'SAMEORIGIN',
+    `Should have X-Frame-Options header (got: ${xFrameOptions})`
+  );
+
+  // Check X-XSS-Protection (legacy but still useful)
+  const xXssProtection = response.headers.get('X-XSS-Protection');
+  assert(xXssProtection, 'Should have X-XSS-Protection header');
+
+  // Check Referrer-Policy
+  const referrerPolicy = response.headers.get('Referrer-Policy');
+  assert(referrerPolicy, 'Should have Referrer-Policy header');
+}
+
+async function testSecurityHeadersContentSecurityPolicy() {
+  logTest('Security Headers - Content-Security-Policy Present');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // Check Content-Security-Policy
+  const csp = response.headers.get('Content-Security-Policy');
+  assert(csp, 'Should have Content-Security-Policy header');
+
+  // In development mode, we have a more permissive CSP
+  // In production, we'd have stricter rules
+  logInfo(`CSP value: ${csp}`);
+}
+
+async function testSecurityHeadersStrictTransportSecurity() {
+  logTest('Security Headers - Strict-Transport-Security (HSTS)');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // In development mode, HSTS max-age may be 0
+  // In production, it should be a positive value (e.g., 31536000 for 1 year)
+  const hsts = response.headers.get('Strict-Transport-Security');
+  assert(hsts, 'Should have Strict-Transport-Security header');
+
+  // Parse max-age value
+  const maxAgeMatch = hsts.match(/max-age=(\d+)/);
+  assert(maxAgeMatch, 'HSTS header should contain max-age directive');
+
+  const maxAge = parseInt(maxAgeMatch[1], 10);
+  logInfo(`HSTS max-age: ${maxAge} seconds`);
+  assert(maxAge >= 0, 'HSTS max-age should be non-negative');
+}
+
+async function testSecurityHeadersPermissionsPolicy() {
+  logTest('Security Headers - Permissions-Policy Present');
+
+  const response = await makeRequest('GET', '/api/types');
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // Check Permissions-Policy
+  const permissionsPolicy = response.headers.get('Permissions-Policy');
+  assert(permissionsPolicy, 'Should have Permissions-Policy header');
+
+  // Verify some expected directives are present
+  logInfo(`Permissions-Policy: ${permissionsPolicy}`);
+}
+
+async function testCorsHeadersOnPreflight() {
+  logTest('CORS - Preflight Response Includes CORS Headers');
+
+  // Make an OPTIONS request (CORS preflight)
+  const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
+    method: 'OPTIONS',
+    headers: {
+      'Origin': 'http://localhost:3000',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'Content-Type, Authorization',
+    },
+  });
+
+  // Preflight should return 204 or 200
+  assert(response.ok || response.status === 204, `Preflight should succeed (got: ${response.status})`);
+
+  // Check Access-Control headers
+  const allowOrigin = response.headers.get('Access-Control-Allow-Origin');
+  assert(allowOrigin, 'Should have Access-Control-Allow-Origin header');
+
+  const allowMethods = response.headers.get('Access-Control-Allow-Methods');
+  assert(allowMethods, 'Should have Access-Control-Allow-Methods header');
+  assert(allowMethods.includes('POST'), 'Allowed methods should include POST');
+
+  const allowHeaders = response.headers.get('Access-Control-Allow-Headers');
+  assert(allowHeaders, 'Should have Access-Control-Allow-Headers header');
+}
+
+async function testCorsHeadersOnActualRequest() {
+  logTest('CORS - Actual Request Response Includes CORS Headers');
+
+  const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
+    method: 'GET',
+    headers: {
+      'Origin': 'http://localhost:3000',
+    },
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // Check Access-Control-Allow-Origin header
+  const allowOrigin = response.headers.get('Access-Control-Allow-Origin');
+  assert(allowOrigin, 'Should have Access-Control-Allow-Origin header');
+
+  // In development mode, all origins are allowed
+  logInfo(`Access-Control-Allow-Origin: ${allowOrigin}`);
+}
+
+async function testCorsExposedHeaders() {
+  logTest('CORS - Exposed Headers Allow Client Access to Custom Headers');
+
+  const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
+    method: 'GET',
+    headers: {
+      'Origin': 'http://localhost:3000',
+    },
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+
+  // Check Access-Control-Expose-Headers
+  const exposeHeaders = response.headers.get('Access-Control-Expose-Headers');
+  assert(exposeHeaders, 'Should have Access-Control-Expose-Headers header');
+
+  // Rate limit headers should be exposed
+  logInfo(`Exposed headers: ${exposeHeaders}`);
+  assert(exposeHeaders.includes('X-Request-ID') || exposeHeaders.includes('x-request-id'),
+    'Should expose X-Request-ID header');
+}
+
+async function testSecurityHeadersOnAllEndpoints() {
+  logTest('Security Headers - Headers Present on Various Endpoints');
+
+  const endpoints = [
+    { method: 'GET', path: '/health' },
+    { method: 'GET', path: '/' },
+    { method: 'GET', path: '/api' },
+    { method: 'GET', path: '/api/version' },
+  ];
+
+  for (const endpoint of endpoints) {
+    const response = await fetch(`${DEV_SERVER_URL}${endpoint.path}`, {
+      method: endpoint.method,
+    });
+
+    const xContentType = response.headers.get('X-Content-Type-Options');
+    assert(xContentType === 'nosniff',
+      `${endpoint.method} ${endpoint.path}: Should have X-Content-Type-Options: nosniff`);
+
+    const xFrameOptions = response.headers.get('X-Frame-Options');
+    assert(xFrameOptions === 'DENY' || xFrameOptions === 'SAMEORIGIN',
+      `${endpoint.method} ${endpoint.path}: Should have X-Frame-Options header`);
+  }
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -8386,6 +8564,16 @@ async function runTests() {
     testDocsOpenApiSchemas,
     testDocsRootEndpointIncludesDocsLink,
     testDocsVersionEndpointIncludesDocsLink,
+
+    // Security Headers and CORS tests
+    testSecurityHeadersPresent,
+    testSecurityHeadersContentSecurityPolicy,
+    testSecurityHeadersStrictTransportSecurity,
+    testSecurityHeadersPermissionsPolicy,
+    testCorsHeadersOnPreflight,
+    testCorsHeadersOnActualRequest,
+    testCorsExposedHeaders,
+    testSecurityHeadersOnAllEndpoints,
   ];
 
   for (const test of tests) {

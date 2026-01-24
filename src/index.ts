@@ -3,6 +3,12 @@ import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { requestContextMiddleware, getLogger, getRequestId } from './middleware/request-context.js';
 import { rateLimit } from './middleware/rate-limit.js';
+import {
+  createCorsMiddleware,
+  createSecurityHeadersMiddleware,
+  getDevelopmentSecurityConfig,
+  getProductionSecurityConfig,
+} from './middleware/security.js';
 import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger } from './utils/logger.js';
@@ -26,12 +32,31 @@ type Bindings = {
   KV: KVNamespace;
   JWT_SECRET: string;
   ENVIRONMENT: string;
+  ALLOWED_ORIGINS?: string; // Comma-separated list of allowed origins for CORS (production)
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Request context middleware - must be first to add requestId and logger to all requests
 app.use('*', requestContextMiddleware);
+
+// Security middleware - environment-aware configuration
+// In production: strict security headers and CORS
+// In development: relaxed settings for local testing
+app.use('*', async (c, next) => {
+  const isDevelopment = c.env?.ENVIRONMENT === 'development' || !c.env?.ENVIRONMENT;
+  const securityConfig = isDevelopment
+    ? getDevelopmentSecurityConfig()
+    : getProductionSecurityConfig(c.env?.ALLOWED_ORIGINS?.split(',') || ['*']);
+
+  // Apply CORS middleware
+  const corsMiddleware = createCorsMiddleware(securityConfig);
+  await corsMiddleware(c, async () => {});
+
+  // Apply security headers middleware
+  const headersMiddleware = createSecurityHeadersMiddleware(securityConfig);
+  await headersMiddleware(c, next);
+});
 
 // Rate limiting middleware - applied to all /api/* routes
 // Automatically categorizes requests based on path and method

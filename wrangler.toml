@@ -19,3 +19,7 @@ ENVIRONMENT = "development"
 # JWT secret for local development only
 # For production, use: wrangler secret put JWT_SECRET
 JWT_SECRET = "dev-secret-key-change-in-production-use-wrangler-secret-put"
+# Allowed origins for CORS (comma-separated for production)
+# In development, all origins are allowed
+# For production, set to your frontend domains: ALLOWED_ORIGINS = "https://app.example.com,https://admin.example.com"
+# ALLOWED_ORIGINS = "https://app.example.com"
