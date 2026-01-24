@@ -266,7 +266,7 @@ Returns all entities connected to the specified entity (both inbound and outboun
 
 #### Advanced Graph Traversal
 
-##### 🟦 Multi-hop Traversal Endpoint
+##### ✅ Multi-hop Traversal Endpoint
 ```
 POST   /api/graph/traverse                # Advanced graph traversal queries
 ```
@@ -277,7 +277,7 @@ Implement POST /api/graph/traverse endpoint that supports:
 - Entity type filtering for results
 - Return entities and the paths that led to them
 
-##### 🟦 Breadth-First Search Implementation
+##### ✅ Breadth-First Search Implementation
 Core traversal algorithm:
 - BFS traversal starting from a given entity
 - Track visited entities to avoid cycles
@@ -352,7 +352,7 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 - Filter by link type during traversal
 - Include entity and link properties in results
 
-### 🟦 Graph Traversal - Advanced Queries
+### ✅ Graph Traversal - Advanced Queries
 - Multi-hop traversal with depth limits
 - Path finding between two entities
 - Shortest path algorithms

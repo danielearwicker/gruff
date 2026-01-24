@@ -21,6 +21,17 @@ const shortestPathSchema = z.object({
   max_depth: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(10)).optional().default('10'),
 });
 
+// Schema for multi-hop traversal request body
+const traverseSchema = z.object({
+  start_entity_id: z.string().uuid('Starting entity ID must be a valid UUID'),
+  max_depth: z.number().int().min(1).max(10).default(3),
+  direction: z.enum(['outbound', 'inbound', 'both']).default('outbound'),
+  link_type_ids: z.array(z.string().uuid('Link type ID must be a valid UUID')).optional(),
+  entity_type_ids: z.array(z.string().uuid('Entity type ID must be a valid UUID')).optional(),
+  include_deleted: z.boolean().default(false),
+  return_paths: z.boolean().default(false), // Whether to return the paths that led to each entity
+});
+
 // Helper function to find the latest version of an entity by any ID in its version chain
 async function findLatestVersion(db: D1Database, entityId: string): Promise<any> {
   // First, try direct match with is_latest
@@ -45,6 +56,235 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<any>
 
   return result || null;
 }
+
+/**
+ * POST /api/graph/traverse
+ * Advanced multi-hop graph traversal with configurable depth and filtering
+ */
+graph.post('/traverse', async (c) => {
+  const db = c.env.DB;
+  const logger = getLogger(c).child({ module: 'graph' });
+
+  try {
+    // Parse and validate request body
+    const body = await c.req.json();
+    const params = traverseSchema.parse(body);
+
+    // Validate that starting entity exists
+    const startEntity = await findLatestVersion(db, params.start_entity_id);
+    if (!startEntity) {
+      return c.json(response.notFound('Starting entity'), 404);
+    }
+
+    // BFS traversal with depth limits and filtering
+    interface PathNode {
+      entityId: string;
+      linkId: string | null;
+    }
+
+    interface QueueItem {
+      entityId: string;
+      depth: number;
+      path: PathNode[];
+    }
+
+    const queue: QueueItem[] = [
+      { entityId: startEntity.id, depth: 0, path: [{ entityId: startEntity.id, linkId: null }] }
+    ];
+
+    const visited = new Set<string>();
+    visited.add(startEntity.id);
+
+    // Store entities with their paths (if requested)
+    const foundEntities = new Map<string, { entity: any; paths: PathNode[][] }>();
+
+    // Add the starting entity
+    foundEntities.set(startEntity.id, {
+      entity: {
+        id: startEntity.id,
+        type_id: startEntity.type_id,
+        properties: startEntity.properties ? JSON.parse(startEntity.properties as string) : {},
+        version: startEntity.version,
+        created_at: startEntity.created_at,
+        is_deleted: startEntity.is_deleted === 1,
+      },
+      paths: [[{ entityId: startEntity.id, linkId: null }]],
+    });
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+
+      // Check depth limit - don't traverse beyond max_depth
+      if (current.depth >= params.max_depth) {
+        continue;
+      }
+
+      // Build queries based on direction
+      const queries: Array<{ sql: string; bindings: any[] }> = [];
+
+      // Outbound links (this entity -> others)
+      if (params.direction === 'outbound' || params.direction === 'both') {
+        let sql = `
+          SELECT
+            l.id as link_id,
+            l.type_id as link_type_id,
+            l.properties as link_properties,
+            e.id as entity_id,
+            e.type_id as entity_type_id,
+            e.properties as entity_properties,
+            e.version as entity_version,
+            e.created_at as entity_created_at,
+            e.is_deleted as entity_is_deleted
+          FROM links l
+          INNER JOIN entities e ON l.target_entity_id = e.id
+          WHERE l.source_entity_id = ?
+          AND l.is_latest = 1
+          AND e.is_latest = 1
+        `;
+        const bindings: any[] = [current.entityId];
+
+        if (!params.include_deleted) {
+          sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+        }
+
+        if (params.link_type_ids && params.link_type_ids.length > 0) {
+          sql += ` AND l.type_id IN (${params.link_type_ids.map(() => '?').join(',')})`;
+          bindings.push(...params.link_type_ids);
+        }
+
+        if (params.entity_type_ids && params.entity_type_ids.length > 0) {
+          sql += ` AND e.type_id IN (${params.entity_type_ids.map(() => '?').join(',')})`;
+          bindings.push(...params.entity_type_ids);
+        }
+
+        queries.push({ sql, bindings });
+      }
+
+      // Inbound links (others -> this entity)
+      if (params.direction === 'inbound' || params.direction === 'both') {
+        let sql = `
+          SELECT
+            l.id as link_id,
+            l.type_id as link_type_id,
+            l.properties as link_properties,
+            e.id as entity_id,
+            e.type_id as entity_type_id,
+            e.properties as entity_properties,
+            e.version as entity_version,
+            e.created_at as entity_created_at,
+            e.is_deleted as entity_is_deleted
+          FROM links l
+          INNER JOIN entities e ON l.source_entity_id = e.id
+          WHERE l.target_entity_id = ?
+          AND l.is_latest = 1
+          AND e.is_latest = 1
+        `;
+        const bindings: any[] = [current.entityId];
+
+        if (!params.include_deleted) {
+          sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+        }
+
+        if (params.link_type_ids && params.link_type_ids.length > 0) {
+          sql += ` AND l.type_id IN (${params.link_type_ids.map(() => '?').join(',')})`;
+          bindings.push(...params.link_type_ids);
+        }
+
+        if (params.entity_type_ids && params.entity_type_ids.length > 0) {
+          sql += ` AND e.type_id IN (${params.entity_type_ids.map(() => '?').join(',')})`;
+          bindings.push(...params.entity_type_ids);
+        }
+
+        queries.push({ sql, bindings });
+      }
+
+      // Execute all queries and collect neighbors
+      for (const query of queries) {
+        const { results } = await db.prepare(query.sql).bind(...query.bindings).all();
+
+        for (const neighbor of results) {
+          const neighborId = neighbor.entity_id as string;
+          const newPath = [...current.path, { entityId: neighborId, linkId: neighbor.link_id as string }];
+
+          // Track this entity if we haven't seen it before
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            queue.push({
+              entityId: neighborId,
+              depth: current.depth + 1,
+              path: newPath,
+            });
+
+            // Store the entity with its path
+            const entity = {
+              id: neighbor.entity_id,
+              type_id: neighbor.entity_type_id,
+              properties: neighbor.entity_properties ? JSON.parse(neighbor.entity_properties as string) : {},
+              version: neighbor.entity_version,
+              created_at: neighbor.entity_created_at,
+              is_deleted: neighbor.entity_is_deleted === 1,
+            };
+
+            foundEntities.set(neighborId, {
+              entity,
+              paths: [newPath],
+            });
+          } else if (params.return_paths) {
+            // If we're tracking paths and we've seen this entity before via a different path,
+            // add this new path to the list
+            const existing = foundEntities.get(neighborId);
+            if (existing) {
+              existing.paths.push(newPath);
+            }
+          }
+        }
+      }
+    }
+
+    // Build the response
+    const entitiesArray = Array.from(foundEntities.values());
+
+    let result: any;
+    if (params.return_paths) {
+      // Return entities with all their paths
+      result = entitiesArray.map(item => ({
+        entity: item.entity,
+        paths: item.paths.map(path =>
+          path.map(node => ({
+            entity_id: node.entityId,
+            link_id: node.linkId,
+          }))
+        ),
+      }));
+    } else {
+      // Return just the entities
+      result = entitiesArray.map(item => item.entity);
+    }
+
+    logger.info('Graph traversal completed', {
+      start_entity_id: params.start_entity_id,
+      max_depth: params.max_depth,
+      entities_found: result.length,
+    });
+
+    return c.json(response.success({
+      entities: result,
+      count: result.length,
+      start_entity_id: params.start_entity_id,
+      max_depth: params.max_depth,
+      direction: params.direction,
+    }));
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json(
+        response.error('Validation error', 'VALIDATION_ERROR', error.errors),
+        400
+      );
+    }
+    logger.error('Error during graph traversal', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
 
 /**
  * GET /api/graph/path

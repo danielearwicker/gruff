@@ -3917,6 +3917,346 @@ async function testShortestPathInvalidTargetEntity() {
   assert(!response.ok, 'Response should not be OK');
 }
 
+async function testMultiHopTraversal() {
+  logTest('Graph Traversal - Multi-hop Traversal with Depth Limit');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'TraverseTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'TraverseTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create a tree structure: A -> B, A -> C, B -> D, B -> E
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  const entityD = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity D' }
+  });
+  const entityDId = entityD.data.data.id;
+
+  const entityE = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity E' }
+  });
+  const entityEId = entityE.data.data.id;
+
+  // Create links: A->B, A->C, B->D, B->E
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityAId,
+    target_entity_id: entityCId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityBId,
+    target_entity_id: entityDId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityBId,
+    target_entity_id: entityEId,
+    properties: {}
+  });
+
+  // Test: Traverse from A with depth 2 (should find B, C, D, E)
+  const response = await makeRequest('POST', '/api/graph/traverse', {
+    start_entity_id: entityAId,
+    max_depth: 2,
+    direction: 'outbound'
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assertEquals(response.data.data.count, 5, 'Should find 5 entities including the start');
+  assertEquals(response.data.data.start_entity_id, entityAId, 'Should include start entity ID');
+  assertEquals(response.data.data.max_depth, 2, 'Should include max depth');
+  assertEquals(response.data.data.direction, 'outbound', 'Should include direction');
+
+  // Verify all entities are found
+  const entityIds = response.data.data.entities.map(e => e.id);
+  assert(entityIds.includes(entityAId), 'Should include entity A');
+  assert(entityIds.includes(entityBId), 'Should include entity B');
+  assert(entityIds.includes(entityCId), 'Should include entity C');
+  assert(entityIds.includes(entityDId), 'Should include entity D');
+  assert(entityIds.includes(entityEId), 'Should include entity E');
+}
+
+async function testMultiHopTraversalWithDepthLimit() {
+  logTest('Graph Traversal - Multi-hop Traversal Respects Depth Limit');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DepthLimitTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DepthLimitTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create a chain: A -> B -> C -> D
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  const entityD = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity D' }
+  });
+  const entityDId = entityD.data.data.id;
+
+  // Create links: A->B, B->C, C->D
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityBId,
+    target_entity_id: entityCId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityCId,
+    target_entity_id: entityDId,
+    properties: {}
+  });
+
+  // Test: Traverse from A with depth 1 (should only find A, B)
+  const response = await makeRequest('POST', '/api/graph/traverse', {
+    start_entity_id: entityAId,
+    max_depth: 1,
+    direction: 'outbound'
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.count, 2, 'Should find only 2 entities with depth 1');
+
+  const entityIds = response.data.data.entities.map(e => e.id);
+  assert(entityIds.includes(entityAId), 'Should include entity A');
+  assert(entityIds.includes(entityBId), 'Should include entity B');
+  assert(!entityIds.includes(entityCId), 'Should NOT include entity C');
+  assert(!entityIds.includes(entityDId), 'Should NOT include entity D');
+}
+
+async function testMultiHopTraversalBidirectional() {
+  logTest('Graph Traversal - Multi-hop Traversal in Both Directions');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BothDirectionsTestEntityType',
+    category: 'entity'
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'BothDirectionsTestLinkType',
+    category: 'link'
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create: A -> B <- C
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  // Create links: A->B, C->B
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: entityCId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  // Test: Traverse from B in both directions (should find A and C)
+  const response = await makeRequest('POST', '/api/graph/traverse', {
+    start_entity_id: entityBId,
+    max_depth: 1,
+    direction: 'both'
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.count, 3, 'Should find 3 entities (B, A, C)');
+
+  const entityIds = response.data.data.entities.map(e => e.id);
+  assert(entityIds.includes(entityAId), 'Should include entity A');
+  assert(entityIds.includes(entityBId), 'Should include entity B');
+  assert(entityIds.includes(entityCId), 'Should include entity C');
+}
+
+async function testMultiHopTraversalWithTypeFilters() {
+  logTest('Graph Traversal - Multi-hop Traversal with Link and Entity Type Filters');
+
+  // Create types
+  const entityType1Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestEntityType1',
+    category: 'entity'
+  });
+  const entityType1Id = entityType1Response.data.data.id;
+
+  const entityType2Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestEntityType2',
+    category: 'entity'
+  });
+  const entityType2Id = entityType2Response.data.data.id;
+
+  const linkType1Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestLinkType1',
+    category: 'link'
+  });
+  const linkType1Id = linkType1Response.data.data.id;
+
+  const linkType2Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestLinkType2',
+    category: 'link'
+  });
+  const linkType2Id = linkType2Response.data.data.id;
+
+  // Create entities: A (type1) -> B (type1) -> C (type2)
+  const entityA = await makeRequest('POST', '/api/entities', {
+    type_id: entityType1Id,
+    properties: { name: 'Entity A' }
+  });
+  const entityAId = entityA.data.data.id;
+
+  const entityB = await makeRequest('POST', '/api/entities', {
+    type_id: entityType1Id,
+    properties: { name: 'Entity B' }
+  });
+  const entityBId = entityB.data.data.id;
+
+  const entityC = await makeRequest('POST', '/api/entities', {
+    type_id: entityType2Id,
+    properties: { name: 'Entity C' }
+  });
+  const entityCId = entityC.data.data.id;
+
+  // Create links: A->B (linkType1), B->C (linkType2)
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType1Id,
+    source_entity_id: entityAId,
+    target_entity_id: entityBId,
+    properties: {}
+  });
+
+  await makeRequest('POST', '/api/links', {
+    type_id: linkType2Id,
+    source_entity_id: entityBId,
+    target_entity_id: entityCId,
+    properties: {}
+  });
+
+  // Test: Traverse from A, filter by entity type 1 only
+  const response = await makeRequest('POST', '/api/graph/traverse', {
+    start_entity_id: entityAId,
+    max_depth: 2,
+    direction: 'outbound',
+    entity_type_ids: [entityType1Id]
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.count, 2, 'Should find only 2 entities of type1');
+
+  const entityIds = response.data.data.entities.map(e => e.id);
+  assert(entityIds.includes(entityAId), 'Should include entity A');
+  assert(entityIds.includes(entityBId), 'Should include entity B');
+  assert(!entityIds.includes(entityCId), 'Should NOT include entity C (wrong type)');
+}
+
+async function testMultiHopTraversalInvalidStartEntity() {
+  logTest('Graph Traversal - Multi-hop Traversal with Invalid Start Entity');
+
+  const invalidId = '00000000-0000-0000-0000-000000000000';
+
+  // Test: Traverse from non-existent entity
+  const response = await makeRequest('POST', '/api/graph/traverse', {
+    start_entity_id: invalidId,
+    max_depth: 2,
+    direction: 'outbound'
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(!response.ok, 'Response should not be OK');
+}
+
 async function testGetNeighborsBidirectionalConnection() {
   logTest('Graph Navigation - Get Neighbors Handles Bidirectional Connections');
 
@@ -4536,6 +4876,11 @@ async function runTests() {
     testShortestPathWithLinkTypeFilter,
     testShortestPathInvalidSourceEntity,
     testShortestPathInvalidTargetEntity,
+    testMultiHopTraversal,
+    testMultiHopTraversalWithDepthLimit,
+    testMultiHopTraversalBidirectional,
+    testMultiHopTraversalWithTypeFilters,
+    testMultiHopTraversalInvalidStartEntity,
 
     // Pagination tests
     testEntitiesPaginationLimit,
