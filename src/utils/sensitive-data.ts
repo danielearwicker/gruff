@@ -116,13 +116,13 @@ export function redactSensitiveData<T>(data: T, maxDepth: number = 10): T {
       return `Bearer ${REDACTED}` as T;
     }
     // Redact patterns like "password=..." or "secret=..." in strings
-    let redacted = data;
+    let redacted: string = data;
     for (const sensitiveKey of SENSITIVE_KEYS) {
       // Match patterns like "word=value" or "word: value"
-      const regexEq = new RegExp(`${sensitiveKey}\\s*=\\s*\\S+`, 'gi');
-      const regexColon = new RegExp(`${sensitiveKey}\\s*:\\s*\\S+`, 'gi');
-      redacted = redacted.replace(regexEq, `${sensitiveKey}=${REDACTED}`);
-      redacted = redacted.replace(regexColon, `${sensitiveKey}: ${REDACTED}`);
+      const regexEq = new RegExp(sensitiveKey + '\\s*=\\s*\\S+', 'gi');
+      const regexColon = new RegExp(sensitiveKey + '\\s*:\\s*\\S+', 'gi');
+      redacted = redacted.replace(regexEq, sensitiveKey + '=' + REDACTED);
+      redacted = redacted.replace(regexColon, sensitiveKey + ': ' + REDACTED);
     }
     return redacted as T;
   }

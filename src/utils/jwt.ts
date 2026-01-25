@@ -179,7 +179,8 @@ export async function createAccessToken(
   const expiresIn = config?.accessTokenExpiry ?? ACCESS_TOKEN_EXPIRY;
 
   // Generate a random jti (JWT ID) to ensure tokens are unique even at the same second
-  const jti = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const jti =
+    Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
   const payload: JwtPayloadInternal = {
     user_id: userId,
