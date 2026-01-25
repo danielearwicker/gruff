@@ -145,10 +145,7 @@ export async function setCache<T>(
  * @param key - Cache key
  * @returns Cached data if found and valid, null otherwise
  */
-export async function getCache<T>(
-  kv: KVNamespace,
-  key: string
-): Promise<T | null> {
+export async function getCache<T>(kv: KVNamespace, key: string): Promise<T | null> {
   const value = await kv.get(key);
 
   if (!value) {
@@ -196,11 +193,8 @@ export async function deleteCache(kv: KVNamespace, key: string): Promise<void> {
  * @param kv - KV namespace binding
  * @param keys - Array of cache keys to delete
  */
-export async function deleteCacheMultiple(
-  kv: KVNamespace,
-  keys: string[]
-): Promise<void> {
-  await Promise.all(keys.map((key) => kv.delete(key)));
+export async function deleteCacheMultiple(kv: KVNamespace, keys: string[]): Promise<void> {
+  await Promise.all(keys.map(key => kv.delete(key)));
 }
 
 /**
@@ -210,10 +204,7 @@ export async function deleteCacheMultiple(
  * @param kv - KV namespace binding
  * @param typeId - Type ID to invalidate
  */
-export async function invalidateTypeCache(
-  kv: KVNamespace,
-  typeId: string
-): Promise<void> {
+export async function invalidateTypeCache(kv: KVNamespace, typeId: string): Promise<void> {
   // Delete the specific type cache
   await deleteCache(kv, getTypeCacheKey(typeId));
 
@@ -266,10 +257,7 @@ export async function getVersionedTypesListCacheKey(
  * @param kv - KV namespace binding
  * @param entityId - Entity ID to invalidate
  */
-export async function invalidateEntityCache(
-  kv: KVNamespace,
-  entityId: string
-): Promise<void> {
+export async function invalidateEntityCache(kv: KVNamespace, entityId: string): Promise<void> {
   await deleteCache(kv, getEntityCacheKey(entityId));
 }
 
@@ -280,10 +268,7 @@ export async function invalidateEntityCache(
  * @param kv - KV namespace binding
  * @param linkId - Link ID to invalidate
  */
-export async function invalidateLinkCache(
-  kv: KVNamespace,
-  linkId: string
-): Promise<void> {
+export async function invalidateLinkCache(kv: KVNamespace, linkId: string): Promise<void> {
   await deleteCache(kv, getLinkCacheKey(linkId));
 }
 
@@ -293,10 +278,7 @@ export async function invalidateLinkCache(
  * @param kv - KV namespace binding
  * @param userId - User ID to invalidate
  */
-export async function invalidateUserCache(
-  kv: KVNamespace,
-  userId: string
-): Promise<void> {
+export async function invalidateUserCache(kv: KVNamespace, userId: string): Promise<void> {
   await deleteCache(kv, getUserCacheKey(userId));
 }
 

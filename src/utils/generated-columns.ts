@@ -20,13 +20,13 @@ import type { GeneratedColumn, QueryOptimizationInfo } from '../schemas/generate
  */
 export const GENERATED_COLUMNS = {
   entities: {
-    'name': { columnName: 'prop_name', dataType: 'TEXT' as const },
-    'status': { columnName: 'prop_status', dataType: 'TEXT' as const },
-    'email': { columnName: 'prop_email', dataType: 'TEXT' as const },
+    name: { columnName: 'prop_name', dataType: 'TEXT' as const },
+    status: { columnName: 'prop_status', dataType: 'TEXT' as const },
+    email: { columnName: 'prop_email', dataType: 'TEXT' as const },
   },
   links: {
-    'role': { columnName: 'prop_role', dataType: 'TEXT' as const },
-    'weight': { columnName: 'prop_weight', dataType: 'REAL' as const },
+    role: { columnName: 'prop_role', dataType: 'TEXT' as const },
+    weight: { columnName: 'prop_weight', dataType: 'REAL' as const },
   },
 } as const;
 
@@ -74,7 +74,9 @@ export function getGeneratedColumnName(tableName: TableName, jsonPath: string): 
     return null;
   }
 
-  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as { columnName: string; dataType: string } | undefined;
+  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as
+    | { columnName: string; dataType: string }
+    | undefined;
   return mapping ? mapping.columnName : null;
 }
 
@@ -96,7 +98,9 @@ export function getGeneratedColumnDataType(tableName: TableName, jsonPath: strin
     return null;
   }
 
-  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as { columnName: string; dataType: string } | undefined;
+  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as
+    | { columnName: string; dataType: string }
+    | undefined;
   return mapping ? mapping.dataType : null;
 }
 
@@ -185,8 +189,8 @@ export async function getQueryOptimizationInfo(db: D1Database): Promise<QueryOpt
   const columns = await getGeneratedColumns(db);
 
   const entities = columns
-    .filter((c) => c.table_name === 'entities')
-    .map((c) => ({
+    .filter(c => c.table_name === 'entities')
+    .map(c => ({
       column_name: c.column_name,
       json_path: c.json_path,
       data_type: c.data_type as 'TEXT' | 'INTEGER' | 'REAL' | 'BOOLEAN',
@@ -195,8 +199,8 @@ export async function getQueryOptimizationInfo(db: D1Database): Promise<QueryOpt
     }));
 
   const links = columns
-    .filter((c) => c.table_name === 'links')
-    .map((c) => ({
+    .filter(c => c.table_name === 'links')
+    .map(c => ({
       column_name: c.column_name,
       json_path: c.json_path,
       data_type: c.data_type as 'TEXT' | 'INTEGER' | 'REAL' | 'BOOLEAN',

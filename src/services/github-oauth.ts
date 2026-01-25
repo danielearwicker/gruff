@@ -74,7 +74,7 @@ function generateRandomString(length: number = 43): string {
   const randomValues = new Uint8Array(length);
   crypto.getRandomValues(randomValues);
   return Array.from(randomValues)
-    .map((v) => chars[v % chars.length])
+    .map(v => chars[v % chars.length])
     .join('');
 }
 
@@ -173,7 +173,7 @@ export async function exchangeCodeForTokens(
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     },
     body: params.toString(),
   });
@@ -183,7 +183,9 @@ export async function exchangeCodeForTokens(
     throw new Error(`Failed to exchange code for tokens: ${response.status} ${errorData}`);
   }
 
-  const data = await response.json() as GitHubTokenResponse | { error: string; error_description?: string };
+  const data = (await response.json()) as
+    | GitHubTokenResponse
+    | { error: string; error_description?: string };
 
   // GitHub returns error in JSON body with 200 status
   if ('error' in data) {
@@ -213,7 +215,7 @@ export async function fetchUserProfile(accessToken: string): Promise<GitHubUserP
     throw new Error(`Failed to fetch user profile: ${response.status} ${errorData}`);
   }
 
-  return await response.json() as GitHubUserProfile;
+  return (await response.json()) as GitHubUserProfile;
 }
 
 /**
@@ -239,16 +241,16 @@ export async function fetchUserPrimaryEmail(accessToken: string): Promise<string
     return null;
   }
 
-  const emails = await response.json() as GitHubEmail[];
+  const emails = (await response.json()) as GitHubEmail[];
 
   // Find primary verified email
-  const primaryEmail = emails.find((e) => e.primary && e.verified);
+  const primaryEmail = emails.find(e => e.primary && e.verified);
   if (primaryEmail) {
     return primaryEmail.email;
   }
 
   // Fallback to any verified email
-  const verifiedEmail = emails.find((e) => e.verified);
+  const verifiedEmail = emails.find(e => e.verified);
   if (verifiedEmail) {
     return verifiedEmail.email;
   }

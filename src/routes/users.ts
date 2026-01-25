@@ -38,12 +38,21 @@ const usersRouter = new Hono<{ Bindings: Bindings }>();
 
 // Query schema for listing users
 const listUsersQuerySchema = z.object({
-  limit: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 20)),
-  offset: z.string().optional().transform((val) => (val ? parseInt(val, 10) : 0)),
-  is_active: z.enum(['true', 'false', '1', '0']).optional().transform((val) => {
-    if (!val) return undefined;
-    return val === 'true' || val === '1';
-  }),
+  limit: z
+    .string()
+    .optional()
+    .transform(val => (val ? parseInt(val, 10) : 20)),
+  offset: z
+    .string()
+    .optional()
+    .transform(val => (val ? parseInt(val, 10) : 0)),
+  is_active: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform(val => {
+      if (!val) return undefined;
+      return val === 'true' || val === '1';
+    }),
   provider: z.enum(['google', 'github', 'local', 'microsoft', 'apple']).optional(),
   // Field selection: comma-separated list of fields to include in response
   fields: z.string().optional(),
@@ -55,15 +64,22 @@ const listUsersQuerySchema = z.object({
  * List all users (admin functionality - for now, any authenticated user can access)
  * In a production system, this should be restricted to admin users only
  */
-usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (c) => {
+usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_query') as { limit: number; offset: number; is_active?: boolean; provider?: string; fields?: string };
+  const validated = c.get('validated_query') as {
+    limit: number;
+    offset: number;
+    is_active?: boolean;
+    provider?: string;
+    fields?: string;
+  };
 
   const { limit, offset, is_active, provider } = validated;
 
   try {
     // Build the query dynamically based on filters
-    let query = 'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE 1=1';
+    let query =
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE 1=1';
     const params: unknown[] = [];
 
     if (is_active !== undefined) {
@@ -105,7 +121,7 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
     logger.info('Users listed', { count: results.results?.length || 0, total });
 
     // Format the users (exclude sensitive data)
-    const users = ((results.results || []) as unknown as UserRow[]).map((user) => ({
+    const users = ((results.results || []) as unknown as UserRow[]).map(user => ({
       id: user.id,
       email: user.email,
       display_name: user.display_name,
@@ -137,15 +153,10 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
     const page = Math.floor(offset / limit) + 1;
     const hasMore = offset + limit < total;
 
-    return c.json(
-      response.paginated(fieldSelection.data, limit, page, total, hasMore)
-    );
+    return c.json(response.paginated(fieldSelection.data, limit, page, total, hasMore));
   } catch (error) {
     logger.error('Error listing users', error as Error);
-    return c.json(
-      response.error('Failed to list users', 'USER_LIST_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to list users', 'USER_LIST_FAILED'), 500);
   }
 });
 
@@ -159,7 +170,7 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
  * Users can view their own profile, or any authenticated user can view others
  * (in production, you might want to restrict this)
  */
-usersRouter.get('/:id', requireAuth(), async (c) => {
+usersRouter.get('/:id', requireAuth(), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('id');
   const fieldsParam = c.req.query('fields');
@@ -174,10 +185,7 @@ usersRouter.get('/:id', requireAuth(), async (c) => {
 
     if (!user) {
       logger.warn('User not found', { userId });
-      return c.json(
-        response.notFound('User'),
-        404
-      );
+      return c.json(response.notFound('User'), 404);
     }
 
     logger.info('User details retrieved', { userId });
@@ -217,10 +225,7 @@ usersRouter.get('/:id', requireAuth(), async (c) => {
     return c.json(response.success(userData));
   } catch (error) {
     logger.error('Error retrieving user details', error as Error, { userId });
-    return c.json(
-      response.error('Failed to retrieve user details', 'USER_RETRIEVAL_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to retrieve user details', 'USER_RETRIEVAL_FAILED'), 500);
   }
 });
 
@@ -231,11 +236,15 @@ usersRouter.get('/:id', requireAuth(), async (c) => {
  * Users can only update their own profile (enforced by checking JWT user_id)
  * Admins could update any profile (not implemented yet)
  */
-usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c) => {
+usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('id');
   const currentUser = c.get('user');
-  const validated = c.get('validated_json') as { display_name?: string; email?: string; is_active?: number };
+  const validated = c.get('validated_json') as {
+    display_name?: string;
+    email?: string;
+    is_active?: number;
+  };
 
   try {
     // Check if user is updating their own profile
@@ -244,41 +253,28 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
         currentUserId: currentUser.user_id,
         targetUserId: userId,
       });
-      return c.json(
-        response.forbidden('You can only update your own profile'),
-        403
-      );
+      return c.json(response.forbidden('You can only update your own profile'), 403);
     }
 
     // Check if user exists
-    const existingUser = await c.env.DB.prepare(
-      'SELECT id, email FROM users WHERE id = ?'
-    )
+    const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
       .bind(userId)
       .first();
 
     if (!existingUser) {
       logger.warn('User not found for update', { userId });
-      return c.json(
-        response.notFound('User'),
-        404
-      );
+      return c.json(response.notFound('User'), 404);
     }
 
     // If email is being updated, check if it's already taken
     if (validated.email && validated.email !== existingUser.email) {
-      const emailExists = await c.env.DB.prepare(
-        'SELECT id FROM users WHERE email = ? AND id != ?'
-      )
+      const emailExists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?')
         .bind(validated.email, userId)
         .first();
 
       if (emailExists) {
         logger.warn('Email already in use', { email: validated.email });
-        return c.json(
-          response.error('Email is already in use', 'EMAIL_EXISTS'),
-          409
-        );
+        return c.json(response.error('Email is already in use', 'EMAIL_EXISTS'), 409);
       }
     }
 
@@ -310,7 +306,9 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
 
     // Execute update
     const updateQuery = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-    await c.env.DB.prepare(updateQuery).bind(...params).run();
+    await c.env.DB.prepare(updateQuery)
+      .bind(...params)
+      .run();
 
     // Fetch and return updated user
     const updatedUser = await c.env.DB.prepare(
@@ -334,10 +332,7 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
     );
   } catch (error) {
     logger.error('Error updating user profile', error as Error, { userId });
-    return c.json(
-      response.error('Failed to update user profile', 'USER_UPDATE_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to update user profile', 'USER_UPDATE_FAILED'), 500);
   }
 });
 
@@ -346,7 +341,7 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
  *
  * Get a user's creation and edit history (entities and links they've created/modified)
  */
-usersRouter.get('/:id/activity', requireAuth(), async (c) => {
+usersRouter.get('/:id/activity', requireAuth(), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('id');
 
@@ -356,18 +351,11 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
 
   try {
     // Check if user exists
-    const user = await c.env.DB.prepare(
-      'SELECT id FROM users WHERE id = ?'
-    )
-      .bind(userId)
-      .first();
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
 
     if (!user) {
       logger.warn('User not found for activity query', { userId });
-      return c.json(
-        response.notFound('User'),
-        404
-      );
+      return c.json(response.notFound('User'), 404);
     }
 
     // Get entities created by user
@@ -393,7 +381,9 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
       .all();
 
     // Combine and sort by created_at
-    const entityActivities = ((entities.results || []) as unknown as Array<Record<string, unknown>>).map((e) => ({
+    const entityActivities = (
+      (entities.results || []) as unknown as Array<Record<string, unknown>>
+    ).map(e => ({
       type: 'entity',
       id: e.id,
       type_id: e.type_id,
@@ -403,17 +393,19 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
       is_latest: !!e.is_latest,
     }));
 
-    const linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map((l) => ({
-      type: 'link',
-      id: l.id,
-      type_id: l.type_id,
-      source_entity_id: l.source_entity_id,
-      target_entity_id: l.target_entity_id,
-      version: l.version,
-      created_at: l.created_at,
-      is_deleted: !!l.is_deleted,
-      is_latest: !!l.is_latest,
-    }));
+    const linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map(
+      l => ({
+        type: 'link',
+        id: l.id,
+        type_id: l.type_id,
+        source_entity_id: l.source_entity_id,
+        target_entity_id: l.target_entity_id,
+        version: l.version,
+        created_at: l.created_at,
+        is_deleted: !!l.is_deleted,
+        is_latest: !!l.is_latest,
+      })
+    );
 
     const allActivities = [...entityActivities, ...linkActivities]
       .sort((a, b) => (b.created_at as number) - (a.created_at as number))
@@ -430,10 +422,7 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
     );
   } catch (error) {
     logger.error('Error retrieving user activity', error as Error, { userId });
-    return c.json(
-      response.error('Failed to retrieve user activity', 'USER_ACTIVITY_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to retrieve user activity', 'USER_ACTIVITY_FAILED'), 500);
   }
 });
 

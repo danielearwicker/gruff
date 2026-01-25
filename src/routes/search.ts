@@ -18,7 +18,7 @@ const search = new Hono<{ Bindings: Bindings }>();
  * POST /api/search/entities
  * Search for entities based on criteria
  */
-search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
+search.post('/entities', validateJson(searchEntitiesSchema), async c => {
   const criteria = c.get('validated_json') as z.infer<typeof searchEntitiesSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
@@ -89,7 +89,13 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
         }
       } catch (error) {
         logger.error('Invalid filter expression', error as Error);
-        return c.json(response.error(`Invalid filter expression: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+        return c.json(
+          response.error(
+            `Invalid filter expression: ${(error as Error).message}`,
+            'INVALID_FILTER'
+          ),
+          400
+        );
       }
     }
     // Advanced property filters with comparison operators (combined with AND)
@@ -103,7 +109,10 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
         }
       } catch (error) {
         logger.error('Invalid property filter', error as Error);
-        return c.json(response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+        return c.json(
+          response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'),
+          400
+        );
       }
     }
 
@@ -135,7 +144,10 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
 
     bindings.push(criteria.limit + 1);
 
-    const results = await db.prepare(query).bind(...bindings).all();
+    const results = await db
+      .prepare(query)
+      .bind(...bindings)
+      .all();
 
     // Check if there are more results
     const hasMore = results.results.length > criteria.limit;
@@ -171,7 +183,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
     logger.info('Entity search completed', {
       count: cleanedEntities.length,
       hasMore,
-      cursor: nextCursor
+      cursor: nextCursor,
     });
 
     return c.json(response.cursorPaginated(cleanedEntities, nextCursor, hasMore, criteria.limit));
@@ -185,7 +197,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
  * POST /api/search/links
  * Search for links based on criteria
  */
-search.post('/links', validateJson(searchLinksSchema), async (c) => {
+search.post('/links', validateJson(searchLinksSchema), async c => {
   const criteria = c.get('validated_json') as z.infer<typeof searchLinksSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
@@ -267,7 +279,13 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
         }
       } catch (error) {
         logger.error('Invalid filter expression', error as Error);
-        return c.json(response.error(`Invalid filter expression: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+        return c.json(
+          response.error(
+            `Invalid filter expression: ${(error as Error).message}`,
+            'INVALID_FILTER'
+          ),
+          400
+        );
       }
     }
     // Advanced property filters with comparison operators (combined with AND)
@@ -281,7 +299,10 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
         }
       } catch (error) {
         logger.error('Invalid property filter', error as Error);
-        return c.json(response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'), 400);
+        return c.json(
+          response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'),
+          400
+        );
       }
     }
 
@@ -324,7 +345,10 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
 
     bindings.push(criteria.limit + 1);
 
-    const results = await db.prepare(query).bind(...bindings).all();
+    const results = await db
+      .prepare(query)
+      .bind(...bindings)
+      .all();
 
     // Check if there are more results
     const hasMore = results.results.length > criteria.limit;
@@ -355,24 +379,28 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
         name: link.type_name,
         category: link.type_category,
       },
-      source_entity: link.source_id ? {
-        id: link.source_id,
-        type_id: link.source_type_id,
-        type_name: link.source_type_name,
-        properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
-      } : null,
-      target_entity: link.target_id ? {
-        id: link.target_id,
-        type_id: link.target_type_id,
-        type_name: link.target_type_name,
-        properties: link.target_properties ? JSON.parse(link.target_properties as string) : {},
-      } : null,
+      source_entity: link.source_id
+        ? {
+            id: link.source_id,
+            type_id: link.source_type_id,
+            type_name: link.source_type_name,
+            properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
+          }
+        : null,
+      target_entity: link.target_id
+        ? {
+            id: link.target_id,
+            type_id: link.target_type_id,
+            type_name: link.target_type_name,
+            properties: link.target_properties ? JSON.parse(link.target_properties as string) : {},
+          }
+        : null,
     }));
 
     logger.info('Link search completed', {
       count: parsedLinks.length,
       hasMore,
-      cursor: nextCursor
+      cursor: nextCursor,
     });
 
     return c.json(response.cursorPaginated(parsedLinks, nextCursor, hasMore, criteria.limit));
@@ -386,7 +414,7 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
  * GET /api/search/suggest
  * Type-ahead suggestions for entity properties
  */
-search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
+search.get('/suggest', validateQuery(suggestionsSchema), async c => {
   const params = c.get('validated_query') as z.infer<typeof suggestionsSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
@@ -440,7 +468,10 @@ search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
     // Add binding for prefix match (for better sorting - exact prefix matches first)
     bindings.push(`${params.query}%`, params.limit);
 
-    const results = await db.prepare(query).bind(...bindings).all();
+    const results = await db
+      .prepare(query)
+      .bind(...bindings)
+      .all();
 
     // Format the suggestions
     const suggestions = results.results.map((row: Record<string, unknown>) => ({
@@ -455,7 +486,7 @@ search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
 
     logger.info('Type-ahead suggestions generated', {
       query: params.query,
-      count: suggestions.length
+      count: suggestions.length,
     });
 
     return c.json(response.success(suggestions));

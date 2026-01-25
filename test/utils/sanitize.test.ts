@@ -85,7 +85,9 @@ describe('sanitize utilities', () => {
     });
 
     it('should detect data URLs in CSS', () => {
-      expect(containsDangerousContent('url("data:text/html,<script>alert(1)</script>")')).toBe(true);
+      expect(containsDangerousContent('url("data:text/html,<script>alert(1)</script>")')).toBe(
+        true
+      );
     });
 
     it('should detect vbscript protocol', () => {
@@ -107,9 +109,7 @@ describe('sanitize utilities', () => {
 
   describe('sanitizeValue', () => {
     it('should sanitize strings', () => {
-      expect(sanitizeValue('<script>xss</script>')).toBe(
-        '&lt;script&gt;xss&lt;&#x2F;script&gt;'
-      );
+      expect(sanitizeValue('<script>xss</script>')).toBe('&lt;script&gt;xss&lt;&#x2F;script&gt;');
     });
 
     it('should handle null and undefined', () => {
@@ -126,11 +126,7 @@ describe('sanitize utilities', () => {
     it('should sanitize arrays recursively', () => {
       const input = ['<script>', 'safe', '<img onerror=x>'];
       const output = sanitizeValue(input);
-      expect(output).toEqual([
-        '&lt;script&gt;',
-        'safe',
-        '&lt;img onerror&#x3D;x&gt;',
-      ]);
+      expect(output).toEqual(['&lt;script&gt;', 'safe', '&lt;img onerror&#x3D;x&gt;']);
     });
 
     it('should sanitize objects recursively', () => {
@@ -162,13 +158,7 @@ describe('sanitize utilities', () => {
     it('should handle mixed arrays', () => {
       const input = ['text', 123, true, null, { key: '<div>' }];
       const output = sanitizeValue(input);
-      expect(output).toEqual([
-        'text',
-        123,
-        true,
-        null,
-        { key: '&lt;div&gt;' },
-      ]);
+      expect(output).toEqual(['text', 123, true, null, { key: '&lt;div&gt;' }]);
     });
   });
 

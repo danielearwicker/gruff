@@ -62,11 +62,7 @@ export function success<T>(data: T, message?: string, metadata?: ResponseMetadat
 /**
  * Error response
  */
-export function error(
-  message: string,
-  code: string = 'ERROR',
-  details?: unknown
-): ApiResponse {
+export function error(message: string, code: string = 'ERROR', details?: unknown): ApiResponse {
   const response: ApiResponse = {
     success: false,
     error: message,
@@ -126,14 +122,20 @@ export function cursorPaginated<T>(
 /**
  * Created response (201)
  */
-export function created<T>(data: T, message: string = 'Resource created successfully'): ApiResponse<T> {
+export function created<T>(
+  data: T,
+  message: string = 'Resource created successfully'
+): ApiResponse<T> {
   return success(data, message);
 }
 
 /**
  * Updated response (200)
  */
-export function updated<T>(data: T, message: string = 'Resource updated successfully'): ApiResponse<T> {
+export function updated<T>(
+  data: T,
+  message: string = 'Resource updated successfully'
+): ApiResponse<T> {
   return success(data, message);
 }
 

@@ -536,7 +536,10 @@ export function generateOpenApiSpec() {
                       data: {
                         type: 'object',
                         properties: {
-                          entities: { type: 'array', items: { $ref: '#/components/schemas/Entity' } },
+                          entities: {
+                            type: 'array',
+                            items: { $ref: '#/components/schemas/Entity' },
+                          },
                           links: { type: 'array', items: { $ref: '#/components/schemas/Link' } },
                         },
                       },
@@ -992,7 +995,10 @@ export function generateOpenApiSpec() {
                                   items: {
                                     type: 'object',
                                     properties: {
-                                      type: { type: 'string', enum: ['added', 'removed', 'changed'] },
+                                      type: {
+                                        type: 'string',
+                                        enum: ['added', 'removed', 'changed'],
+                                      },
                                       path: { type: 'string' },
                                       oldValue: {},
                                       newValue: {},
@@ -2023,7 +2029,12 @@ export function generateOpenApiSpec() {
           required: ['email', 'password'],
           properties: {
             email: { type: 'string', format: 'email', example: 'user@example.com' },
-            password: { type: 'string', minLength: 8, maxLength: 128, example: 'securePassword123' },
+            password: {
+              type: 'string',
+              minLength: 8,
+              maxLength: 128,
+              example: 'securePassword123',
+            },
             display_name: { type: 'string', maxLength: 255, example: 'John Doe' },
           },
         },
@@ -2104,7 +2115,11 @@ export function generateOpenApiSpec() {
             name: { type: 'string' },
             category: { type: 'string', enum: ['entity', 'link'] },
             description: { type: 'string', nullable: true },
-            json_schema: { type: 'string', nullable: true, description: 'JSON Schema stored as string' },
+            json_schema: {
+              type: 'string',
+              nullable: true,
+              description: 'JSON Schema stored as string',
+            },
             created_at: { type: 'integer' },
             created_by: { type: 'string', format: 'uuid' },
           },
@@ -2203,7 +2218,10 @@ export function generateOpenApiSpec() {
             source_entity_id: { type: 'string', format: 'uuid' },
             target_entity_id: { type: 'string', format: 'uuid' },
             properties: { type: 'object' },
-            property_filters: { type: 'array', items: { $ref: '#/components/schemas/PropertyFilter' } },
+            property_filters: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/PropertyFilter' },
+            },
             filter_expression: { type: 'object' },
             created_after: { type: 'integer' },
             created_before: { type: 'integer' },
@@ -2217,10 +2235,29 @@ export function generateOpenApiSpec() {
           type: 'object',
           required: ['path', 'operator'],
           properties: {
-            path: { type: 'string', description: 'JSON path (e.g., "name", "address.city", "tags[0]")' },
+            path: {
+              type: 'string',
+              description: 'JSON path (e.g., "name", "address.city", "tags[0]")',
+            },
             operator: {
               type: 'string',
-              enum: ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'like', 'ilike', 'starts_with', 'ends_with', 'contains', 'in', 'not_in', 'exists', 'not_exists'],
+              enum: [
+                'eq',
+                'ne',
+                'gt',
+                'lt',
+                'gte',
+                'lte',
+                'like',
+                'ilike',
+                'starts_with',
+                'ends_with',
+                'contains',
+                'in',
+                'not_in',
+                'exists',
+                'not_exists',
+              ],
             },
             value: { description: 'Value to compare (optional for exists/not_exists)' },
           },

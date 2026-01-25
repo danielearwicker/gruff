@@ -64,7 +64,7 @@ function getClientIP(c: Context): string {
   const forwardedFor = c.req.header('X-Forwarded-For');
   if (forwardedFor) {
     // X-Forwarded-For can contain multiple IPs, the first is the client
-    const ips = forwardedFor.split(',').map((ip) => ip.trim());
+    const ips = forwardedFor.split(',').map(ip => ip.trim());
     if (ips.length > 0 && ips[0]) {
       return ips[0];
     }
@@ -129,7 +129,13 @@ export function rateLimit(options: RateLimitMiddlewareOptions = {}) {
     const category = options.category || getEndpointCategory(c.req.method, c.req.path);
 
     // Check rate limit with environment-aware limits
-    const result = await checkRateLimit(c.env.KV, identifier, category, options.config, c.env.ENVIRONMENT);
+    const result = await checkRateLimit(
+      c.env.KV,
+      identifier,
+      category,
+      options.config,
+      c.env.ENVIRONMENT
+    );
 
     // Set rate limit headers on all responses
     setRateLimitHeaders(c, result);
@@ -146,16 +152,12 @@ export function rateLimit(options: RateLimitMiddlewareOptions = {}) {
       c.header('Retry-After', result.retryAfter.toString());
 
       return c.json(
-        response.error(
-          'Rate limit exceeded. Please try again later.',
-          'RATE_LIMIT_EXCEEDED',
-          {
-            limit: result.limit,
-            remaining: result.remaining,
-            resetAt: new Date(result.resetAt).toISOString(),
-            retryAfter: result.retryAfter,
-          }
-        ),
+        response.error('Rate limit exceeded. Please try again later.', 'RATE_LIMIT_EXCEEDED', {
+          limit: result.limit,
+          remaining: result.remaining,
+          resetAt: new Date(result.resetAt).toISOString(),
+          retryAfter: result.retryAfter,
+        }),
         429
       );
     }

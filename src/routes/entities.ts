@@ -1,6 +1,13 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createEntitySchema, updateEntitySchema, entityQuerySchema, CreateEntity, UpdateEntity, EntityQuery } from '../schemas/index.js';
+import {
+  createEntitySchema,
+  updateEntitySchema,
+  entityQuerySchema,
+  CreateEntity,
+  UpdateEntity,
+  EntityQuery,
+} from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -37,9 +44,13 @@ function getCurrentTimestamp(): number {
 }
 
 // Helper function to find the latest version of an entity by any ID in its version chain
-async function findLatestVersion(db: D1Database, entityId: string): Promise<Record<string, unknown> | null> {
+async function findLatestVersion(
+  db: D1Database,
+  entityId: string
+): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
-  const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
+  const entity = await db
+    .prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
     .first();
 
@@ -49,7 +60,9 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
 
   // If not found, this ID might be an old version. Find all entities that reference this ID
   // in their version chain and get the one with is_latest = 1
-  const result = await db.prepare(`
+  const result = await db
+    .prepare(
+      `
     WITH RECURSIVE version_chain AS (
       -- Start with the given ID
       SELECT * FROM entities WHERE id = ?
@@ -59,7 +72,10 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
       INNER JOIN version_chain vc ON e.previous_version_id = vc.id
     )
     SELECT * FROM version_chain WHERE is_latest = 1 LIMIT 1
-  `).bind(entityId).first();
+  `
+    )
+    .bind(entityId)
+    .first();
 
   return result || null;
 }
@@ -68,7 +84,7 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
  * POST /api/entities
  * Create a new entity
  */
-entities.post('/', validateJson(createEntitySchema), async (c) => {
+entities.post('/', validateJson(createEntitySchema), async c => {
   const data = c.get('validated_json') as CreateEntity;
   const db = c.env.DB;
 
@@ -80,7 +96,8 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
 
   try {
     // Check if type_id exists and get its json_schema
-    const typeRecord = await db.prepare('SELECT id, json_schema FROM types WHERE id = ?')
+    const typeRecord = await db
+      .prepare('SELECT id, json_schema FROM types WHERE id = ?')
       .bind(data.type_id)
       .first();
 
@@ -109,21 +126,18 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
     const propertiesString = JSON.stringify(data.properties);
 
     // Insert the new entity (version 1)
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1)
-    `).bind(
-      id,
-      data.type_id,
-      propertiesString,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(id, data.type_id, propertiesString, now, systemUserId)
+      .run();
 
     // Fetch the created entity
-    const created = await db.prepare('SELECT * FROM entities WHERE id = ?')
-      .bind(id)
-      .first();
+    const created = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first();
 
     // Parse properties back to object
     const result = {
@@ -141,12 +155,16 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
       });
     } catch (auditError) {
       // Log but don't fail the request if audit logging fails
-      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     return c.json(response.created(result), 201);
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error creating entity', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error creating entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -155,7 +173,7 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
  * GET /api/entities
  * List entities with optional filtering and cursor-based pagination
  */
-entities.get('/', validateQuery(entityQuerySchema), async (c) => {
+entities.get('/', validateQuery(entityQuerySchema), async c => {
   const query = c.get('validated_query') as EntityQuery;
   const db = c.env.DB;
 
@@ -224,7 +242,9 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
         }
       } catch {
         // Invalid cursor format, ignore and continue without cursor
-        getLogger(c).child({ module: 'entities' }).warn('Invalid cursor format', { cursor: query.cursor });
+        getLogger(c)
+          .child({ module: 'entities' })
+          .warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
 
@@ -235,7 +255,10 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
     sql += ' LIMIT ?';
     bindings.push(limit + 1);
 
-    const { results } = await db.prepare(sql).bind(...bindings).all();
+    const { results } = await db
+      .prepare(sql)
+      .bind(...bindings)
+      .all();
 
     // Check if there are more results
     const hasMore = results.length > limit;
@@ -276,7 +299,9 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(fieldSelection.data, nextCursor, hasMore));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error listing entities', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error listing entities', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -292,7 +317,7 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
  * Cache is invalidated when entity is updated, deleted, or restored.
  * Note: Field selection is applied after cache retrieval for consistency.
  */
-entities.get('/:id', async (c) => {
+entities.get('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
@@ -368,7 +393,9 @@ entities.get('/:id', async (c) => {
 
     return c.json(responseData);
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching entity', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -377,7 +404,7 @@ entities.get('/:id', async (c) => {
  * PUT /api/entities/:id
  * Update entity (creates new version)
  */
-entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
+entities.put('/:id', validateJson(updateEntitySchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateEntity;
   const db = c.env.DB;
@@ -395,13 +422,17 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
     // Check if entity is soft-deleted
     if (currentVersion.is_deleted === 1) {
       return c.json(
-        response.error('Cannot update deleted entity. Use restore endpoint first.', 'ENTITY_DELETED'),
+        response.error(
+          'Cannot update deleted entity. Use restore endpoint first.',
+          'ENTITY_DELETED'
+        ),
         409
       );
     }
 
     // Fetch the type's JSON schema for validation
-    const typeRecord = await db.prepare('SELECT json_schema FROM types WHERE id = ?')
+    const typeRecord = await db
+      .prepare('SELECT json_schema FROM types WHERE id = ?')
       .bind(currentVersion.type_id)
       .first();
 
@@ -428,28 +459,32 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
 
     // Start a transaction-like operation by updating in order
     // First, set current version's is_latest to false
-    await db.prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
+    await db
+      .prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
       .bind(currentVersion.id)
       .run();
 
     // Then insert new version with new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      propertiesString,
-      newVersion,
-      currentVersion.id, // previous_version_id references the previous row's id
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        propertiesString,
+        newVersion,
+        currentVersion.id, // previous_version_id references the previous row's id
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the new version
-    const updated = await db.prepare('SELECT * FROM entities WHERE id = ?')
-      .bind(newId)
-      .first();
+    const updated = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(newId).first();
 
     const result = {
       ...updated,
@@ -462,12 +497,16 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
     try {
       await logEntityOperation(db, c, 'update', newId, systemUserId, {
         previous_version_id: currentVersion.id,
-        old_properties: currentVersion.properties ? JSON.parse(currentVersion.properties as string) : {},
+        old_properties: currentVersion.properties
+          ? JSON.parse(currentVersion.properties as string)
+          : {},
         new_properties: data.properties,
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -478,12 +517,16 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
         invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.updated(result));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error updating entity', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error updating entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -492,7 +535,7 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
  * DELETE /api/entities/:id
  * Soft delete entity (creates new version with is_deleted = true)
  */
-entities.delete('/:id', async (c) => {
+entities.delete('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const now = getCurrentTimestamp();
@@ -508,33 +551,36 @@ entities.delete('/:id', async (c) => {
 
     // Check if already soft-deleted
     if (currentVersion.is_deleted === 1) {
-      return c.json(
-        response.error('Entity is already deleted', 'ALREADY_DELETED'),
-        409
-      );
+      return c.json(response.error('Entity is already deleted', 'ALREADY_DELETED'), 409);
     }
 
     const newVersion = (currentVersion.version as number) + 1;
     const newId = generateUUID();
 
     // Set current version's is_latest to false
-    await db.prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
+    await db
+      .prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
       .bind(currentVersion.id)
       .run();
 
     // Insert new version with is_deleted = 1 and new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      currentVersion.properties,
-      newVersion,
-      currentVersion.id,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        currentVersion.properties,
+        newVersion,
+        currentVersion.id,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Log the delete operation
     try {
@@ -544,7 +590,9 @@ entities.delete('/:id', async (c) => {
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -554,12 +602,16 @@ entities.delete('/:id', async (c) => {
         invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.deleted());
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error deleting entity', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error deleting entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -568,7 +620,7 @@ entities.delete('/:id', async (c) => {
  * POST /api/entities/:id/restore
  * Restore a soft-deleted entity (creates new version with is_deleted = false)
  */
-entities.post('/:id/restore', async (c) => {
+entities.post('/:id/restore', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const now = getCurrentTimestamp();
@@ -584,38 +636,39 @@ entities.post('/:id/restore', async (c) => {
 
     // Check if entity is not deleted
     if (currentVersion.is_deleted === 0) {
-      return c.json(
-        response.error('Entity is not deleted', 'NOT_DELETED'),
-        409
-      );
+      return c.json(response.error('Entity is not deleted', 'NOT_DELETED'), 409);
     }
 
     const newVersion = (currentVersion.version as number) + 1;
     const newId = generateUUID();
 
     // Set current version's is_latest to false
-    await db.prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
+    await db
+      .prepare('UPDATE entities SET is_latest = 0 WHERE id = ?')
       .bind(currentVersion.id)
       .run();
 
     // Insert new version with is_deleted = 0 and new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      currentVersion.properties,
-      newVersion,
-      currentVersion.id,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        currentVersion.properties,
+        newVersion,
+        currentVersion.id,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the restored version
-    const restored = await db.prepare('SELECT * FROM entities WHERE id = ?')
-      .bind(newId)
-      .first();
+    const restored = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(newId).first();
 
     const result = {
       ...restored,
@@ -632,7 +685,9 @@ entities.post('/:id/restore', async (c) => {
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -642,12 +697,16 @@ entities.post('/:id/restore', async (c) => {
         invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.success(result, 'Entity restored successfully'));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error restoring entity', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error restoring entity', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -656,7 +715,7 @@ entities.post('/:id/restore', async (c) => {
  * GET /api/entities/:id/versions
  * Get all versions of an entity
  */
-entities.get('/:id/versions', async (c) => {
+entities.get('/:id/versions', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -669,7 +728,9 @@ entities.get('/:id/versions', async (c) => {
     }
 
     // Now get all versions in the chain using recursive CTE
-    const { results } = await db.prepare(`
+    const { results } = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1 (no previous_version_id)
         SELECT * FROM entities
@@ -695,7 +756,10 @@ entities.get('/:id/versions', async (c) => {
         INNER JOIN version_chain vc ON e.previous_version_id = vc.id
       )
       SELECT * FROM version_chain ORDER BY version ASC
-    `).bind(id, id).all();
+    `
+      )
+      .bind(id, id)
+      .all();
 
     // Parse properties for each version
     const versions = results.map(entity => ({
@@ -707,7 +771,9 @@ entities.get('/:id/versions', async (c) => {
 
     return c.json(response.success(versions));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching entity versions', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching entity versions', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -716,7 +782,7 @@ entities.get('/:id/versions', async (c) => {
  * GET /api/entities/:id/versions/:version
  * Get a specific version of an entity
  */
-entities.get('/:id/versions/:version', async (c) => {
+entities.get('/:id/versions/:version', async c => {
   const id = c.req.param('id');
   const versionParam = c.req.param('version');
   const db = c.env.DB;
@@ -736,7 +802,9 @@ entities.get('/:id/versions/:version', async (c) => {
     }
 
     // Find the specific version in the chain
-    const entity = await db.prepare(`
+    const entity = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1
         SELECT * FROM entities
@@ -762,7 +830,10 @@ entities.get('/:id/versions/:version', async (c) => {
         INNER JOIN version_chain vc ON e.previous_version_id = vc.id
       )
       SELECT * FROM version_chain WHERE version = ? LIMIT 1
-    `).bind(id, id, versionNumber).first();
+    `
+      )
+      .bind(id, id, versionNumber)
+      .first();
 
     if (!entity) {
       return c.json(response.notFound('Version'), 404);
@@ -777,7 +848,9 @@ entities.get('/:id/versions/:version', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching entity version', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching entity version', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -786,7 +859,7 @@ entities.get('/:id/versions/:version', async (c) => {
  * GET /api/entities/:id/history
  * Get version history with diffs showing what changed between versions
  */
-entities.get('/:id/history', async (c) => {
+entities.get('/:id/history', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -799,7 +872,9 @@ entities.get('/:id/history', async (c) => {
     }
 
     // Get all versions in order
-    const { results } = await db.prepare(`
+    const { results } = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1
         SELECT * FROM entities
@@ -825,7 +900,10 @@ entities.get('/:id/history', async (c) => {
         INNER JOIN version_chain vc ON e.previous_version_id = vc.id
       )
       SELECT * FROM version_chain ORDER BY version ASC
-    `).bind(id, id).all();
+    `
+      )
+      .bind(id, id)
+      .all();
 
     // Calculate diffs between consecutive versions
     const history = results.map((entity, index) => {
@@ -854,7 +932,9 @@ entities.get('/:id/history', async (c) => {
 
     return c.json(response.success(history));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching entity history', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching entity history', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -862,7 +942,10 @@ entities.get('/:id/history', async (c) => {
 /**
  * Helper function to calculate differences between two JSON objects
  */
-function calculateDiff(oldObj: Record<string, unknown>, newObj: Record<string, unknown>): {
+function calculateDiff(
+  oldObj: Record<string, unknown>,
+  newObj: Record<string, unknown>
+): {
   added: Record<string, unknown>;
   removed: Record<string, unknown>;
   changed: Record<string, unknown>;
@@ -899,7 +982,7 @@ function calculateDiff(oldObj: Record<string, unknown>, newObj: Record<string, u
  * GET /api/entities/:id/outbound
  * Get all outbound links from an entity
  */
-entities.get('/:id/outbound', async (c) => {
+entities.get('/:id/outbound', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -939,7 +1022,10 @@ entities.get('/:id/outbound', async (c) => {
 
     sql += ' ORDER BY l.created_at DESC';
 
-    const { results } = await db.prepare(sql).bind(...bindings).all();
+    const { results } = await db
+      .prepare(sql)
+      .bind(...bindings)
+      .all();
 
     // Parse properties for each link and target entity
     const linksData = results.map(link => ({
@@ -958,12 +1044,14 @@ entities.get('/:id/outbound', async (c) => {
         id: link.target_entity_id,
         type_id: link.target_type_id,
         properties: link.target_properties ? JSON.parse(link.target_properties as string) : {},
-      }
+      },
     }));
 
     return c.json(response.success(linksData));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching outbound links', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching outbound links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -972,7 +1060,7 @@ entities.get('/:id/outbound', async (c) => {
  * GET /api/entities/:id/inbound
  * Get all inbound links to an entity
  */
-entities.get('/:id/inbound', async (c) => {
+entities.get('/:id/inbound', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -1012,7 +1100,10 @@ entities.get('/:id/inbound', async (c) => {
 
     sql += ' ORDER BY l.created_at DESC';
 
-    const { results } = await db.prepare(sql).bind(...bindings).all();
+    const { results } = await db
+      .prepare(sql)
+      .bind(...bindings)
+      .all();
 
     // Parse properties for each link and source entity
     const linksData = results.map(link => ({
@@ -1031,12 +1122,14 @@ entities.get('/:id/inbound', async (c) => {
         id: link.source_entity_id,
         type_id: link.source_type_id,
         properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
-      }
+      },
     }));
 
     return c.json(response.success(linksData));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching inbound links', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching inbound links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -1045,7 +1138,7 @@ entities.get('/:id/inbound', async (c) => {
  * GET /api/entities/:id/neighbors
  * Get all connected entities (both inbound and outbound)
  */
-entities.get('/:id/neighbors', async (c) => {
+entities.get('/:id/neighbors', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -1103,7 +1196,8 @@ entities.get('/:id/neighbors', async (c) => {
         outboundBindings.push(entityTypeId);
       }
 
-      const { results: outboundResults } = await db.prepare(outboundSql)
+      const { results: outboundResults } = await db
+        .prepare(outboundSql)
         .bind(...outboundBindings)
         .all();
 
@@ -1148,7 +1242,8 @@ entities.get('/:id/neighbors', async (c) => {
         inboundBindings.push(entityTypeId);
       }
 
-      const { results: inboundResults } = await db.prepare(inboundSql)
+      const { results: inboundResults } = await db
+        .prepare(inboundSql)
         .bind(...inboundBindings)
         .all();
 
@@ -1171,7 +1266,7 @@ entities.get('/:id/neighbors', async (c) => {
           created_by: neighbor.created_by,
           is_deleted: neighbor.is_deleted === 1,
           is_latest: neighbor.is_latest === 1,
-          connections: []
+          connections: [],
         });
       }
 
@@ -1179,8 +1274,10 @@ entities.get('/:id/neighbors', async (c) => {
       uniqueNeighborsMap.get(neighborId).connections.push({
         link_id: neighbor.link_id,
         link_type_id: neighbor.link_type_id,
-        link_properties: neighbor.link_properties ? JSON.parse(neighbor.link_properties as string) : {},
-        direction: neighbor.direction
+        link_properties: neighbor.link_properties
+          ? JSON.parse(neighbor.link_properties as string)
+          : {},
+        direction: neighbor.direction,
       });
     }
 
@@ -1188,7 +1285,9 @@ entities.get('/:id/neighbors', async (c) => {
 
     return c.json(response.success(neighborsData));
   } catch (error) {
-    getLogger(c).child({ module: 'entities' }).error('Error fetching neighbors', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching neighbors', error instanceof Error ? error : undefined);
     throw error;
   }
 });

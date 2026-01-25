@@ -5,7 +5,7 @@ import { generateOpenApiSpec } from '../openapi/index.js';
 const docs = new Hono();
 
 // Serve the OpenAPI spec as JSON
-docs.get('/openapi.json', (c) => {
+docs.get('/openapi.json', c => {
   const spec = generateOpenApiSpec();
   return c.json(spec);
 });

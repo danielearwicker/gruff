@@ -5,6 +5,7 @@
 A graph database system built on Cloudflare D1 (SQLite) that supports versioned entities and relationships, user management, and flexible schema through JSON properties. The system provides a RESTful API built with Cloudflare Workers and TypeScript for managing entities, links, and their relationships while maintaining full audit history.
 
 ### Platform: Cloudflare Workers + D1
+
 - **Cloudflare Workers**: Serverless runtime for the API layer
 - **Cloudflare D1**: SQLite-based edge database with 10GB capacity per database
 - **Cloudflare KV**: Key-value store for caching and session management
@@ -13,24 +14,28 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ## Core Concepts
 
 ### Entities
+
 - Fundamental nodes in the graph
 - Have a type, custom JSON properties, and versioning
 - Support soft deletion
 - Every modification creates a new version referencing the previous one
 
 ### Links
+
 - Directed relationships between entities
 - Have a type, custom JSON properties, and versioning
 - Connect a source entity to a target entity
 - Support soft deletion
 
 ### Versioning
+
 - Immutable history: updates create new records
 - Each version references its predecessor via FK
 - Track user and timestamp for every change
 - Enable point-in-time queries and audit trails
 
 ### Types
+
 - Centralized type registry for both entities and links
 - Documents all extant types in the system
 - Enables type-based queries and validation
@@ -40,6 +45,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### ✅ Core Tables Structure
 
 #### `users` Table
+
 ```sql
 - id (TEXT, PK) -- UUID stored as TEXT
 - email (TEXT, UNIQUE, NOT NULL)
@@ -53,6 +59,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ```
 
 #### `types` Table
+
 ```sql
 - id (TEXT, PK) -- UUID stored as TEXT
 - name (TEXT, UNIQUE, NOT NULL)
@@ -64,6 +71,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ```
 
 #### `entities` Table
+
 ```sql
 - id (TEXT, PK) -- UUID stored as TEXT
 - type_id (TEXT, FK -> types.id, NOT NULL)
@@ -77,6 +85,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ```
 
 #### `links` Table
+
 ```sql
 - id (TEXT, PK) -- UUID stored as TEXT
 - type_id (TEXT, FK -> types.id, NOT NULL)
@@ -92,6 +101,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ```
 
 ### ✅ Database Indexes
+
 - Composite index on `entities(type_id, is_latest, is_deleted)` for filtered queries
 - Composite index on `links(source_entity_id, is_latest, is_deleted)` for graph traversal
 - Composite index on `links(target_entity_id, is_latest, is_deleted)` for reverse traversal
@@ -100,6 +110,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Index on `entities.created_at` and `links.created_at` for time-based queries
 
 ### Database Constraints and Triggers
+
 - ✅ Check constraint: `version > 0`
 - ✅ Trigger to auto-increment version on insert
 - ✅ Trigger to set `is_latest = false` on previous version when new version is created
@@ -110,18 +121,21 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### Local Authentication - Core Infrastructure
 
 #### ✅ Password Hashing Utility
+
 - Implement password hashing using Web Crypto API (PBKDF2)
 - Create utility functions for hashing and verifying passwords
 - Use appropriate iteration counts and salt generation
 - Timing-safe comparison to prevent timing attacks
 
 #### ✅ JWT Token Service
+
 - Implement JWT creation and validation using Web Crypto API
 - Support both access tokens (short-lived) and refresh tokens (long-lived)
 - Include user ID and metadata in token payload
 - Token expiration and renewal logic
 
 #### ✅ KV-based Session Store
+
 - Set up Cloudflare KV binding for session management
 - Store refresh tokens with TTL in KV
 - Implement token invalidation (logout) functionality
@@ -130,6 +144,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### Local Authentication - API Endpoints
 
 #### ✅ User Registration Endpoint
+
 - POST /api/auth/register endpoint
 - Email and password validation using Zod
 - Create user record in database
@@ -137,6 +152,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Return access and refresh tokens
 
 #### ✅ User Login Endpoint
+
 - POST /api/auth/login endpoint
 - Verify email and password
 - Generate access and refresh tokens
@@ -144,6 +160,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Return tokens and user info
 
 #### ✅ Token Refresh Endpoint
+
 - POST /api/auth/refresh endpoint
 - Validate refresh token JWT signature and expiration
 - Validate refresh token exists in KV store
@@ -151,11 +168,13 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Return new access token with same refresh token
 
 #### ✅ Logout Endpoint
+
 - POST /api/auth/logout endpoint
 - Invalidate refresh token in KV
 - Clear session data
 
 #### ✅ Current User Endpoint
+
 - GET /api/auth/me endpoint
 - Return authenticated user's profile
 - Require valid JWT in Authorization header
@@ -163,12 +182,14 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### Authorization Infrastructure
 
 #### ✅ JWT Authentication Middleware
+
 - Middleware to extract and validate JWT from Authorization header
 - Parse Bearer token format
 - Verify token signature and expiration
 - Attach user context to request
 
 #### ✅ Protected Route Patterns
+
 - Apply authentication middleware to protected endpoints
 - Consistent error responses for unauthorized requests
 - Optional vs required authentication support
@@ -176,6 +197,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 ### OAuth2 Integration
 
 #### ✅ OAuth2 - Google Provider
+
 - Google OAuth2 sign-in flow
   - GET /api/auth/google - Initiates OAuth flow, returns authorization URL with PKCE
   - GET /api/auth/google/callback - Handles OAuth callback with authorization code
@@ -196,6 +218,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - GOOGLE_REDIRECT_URI - Callback URL for OAuth flow
 
 #### ✅ OAuth2 - GitHub Provider
+
 - GitHub OAuth2 sign-in flow
   - GET /api/auth/github - Initiates OAuth flow, returns authorization URL with state parameter
   - GET /api/auth/github/callback - Handles OAuth callback with authorization code
@@ -216,6 +239,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - GITHUB_REDIRECT_URI - Callback URL for OAuth flow
 
 #### ✅ OAuth2 - Auth Providers Discovery
+
 - GET /api/auth/providers endpoint to list available providers
   - Returns all authentication providers (local, Google, GitHub, etc.)
   - Indicates which providers are enabled based on environment configuration
@@ -223,6 +247,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - Allows clients to dynamically discover available authentication methods
 
 #### 🟦 OAuth2 - Additional Providers
+
 - Support for Microsoft, Apple, or other OIDC-compliant providers
 - Configurable provider registry for easy addition of new OAuth providers
 
@@ -277,30 +302,39 @@ GET    /api/links/{id}/history            # Get version history with diffs
 ### Graph Navigation Endpoints
 
 #### ✅ Basic Graph Navigation - Outbound Links
+
 ```
 GET    /api/entities/{id}/outbound        # Get outbound links from an entity
 ```
+
 Returns all links where the specified entity is the source, with optional filtering by link type.
 
 #### ✅ Basic Graph Navigation - Inbound Links
+
 ```
 GET    /api/entities/{id}/inbound         # Get inbound links to an entity
 ```
+
 Returns all links where the specified entity is the target, with optional filtering by link type.
 
 #### ✅ Basic Graph Navigation - Neighbors
+
 ```
 GET    /api/entities/{id}/neighbors       # Get connected entities
 ```
+
 Returns all entities connected to the specified entity (both inbound and outbound), with optional filtering by link type, entity type, and direction.
 
 #### Advanced Graph Traversal
 
 ##### ✅ Multi-hop Traversal Endpoint
+
 ```
 POST   /api/graph/traverse                # Advanced graph traversal queries
 ```
+
 Implement POST /api/graph/traverse endpoint that supports:
+
 - Configurable depth limits (max hops from starting entity)
 - Direction specification (outbound, inbound, or both)
 - Link type filtering at each hop
@@ -308,7 +342,9 @@ Implement POST /api/graph/traverse endpoint that supports:
 - Return entities and the paths that led to them
 
 ##### ✅ Breadth-First Search Implementation
+
 Core traversal algorithm:
+
 - BFS traversal starting from a given entity
 - Track visited entities to avoid cycles
 - Respect depth limits
@@ -316,10 +352,13 @@ Core traversal algorithm:
 - Collect and return matching entities with metadata
 
 ##### ✅ Shortest Path Finding
+
 ```
 GET    /api/graph/path                    # Find shortest path between entities
 ```
+
 Find the shortest path between two entities in the graph:
+
 - BFS-based shortest path algorithm
 - Query parameters: from (entity ID), to (entity ID)
 - Optional link type filtering
@@ -329,30 +368,39 @@ Find the shortest path between two entities in the graph:
 ### Search and Query Endpoints
 
 #### ✅ Basic Entity Search
+
 ```
 POST   /api/search/entities        # Search entities by JSON properties
 ```
+
 Implement basic entity search endpoint:
+
 - Accept search criteria in request body (type filter, property filters, date range)
 - Support basic equality matching on JSON properties
 - Return paginated results
 - Include entity type information in results
 
 #### ✅ Basic Link Search
+
 ```
 POST   /api/search/links           # Search links by JSON properties
 ```
+
 Implement basic link search endpoint:
+
 - Accept search criteria in request body (type filter, property filters, source/target entity filters)
 - Support basic equality matching on JSON properties
 - Return paginated results
 - Include link type and connected entity information in results
 
 #### ✅ Type-ahead Suggestions
+
 ```
 GET    /api/search/suggest         # Type-ahead suggestions for entity names
 ```
+
 Implement type-ahead suggestion endpoint:
+
 - Search entity properties for partial matches
 - Return quick results (limit 10) for autocomplete UIs
 - Support configurable property path for searching (e.g., "name", "title")
@@ -370,12 +418,14 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 ## Core Features
 
 ### ✅ Pagination System
+
 - Cursor-based pagination for all list endpoints
 - Support for page size configuration (limit parameter)
 - Include total count in responses (optional, for performance)
 - Default (20) and max (100) page size limits
 
 ### ✅ Filtering System
+
 - Filter entities/links by type
 - Filter by creation date range
 - Filter by creator
@@ -387,6 +437,7 @@ GET    /api/users/{id}/activity    # Get user's creation/edit history
 This feature enhances property filtering capabilities beyond basic equality matching.
 
 #### ✅ Comparison Operators for JSON Properties
+
 - Support comparison operators: `eq` (equals), `ne` (not equals), `gt` (greater than), `lt` (less than), `gte` (greater than or equal), `lte` (less than or equal)
 - Support string pattern matching: `like` (SQL LIKE), `ilike` (case-insensitive LIKE), `starts_with`, `ends_with`, `contains`
 - Support set operations: `in` (value in array), `not_in` (value not in array)
@@ -396,6 +447,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Implemented via `property_filters` parameter in search endpoints with backward compatibility for legacy `properties` parameter
 
 #### ✅ Nested Property Path Support
+
 - Support dot notation for nested JSON properties (e.g., `address.city`, `metadata.tags.0`)
 - Support array indexing in JSON paths with bracket notation (`tags[0]`) and dot notation (`tags.0`)
 - Support mixed notation for complex paths (`users[0].address.city`, `orders.0.items.1.name`)
@@ -406,6 +458,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Implemented via `parseJsonPath()` function that converts user paths to SQLite-compatible JSON paths
 
 #### ✅ Logical Operators for Property Filters
+
 - Support AND/OR logic for combining multiple property filters via `filter_expression` field
 - Implement filter groups with nested conditions (maximum depth of 5 levels)
 - JSON schema for filter expressions: `{"and": [filter1, filter2]}`, `{"or": [filter1, filter2]}`, or nested `{"and": [filter1, {"or": [filter2, filter3]}]}`
@@ -414,6 +467,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Implemented via `buildFilterExpression()` function with recursive processing
 
 #### ✅ Generated Columns and Indexes
+
 - Migration `0006_generated_columns.sql` creates generated columns for frequently queried properties:
   - Entities: `prop_name` ($.name), `prop_status` ($.status), `prop_email` ($.email)
   - Links: `prop_role` ($.role), `prop_weight` ($.weight)
@@ -432,29 +486,34 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - `analyzeQueryPath()` - Analyze optimization potential for a query path
 
 ### ✅ Soft Delete Implementation
+
 - `is_deleted` flag on entities and links
 - Exclude soft-deleted items from default queries
 - Include deleted items with explicit query parameter
 - Restore functionality that creates new version with `is_deleted=false`
 
 ### ✅ Version History Diffing
+
 - Calculate differences between consecutive versions
 - Show what properties changed, were added, or removed
 - Support for JSON diff format
 - Human-readable change descriptions
 
 ### ✅ Graph Traversal - Basic Navigation
+
 - Get direct neighbors (outbound/inbound)
 - Filter by link type during traversal
 - Include entity and link properties in results
 
 ### ✅ Graph Traversal - Advanced Queries
+
 - Multi-hop traversal with depth limits
 - Path finding between two entities
 - Shortest path algorithms
 - Traversal with filtering at each step
 
 ### ✅ Bulk Operations
+
 - Batch create entities via POST /api/bulk/entities
 - Batch create links via POST /api/bulk/links
 - Batch update entities via PUT /api/bulk/entities
@@ -465,6 +524,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Client-provided IDs for reference correlation
 
 ### ✅ Export and Import
+
 - Export subgraph as JSON via GET /api/export
   - Filter by entity type IDs
   - Filter by creation date range
@@ -483,6 +543,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Validation during import with clear error codes
 
 ### ✅ Type Schema Validation
+
 - Optional JSON schema validation for entity/link properties
 - Validation on create and update for entities and links
 - Validation in bulk operations (create/update)
@@ -501,6 +562,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - allOf, anyOf, oneOf, not logical operators
 
 ### ✅ Audit Logging
+
 - Comprehensive audit log of all operations (create, update, delete, restore for entities and links)
 - Query audit logs by user, entity, date range via GET /api/audit endpoint
 - Get resource-specific audit history via GET /api/audit/resource/:resource_type/:resource_id
@@ -509,6 +571,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Compliance and security tracking
 
 ### ✅ Rate Limiting
+
 - Per-user rate limits on API endpoints (using user ID when authenticated, IP address otherwise)
 - Configurable limits per endpoint category:
   - `auth`: 20 requests/minute (authentication endpoints)
@@ -525,6 +588,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Cloudflare's built-in rate limiting rules available as additional protection layer
 
 ### ✅ API Documentation
+
 - OpenAPI 3.1.0 specification available at `/docs/openapi.json`
 - Interactive API documentation UI using Scalar at `/docs`
 - Comprehensive endpoint documentation with request/response examples
@@ -539,6 +603,7 @@ A minimal, low-level administrative interface served directly by the Workers app
 ### 🟦 UI Architecture
 
 #### Server-Side Rendering
+
 - HTML pages served via new GET routes (e.g., `/ui`, `/ui/entities/:id`)
 - Lightweight, embedded HTML templates (no separate build process)
 - Progressive enhancement: works without JavaScript, enhanced with JS
@@ -546,6 +611,7 @@ A minimal, low-level administrative interface served directly by the Workers app
 - Minimal JavaScript for interactive features (vanilla JS, no framework dependencies)
 
 #### Route Structure
+
 - `/ui` or `/ui/` - Main dashboard/home page
 - `/ui/entities` - Entity list view with filters
 - `/ui/entities/:id` - Entity detail view
@@ -559,6 +625,7 @@ A minimal, low-level administrative interface served directly by the Workers app
 - `/ui/auth/login` - Login page (if not authenticated)
 
 #### Design Principles
+
 - Simple, functional, form-based interface
 - Tables for listing data (entities, links, versions)
 - Forms for CRUD operations
@@ -571,12 +638,14 @@ A minimal, low-level administrative interface served directly by the Workers app
 **Route:** `GET /ui` or `GET /ui/`
 
 #### Features
+
 - Welcome message and quick stats (total entities, links, types, users)
 - List of recently created entities (last 20)
 - List of recently updated entities (last 20)
 - Quick links to common actions (create entity, create link, browse types)
 
 #### Filtering Controls
+
 - **User filter:** Dropdown to filter by `created_by` or `updated_by` user
   - Shows all users from database
   - Option for "All users"
@@ -588,7 +657,9 @@ A minimal, low-level administrative interface served directly by the Workers app
   - Option for "All types"
 
 #### Entity Display
+
 Each entity in the list shows:
+
 - Entity ID (linked to detail page)
 - Type name (linked to type filter)
 - Preview of key properties (e.g., name, title if present)
@@ -602,6 +673,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/entities`
 
 #### Features
+
 - Paginated list of all entities (cursor-based pagination)
 - Same filtering controls as home page (user, time range, type)
 - Additional filters:
@@ -611,6 +683,7 @@ Each entity in the list shows:
 - Bulk selection for batch operations (future: bulk delete, bulk export)
 
 #### Table Columns
+
 - Checkbox (for selection)
 - Entity ID (truncated, linked)
 - Type name
@@ -628,6 +701,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/entities/:id`
 
 #### Entity Information Section
+
 - Full entity details in a definition list or card:
   - ID, Type (linked to type browser), Properties (formatted JSON)
   - Version, Previous version (linked if exists)
@@ -635,22 +709,26 @@ Each entity in the list shows:
   - Is latest, Is deleted status badges
 
 #### Properties Display
+
 - Pretty-printed JSON with syntax highlighting
 - Editable via "Edit Entity" button
 - Shows JSON schema validation rules if type has schema
 
 #### Outgoing Links Section
+
 - Table of all links where this entity is the source
 - Columns: Link ID, Link Type, Target Entity (linked), Properties preview, Created at
 - "Create new link from this entity" button
 - Each link row has View/Edit/Delete actions
 
 #### Incoming Links Section
+
 - Table of all links where this entity is the target
 - Columns: Link ID, Link Type, Source Entity (linked), Properties preview, Created at
 - Each link row has View/Edit/Delete actions
 
 #### Version History Section
+
 - Timeline of all versions of this entity
 - Each version shows:
   - Version number (linked to that version's detail view)
@@ -662,6 +740,7 @@ Each entity in the list shows:
 - If viewing an old version, show banner: "You are viewing version X. View latest version"
 
 #### Actions
+
 - Edit Entity button (navigates to edit form)
 - Delete Entity button (soft delete with confirmation)
 - Create New Version button
@@ -671,10 +750,12 @@ Each entity in the list shows:
 ### 🟦 Entity Create/Edit Forms
 
 **Routes:**
+
 - `GET /ui/entities/new` - Create form
 - `GET /ui/entities/:id/edit` - Edit form
 
 #### Form Structure
+
 - Type selection (dropdown, required) - only on create form
 - Properties editor:
   - Option 1: Large textarea with JSON editor
@@ -684,6 +765,7 @@ Each entity in the list shows:
 - Cancel and Save buttons
 
 #### Behavior
+
 - **Create:** POST to `/api/entities`, redirects to new entity detail page
 - **Edit:** Creates new version via POST to `/api/entities/:id/versions`
 - Shows validation errors inline
@@ -694,6 +776,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/links/:id`
 
 #### Link Information
+
 - Full link details:
   - ID, Type (linked to type browser)
   - Source Entity (linked to entity detail page)
@@ -704,14 +787,17 @@ Each entity in the list shows:
   - Is latest, Is deleted status badges
 
 #### Visual Representation
+
 - Simple diagram showing: [Source Entity] --[Link Type]--> [Target Entity]
 - Both entities clickable to navigate
 
 #### Version History
+
 - Similar to entity version history
 - Timeline of all versions of this link
 
 #### Actions
+
 - Edit Link button
 - Delete Link button (soft delete with confirmation)
 - Create New Version button
@@ -719,11 +805,13 @@ Each entity in the list shows:
 ### 🟦 Link Create/Edit Forms
 
 **Routes:**
+
 - `GET /ui/links/new` - Create form
 - `GET /ui/links/new?source=:entityId` - Create with pre-selected source
 - `GET /ui/links/:id/edit` - Edit form
 
 #### Form Structure
+
 - Link type selection (dropdown, required)
 - Source entity selection:
   - Entity ID input with autocomplete/search
@@ -735,6 +823,7 @@ Each entity in the list shows:
 - Cancel and Save buttons
 
 #### Behavior
+
 - **Create:** POST to `/api/links`, redirects to new link detail page
 - **Edit:** Creates new version via POST to `/api/links/:id/versions`
 
@@ -743,6 +832,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/types`
 
 #### Features
+
 - List of all registered types (entities and links)
 - Filter by category (entity/link)
 - Each type shows:
@@ -758,6 +848,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/entities/:id/versions/:v1/compare/:v2`
 
 #### Features
+
 - Side-by-side comparison of two versions
 - Highlighted differences in properties
 - Show what changed (added, removed, modified fields)
@@ -768,6 +859,7 @@ Each entity in the list shows:
 **Route:** `GET /ui/search`
 
 #### Features
+
 - Simple search form with property filters
 - Uses `/api/search/entities` and `/api/search/links` endpoints
 - Filter builder UI for complex queries
@@ -777,17 +869,20 @@ Each entity in the list shows:
 ### 🟦 Authentication Integration
 
 #### Login Page
+
 - If user accesses `/ui/*` without authentication, redirect to `/ui/auth/login`
 - Simple login form (email/password)
 - OAuth provider buttons (Google, GitHub)
 - "Register new account" link
 
 #### User Context
+
 - Show logged-in user in header/navbar
 - Logout button
 - Created/updated records automatically attributed to current user
 
 #### Permission Levels (Future)
+
 - All authenticated users can read
 - Only specific users can create/edit/delete
 - Admin-only features (user management, type creation)
@@ -795,11 +890,13 @@ Each entity in the list shows:
 ### 🟦 Technical Implementation
 
 #### Routing Strategy
+
 - New Hono router mounted at `/ui`
 - Separate from `/api` routes but in same Worker
 - Returns HTML responses with `Content-Type: text/html`
 
 #### HTML Templating
+
 - Simple template literal functions (no template engine needed)
 - Example:
   ```typescript
@@ -812,6 +909,7 @@ Each entity in the list shows:
 - Escape user content to prevent XSS
 
 #### Styling Approach
+
 - Embedded CSS in `<style>` tags or inline
 - Simple, clean design (inspired by GitHub, Linear, or system defaults)
 - CSS variables for theming
@@ -819,6 +917,7 @@ Each entity in the list shows:
 - No external CSS framework (keep it lightweight)
 
 #### Client-Side JavaScript
+
 - Minimal vanilla JavaScript for:
   - Form validation and enhancement
   - AJAX requests for autocomplete
@@ -828,11 +927,13 @@ Each entity in the list shows:
 - Progressive enhancement (works without JS)
 
 #### Data Fetching
+
 - UI routes call internal API functions directly (no HTTP round-trip)
 - Reuse existing route handlers and utilities
 - Share validation, auth, and business logic with API
 
 #### Asset Serving
+
 - No separate static assets
 - All HTML/CSS/JS embedded in route responses
 - Potential small embedded icons (SVG inline or data URIs)
@@ -840,12 +941,14 @@ Each entity in the list shows:
 ### 🟦 UI Feature Checklist
 
 #### Navigation and Layout
+
 - Header with app title, user menu, logout
 - Main navigation menu (Home, Entities, Links, Types, Search)
 - Breadcrumb trail for current location
 - Footer with version info and API docs link
 
 #### Entity Management
+
 - Create entity form with type selection
 - Edit entity form (creates new version)
 - Delete entity (soft delete with confirmation)
@@ -855,6 +958,7 @@ Each entity in the list shows:
 - Filter and search entities
 
 #### Link Management
+
 - Create link form with source/target selection
 - Edit link form (creates new version)
 - Delete link (soft delete with confirmation)
@@ -862,6 +966,7 @@ Each entity in the list shows:
 - Browse link version history
 
 #### User Experience
+
 - Responsive design (mobile and desktop)
 - Loading states for async operations
 - Success/error notifications (toast or inline)
@@ -870,6 +975,7 @@ Each entity in the list shows:
 - Dark mode support (optional, using CSS prefers-color-scheme)
 
 #### Performance
+
 - Server-side pagination for large lists
 - Lazy loading for version history
 - Minimal JavaScript bundle size
@@ -877,42 +983,45 @@ Each entity in the list shows:
 
 ### 🟦 UI Routes Summary
 
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/ui` | GET | Dashboard with recent entities |
-| `/ui/entities` | GET | Entity list with filters |
-| `/ui/entities/new` | GET | Create entity form |
-| `/ui/entities/:id` | GET | Entity detail view |
-| `/ui/entities/:id/edit` | GET | Edit entity form |
-| `/ui/entities/:id/versions` | GET | Version history list |
-| `/ui/entities/:id/versions/:version` | GET | Specific version detail |
-| `/ui/links` | GET | Link list with filters |
-| `/ui/links/new` | GET | Create link form |
-| `/ui/links/:id` | GET | Link detail view |
-| `/ui/links/:id/edit` | GET | Edit link form |
-| `/ui/links/:id/versions` | GET | Link version history |
-| `/ui/types` | GET | Type browser |
-| `/ui/types/:id` | GET | Type detail with usage stats |
-| `/ui/search` | GET | Search interface |
-| `/ui/auth/login` | GET | Login page |
+| Route                                | Method | Description                    |
+| ------------------------------------ | ------ | ------------------------------ |
+| `/ui`                                | GET    | Dashboard with recent entities |
+| `/ui/entities`                       | GET    | Entity list with filters       |
+| `/ui/entities/new`                   | GET    | Create entity form             |
+| `/ui/entities/:id`                   | GET    | Entity detail view             |
+| `/ui/entities/:id/edit`              | GET    | Edit entity form               |
+| `/ui/entities/:id/versions`          | GET    | Version history list           |
+| `/ui/entities/:id/versions/:version` | GET    | Specific version detail        |
+| `/ui/links`                          | GET    | Link list with filters         |
+| `/ui/links/new`                      | GET    | Create link form               |
+| `/ui/links/:id`                      | GET    | Link detail view               |
+| `/ui/links/:id/edit`                 | GET    | Edit link form                 |
+| `/ui/links/:id/versions`             | GET    | Link version history           |
+| `/ui/types`                          | GET    | Type browser                   |
+| `/ui/types/:id`                      | GET    | Type detail with usage stats   |
+| `/ui/search`                         | GET    | Search interface               |
+| `/ui/auth/login`                     | GET    | Login page                     |
 
 Note: Form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success.
 
 ## Technical Architecture
 
 ### Project Setup
+
 - ✅ Initialize Cloudflare Workers project with TypeScript (via Wrangler CLI)
 - ✅ Configure ESLint and Prettier
 - ✅ Set up D1 database bindings in wrangler.toml
 - ✅ Environment configuration via wrangler.toml and secrets
 
 ### Database Migration System
+
 - ✅ Wrangler D1 migrations (SQL files in migrations directory)
 - ✅ Version control for schema changes via numbered migration files
 - ✅ Migration rollback support through Wrangler CLI
 - ✅ Seed data scripts for local development
 
 ### API Framework
+
 - ✅ Hono framework for routing (lightweight, Workers-compatible)
 - ✅ Request validation with Zod (TypeScript-first schema validation)
 - ✅ Error handling middleware in Hono
@@ -922,16 +1031,19 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 ### Logging System
 
 #### ✅ Structured Logger Implementation
+
 - Create centralized logger utility with log levels (debug, info, warn, error)
 - JSON-formatted log output with timestamps, request IDs, and context
-- Replace ad-hoc console.* calls throughout the codebase
+- Replace ad-hoc console.\* calls throughout the codebase
 
 #### ✅ Request Context Logging
+
 - Middleware to add request ID to all logs for request tracing
 - Capture request metadata (method, path, user, duration)
 - Correlation ID support for distributed tracing
 
 #### ✅ Error Tracking Integration
+
 - Integration with Workers Analytics Engine for error tracking
   - `AnalyticsEngineDataset` binding configured in wrangler.toml for all environments
   - Error data points written with blobs (error name, category, severity, code, method, path, userId, message, environment) and doubles (status code, timestamp)
@@ -948,11 +1060,13 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
   - Health endpoint reports analytics availability status
 
 #### 🟦 External Logging Service Integration
+
 - Integration with external logging services (Datadog, Sentry, etc.)
 - Configuration for different environments
 - Log streaming setup via Wrangler tail command
 
 ### Testing Infrastructure
+
 - ✅ Unit testing framework (Vitest - optimized for Workers)
 - ✅ Integration testing with local D1 via Wrangler dev
 - ✅ API endpoint testing with Miniflare (local Workers simulator)
@@ -960,6 +1074,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 - ✅ E2E testing against local environment
 
 ### ✅ Local Development Environment
+
 - Wrangler dev for local Workers development
 - Local D1 database with persistent storage in .wrangler/state
 - Local KV storage simulation
@@ -967,6 +1082,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 - Separate local and remote data by default
 
 ### ✅ CI/CD Pipeline
+
 - Automated testing on commits (unit tests and integration tests on push/PR to main)
 - Code quality checks (ESLint linting, Prettier formatting, TypeScript type checking)
 - Wrangler deploy for automated deployments
@@ -980,6 +1096,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 ## Security Considerations
 
 ### ✅ Input Validation and Sanitization
+
 - Validate all user inputs using Zod schemas
 - Sanitize JSON properties for XSS prevention via automatic HTML escaping in schemas
 - SQL injection prevention through D1 prepared statements
@@ -989,6 +1106,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 - All HTML special characters (&, <, >, ", ', `, =, /) escaped to prevent XSS attacks
 
 ### ✅ HTTPS and Security Headers
+
 - HTTPS enforcement (automatic with Cloudflare)
 - Security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy) via Hono middleware
 - Environment-aware configuration (stricter in production, relaxed for development)
@@ -997,6 +1115,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 - Cloudflare's built-in DDoS protection
 
 ### ✅ Sensitive Data Protection
+
 - Automatic redaction of sensitive data from logs (passwords, tokens, API keys, etc.)
   - Logger class with built-in sensitive data redaction (enabled by default)
   - `redactSensitiveData()` utility for custom redaction
@@ -1024,16 +1143,19 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
 Note: D1 provides automatic connection management and is single-threaded per database (~1,000 queries/sec for 1ms queries).
 
 #### ✅ Index Optimization for Common Query Patterns
+
 - Generated columns for frequently queried JSON properties (see Generated Columns section)
 - Composite indexes for common filter combinations
 - Partial indexes for is_latest and is_deleted flags
 
 #### ✅ Query Plan Analysis Endpoint
+
 ```
 POST   /api/schema/query-plan          # Analyze query execution plan
 GET    /api/schema/query-plan/templates         # List available query templates
 GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 ```
+
 - Accept SQL query or predefined template in request body
 - Execute EXPLAIN QUERY PLAN via D1 to analyze query execution
 - Return query plan with index usage information
@@ -1056,6 +1178,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - `src/schemas/generated-columns.ts` - Schema definitions
 
 #### ✅ Query Performance Tracking via Analytics Engine
+
 - Track query execution times for database operations
   - Middleware-based tracking (`src/middleware/query-tracking.ts`)
   - Utility module (`src/utils/query-performance-tracking.ts`)
@@ -1078,6 +1201,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - Configurable minimum duration to filter fast queries
 
 ### ✅ Caching Strategy
+
 - Cloudflare KV for frequently accessed data
   - Types: Cached for 5 minutes (300s) - rarely changes
   - Types list: Cached for 5 minutes with version-based invalidation
@@ -1099,10 +1223,12 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 ### API Response Optimization
 
 #### ✅ Automatic Compression
+
 - Compression handled automatically via Cloudflare's edge network
 - No implementation required - Cloudflare automatically applies gzip/brotli compression
 
 #### ✅ ETag Support for Conditional Requests
+
 - Generate ETag header for GET responses containing data
 - Support If-None-Match request header for conditional requests
 - Return 304 Not Modified when ETag matches
@@ -1110,10 +1236,11 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 - Use content hash (SHA-256 truncated) for ETag generation
 - Middleware-based implementation for consistent behavior across routes
 - Skip auth endpoints, bulk operations, exports, audit, and search for freshness
-- Support multiple ETags and wildcard (*) in If-None-Match header
+- Support multiple ETags and wildcard (\*) in If-None-Match header
 - Weak ETags (W/"...") by default for semantic equivalence
 
 #### ✅ Partial Response / Field Selection
+
 - Support `fields` query parameter on GET endpoints
 - Allow comma-separated list of fields to include in response
 - Reduce payload size for bandwidth-constrained clients
@@ -1123,6 +1250,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 - Implemented via utility module with consistent behavior across all endpoints
 
 #### ✅ Response Time Monitoring via Workers Analytics
+
 - Track response times for all API endpoints
   - Response time tracking middleware (`src/middleware/response-time.ts`)
   - Response time tracker utility (`src/utils/response-time-tracking.ts`)
@@ -1140,12 +1268,14 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - Configurable skip paths and minimum duration threshold
 
 #### ✅ Global Edge Deployment
+
 - Handled automatically by Cloudflare Workers
 - No implementation required - Workers deploy globally by default
 
 ## Monitoring and Observability
 
 ### Health Check Endpoints
+
 - ✅ D1 database connectivity check
 - ✅ KV connectivity check
 - ✅ System health status
@@ -1153,6 +1283,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 - ✅ Workers runtime status
 
 ### 🟦 Metrics and Monitoring
+
 - Cloudflare Workers Analytics for request metrics
 - D1 query performance metrics via Analytics Engine
 - Error rate monitoring via Workers Analytics
@@ -1163,12 +1294,14 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 ## Documentation
 
 ### Development Documentation
+
 - ✅ Setup and installation guide
 - ✅ Database schema documentation
 - 🟦 API development guide
 - 🟦 Contributing guidelines
 
 ### 🟦 Deployment Documentation
+
 - Cloudflare Workers deployment guide via Wrangler
 - Environment configuration reference (wrangler.toml and secrets)
 - D1 database export and import procedures
@@ -1179,6 +1312,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 ## Platform Limitations and Considerations
 
 ### ✅ D1 Database Limits
+
 - **Storage**: 10 GB hard limit per D1 database (cannot be increased)
 - **Concurrency**: Single-threaded query processing per database
 - **Performance**: ~1,000 queries/sec for 1ms queries, ~10 queries/sec for 100ms queries
@@ -1186,6 +1320,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 - **Scale Strategy**: Initially single database, can shard later if needed
 
 ### ✅ Workers Runtime Limits
+
 - **CPU Time**: Free tier has time limits per request; paid plans offer more
 - **Request Size**: Maximum request/response sizes enforced
 - **npm Compatibility**: Not all Node.js packages work in Workers runtime

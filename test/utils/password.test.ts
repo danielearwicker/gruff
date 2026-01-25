@@ -194,9 +194,7 @@ describe('Password Utilities', () => {
   describe('security properties', () => {
     it('should produce cryptographically random salts', async () => {
       const password = 'samePassword';
-      const hashes = await Promise.all(
-        Array.from({ length: 10 }, () => hashPassword(password))
-      );
+      const hashes = await Promise.all(Array.from({ length: 10 }, () => hashPassword(password)));
 
       // All hashes should be unique (different salts)
       const uniqueHashes = new Set(hashes);
@@ -213,7 +211,7 @@ describe('Password Utilities', () => {
       );
 
       // All verifications should succeed
-      expect(results.every((r) => r === true)).toBe(true);
+      expect(results.every(r => r === true)).toBe(true);
     });
 
     it('should produce sufficiently long hashes', async () => {

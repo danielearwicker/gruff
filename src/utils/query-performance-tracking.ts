@@ -77,7 +77,7 @@ export function detectTableName(sql: string): TableName {
   if (tableMatches && tableMatches.length > 1) {
     // Extract unique table names
     const tables = new Set(
-      tableMatches.map((match) => {
+      tableMatches.map(match => {
         const parts = match.split(/\s+/);
         return parts[parts.length - 1];
       })
@@ -110,7 +110,10 @@ export function detectTableName(sql: string): TableName {
 /**
  * Detect query category from SQL query
  */
-export function detectQueryCategory(sql: string, context?: { isSearch?: boolean; isGraph?: boolean }): QueryCategory {
+export function detectQueryCategory(
+  sql: string,
+  context?: { isSearch?: boolean; isGraph?: boolean }
+): QueryCategory {
   const lowerSql = sql.toLowerCase().trim();
 
   // Use explicit context if provided
@@ -359,7 +362,9 @@ export function createTrackedD1(
       const stmt = db.prepare(sql);
       let boundStmt = stmt;
 
-      const createTrackedStatement = (currentStmt: D1PreparedStatement): TrackedD1PreparedStatement => ({
+      const createTrackedStatement = (
+        currentStmt: D1PreparedStatement
+      ): TrackedD1PreparedStatement => ({
         bind(...values: unknown[]): TrackedD1PreparedStatement {
           boundStmt = currentStmt.bind(...values);
           return createTrackedStatement(boundStmt);
@@ -368,9 +373,7 @@ export function createTrackedD1(
         async first<T = unknown>(colName?: string): Promise<T | null> {
           const stopTimer = tracker.startTimer();
           try {
-            const result = colName
-              ? await boundStmt.first<T>(colName)
-              : await boundStmt.first<T>();
+            const result = colName ? await boundStmt.first<T>(colName) : await boundStmt.first<T>();
             const durationMs = stopTimer();
             tracker.trackQuery(sql, durationMs, 'first', {
               ...options,

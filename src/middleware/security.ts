@@ -96,7 +96,12 @@ const DEFAULT_CONFIG: Required<SecurityConfig> = {
   allowedOrigins: '*',
   allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-  exposedHeaders: ['X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+  exposedHeaders: [
+    'X-Request-ID',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+  ],
   allowCredentials: true,
   maxAge: 86400,
   hstsMaxAge: 31536000,
@@ -183,10 +188,7 @@ export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): Mi
  * @returns Array of Hono middleware handlers
  */
 export function createSecurityMiddleware(config: SecurityConfig = {}): MiddlewareHandler[] {
-  return [
-    createCorsMiddleware(config),
-    createSecurityHeadersMiddleware(config),
-  ];
+  return [createCorsMiddleware(config), createSecurityHeadersMiddleware(config)];
 }
 
 /**
@@ -205,7 +207,8 @@ export function getProductionSecurityConfig(allowedOrigins: string | string[]): 
     hstsMaxAge: 31536000, // 1 year
     hstsIncludeSubdomains: true,
     hstsPreload: true,
-    contentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    contentSecurityPolicy:
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     frameOptions: 'DENY',
     referrerPolicy: 'strict-origin-when-cross-origin',
   };
@@ -225,7 +228,8 @@ export function getDevelopmentSecurityConfig(): SecurityConfig {
     hstsIncludeSubdomains: false,
     hstsPreload: false,
     // More permissive CSP for development with Scalar docs UI
-    contentSecurityPolicy: "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https:; frame-ancestors 'self'",
+    contentSecurityPolicy:
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https:; frame-ancestors 'self'",
     frameOptions: 'SAMEORIGIN',
     referrerPolicy: 'no-referrer-when-downgrade',
   };

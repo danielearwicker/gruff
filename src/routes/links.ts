@@ -1,6 +1,13 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createLinkSchema, updateLinkSchema, linkQuerySchema, CreateLink, UpdateLink, LinkQuery } from '../schemas/index.js';
+import {
+  createLinkSchema,
+  updateLinkSchema,
+  linkQuerySchema,
+  CreateLink,
+  UpdateLink,
+  LinkQuery,
+} from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -37,9 +44,13 @@ function getCurrentTimestamp(): number {
 }
 
 // Helper function to find the latest version of a link by any ID in its version chain
-async function findLatestVersion(db: D1Database, linkId: string): Promise<Record<string, unknown> | null> {
+async function findLatestVersion(
+  db: D1Database,
+  linkId: string
+): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
-  const link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
+  const link = await db
+    .prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
     .bind(linkId)
     .first();
 
@@ -49,7 +60,9 @@ async function findLatestVersion(db: D1Database, linkId: string): Promise<Record
 
   // If not found, this ID might be an old version. Find all links that reference this ID
   // in their version chain and get the one with is_latest = 1
-  const result = await db.prepare(`
+  const result = await db
+    .prepare(
+      `
     WITH RECURSIVE version_chain AS (
       -- Start with the given ID
       SELECT * FROM links WHERE id = ?
@@ -59,7 +72,10 @@ async function findLatestVersion(db: D1Database, linkId: string): Promise<Record
       INNER JOIN version_chain vc ON l.previous_version_id = vc.id
     )
     SELECT * FROM version_chain WHERE is_latest = 1 LIMIT 1
-  `).bind(linkId).first();
+  `
+    )
+    .bind(linkId)
+    .first();
 
   return result || null;
 }
@@ -68,7 +84,7 @@ async function findLatestVersion(db: D1Database, linkId: string): Promise<Record
  * POST /api/links
  * Create a new link
  */
-links.post('/', validateJson(createLinkSchema), async (c) => {
+links.post('/', validateJson(createLinkSchema), async c => {
   const data = c.get('validated_json') as CreateLink;
   const db = c.env.DB;
 
@@ -80,7 +96,8 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
 
   try {
     // Check if type_id exists and get its json_schema
-    const typeRecord = await db.prepare('SELECT id, json_schema FROM types WHERE id = ? AND category = ?')
+    const typeRecord = await db
+      .prepare('SELECT id, json_schema FROM types WHERE id = ? AND category = ?')
       .bind(data.type_id, 'link')
       .first();
 
@@ -106,44 +123,55 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
     }
 
     // Check if source entity exists and is not deleted
-    const sourceEntity = await db.prepare('SELECT id FROM entities WHERE id = ? AND is_latest = 1 AND is_deleted = 0')
+    const sourceEntity = await db
+      .prepare('SELECT id FROM entities WHERE id = ? AND is_latest = 1 AND is_deleted = 0')
       .bind(data.source_entity_id)
       .first();
 
     if (!sourceEntity) {
-      return c.json(response.error('Source entity not found or is deleted', 'SOURCE_ENTITY_NOT_FOUND'), 404);
+      return c.json(
+        response.error('Source entity not found or is deleted', 'SOURCE_ENTITY_NOT_FOUND'),
+        404
+      );
     }
 
     // Check if target entity exists and is not deleted
-    const targetEntity = await db.prepare('SELECT id FROM entities WHERE id = ? AND is_latest = 1 AND is_deleted = 0')
+    const targetEntity = await db
+      .prepare('SELECT id FROM entities WHERE id = ? AND is_latest = 1 AND is_deleted = 0')
       .bind(data.target_entity_id)
       .first();
 
     if (!targetEntity) {
-      return c.json(response.error('Target entity not found or is deleted', 'TARGET_ENTITY_NOT_FOUND'), 404);
+      return c.json(
+        response.error('Target entity not found or is deleted', 'TARGET_ENTITY_NOT_FOUND'),
+        404
+      );
     }
 
     // Convert properties to string
     const propertiesString = JSON.stringify(data.properties);
 
     // Insert the new link (version 1)
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1)
-    `).bind(
-      id,
-      data.type_id,
-      data.source_entity_id,
-      data.target_entity_id,
-      propertiesString,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        id,
+        data.type_id,
+        data.source_entity_id,
+        data.target_entity_id,
+        propertiesString,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the created link
-    const created = await db.prepare('SELECT * FROM links WHERE id = ?')
-      .bind(id)
-      .first();
+    const created = await db.prepare('SELECT * FROM links WHERE id = ?').bind(id).first();
 
     // Parse properties back to object
     const result = {
@@ -162,12 +190,16 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
         properties: data.properties,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     return c.json(response.created(result), 201);
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error creating link', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error creating link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -176,7 +208,7 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
  * GET /api/links
  * List links with optional filtering and cursor-based pagination
  */
-links.get('/', validateQuery(linkQuerySchema), async (c) => {
+links.get('/', validateQuery(linkQuerySchema), async c => {
   const query = c.get('validated_query') as LinkQuery;
   const db = c.env.DB;
 
@@ -255,7 +287,9 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
         }
       } catch {
         // Invalid cursor format, ignore and continue without cursor
-        getLogger(c).child({ module: 'links' }).warn('Invalid cursor format', { cursor: query.cursor });
+        getLogger(c)
+          .child({ module: 'links' })
+          .warn('Invalid cursor format', { cursor: query.cursor });
       }
     }
 
@@ -266,7 +300,10 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
     sql += ' LIMIT ?';
     bindings.push(limit + 1);
 
-    const { results } = await db.prepare(sql).bind(...bindings).all();
+    const { results } = await db
+      .prepare(sql)
+      .bind(...bindings)
+      .all();
 
     // Check if there are more results
     const hasMore = results.length > limit;
@@ -307,7 +344,9 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
 
     return c.json(response.cursorPaginated(fieldSelection.data, nextCursor, hasMore));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error listing links', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error listing links', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -323,7 +362,7 @@ links.get('/', validateQuery(linkQuerySchema), async (c) => {
  * Cache is invalidated when link is updated, deleted, or restored.
  * Note: Field selection is applied after cache retrieval for consistency.
  */
-links.get('/:id', async (c) => {
+links.get('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
@@ -336,11 +375,7 @@ links.get('/:id', async (c) => {
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
-        const fieldSelection = applyFieldSelection(
-          cached.data,
-          fieldsParam,
-          LINK_ALLOWED_FIELDS
-        );
+        const fieldSelection = applyFieldSelection(cached.data, fieldsParam, LINK_ALLOWED_FIELDS);
         if (!fieldSelection.success) {
           return c.json(
             response.error(
@@ -399,7 +434,9 @@ links.get('/:id', async (c) => {
 
     return c.json(responseData);
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error fetching link', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error fetching link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -408,7 +445,7 @@ links.get('/:id', async (c) => {
  * PUT /api/links/:id
  * Update link (creates new version)
  */
-links.put('/:id', validateJson(updateLinkSchema), async (c) => {
+links.put('/:id', validateJson(updateLinkSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateLink;
   const db = c.env.DB;
@@ -432,7 +469,8 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
     }
 
     // Fetch the type's JSON schema for validation
-    const typeRecord = await db.prepare('SELECT json_schema FROM types WHERE id = ?')
+    const typeRecord = await db
+      .prepare('SELECT json_schema FROM types WHERE id = ?')
       .bind(currentVersion.type_id)
       .first();
 
@@ -459,30 +497,31 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
 
     // Start a transaction-like operation by updating in order
     // First, set current version's is_latest to false
-    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?')
-      .bind(currentVersion.id)
-      .run();
+    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
     // Then insert new version with new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      currentVersion.source_entity_id,
-      currentVersion.target_entity_id,
-      propertiesString,
-      newVersion,
-      currentVersion.id, // previous_version_id references the previous row's id
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        currentVersion.source_entity_id,
+        currentVersion.target_entity_id,
+        propertiesString,
+        newVersion,
+        currentVersion.id, // previous_version_id references the previous row's id
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the new version
-    const updated = await db.prepare('SELECT * FROM links WHERE id = ?')
-      .bind(newId)
-      .first();
+    const updated = await db.prepare('SELECT * FROM links WHERE id = ?').bind(newId).first();
 
     const result = {
       ...updated,
@@ -495,12 +534,16 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
     try {
       await logLinkOperation(db, c, 'update', newId, systemUserId, {
         previous_version_id: currentVersion.id,
-        old_properties: currentVersion.properties ? JSON.parse(currentVersion.properties as string) : {},
+        old_properties: currentVersion.properties
+          ? JSON.parse(currentVersion.properties as string)
+          : {},
         new_properties: data.properties,
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -510,12 +553,16 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
         invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.updated(result));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error updating link', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error updating link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -524,7 +571,7 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
  * DELETE /api/links/:id
  * Soft delete link (creates new version with is_deleted = true)
  */
-links.delete('/:id', async (c) => {
+links.delete('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const now = getCurrentTimestamp();
@@ -540,35 +587,35 @@ links.delete('/:id', async (c) => {
 
     // Check if already soft-deleted
     if (currentVersion.is_deleted === 1) {
-      return c.json(
-        response.error('Link is already deleted', 'ALREADY_DELETED'),
-        409
-      );
+      return c.json(response.error('Link is already deleted', 'ALREADY_DELETED'), 409);
     }
 
     const newVersion = (currentVersion.version as number) + 1;
     const newId = generateUUID();
 
     // Set current version's is_latest to false
-    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?')
-      .bind(currentVersion.id)
-      .run();
+    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
     // Insert new version with is_deleted = 1 and new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      currentVersion.source_entity_id,
-      currentVersion.target_entity_id,
-      currentVersion.properties,
-      newVersion,
-      currentVersion.id,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        currentVersion.source_entity_id,
+        currentVersion.target_entity_id,
+        currentVersion.properties,
+        newVersion,
+        currentVersion.id,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Log the delete operation
     try {
@@ -580,7 +627,9 @@ links.delete('/:id', async (c) => {
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -590,12 +639,16 @@ links.delete('/:id', async (c) => {
         invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.deleted());
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error deleting link', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error deleting link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -604,7 +657,7 @@ links.delete('/:id', async (c) => {
  * POST /api/links/:id/restore
  * Restore a soft-deleted link (creates new version with is_deleted = false)
  */
-links.post('/:id/restore', async (c) => {
+links.post('/:id/restore', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const now = getCurrentTimestamp();
@@ -620,40 +673,38 @@ links.post('/:id/restore', async (c) => {
 
     // Check if link is not deleted
     if (currentVersion.is_deleted === 0) {
-      return c.json(
-        response.error('Link is not deleted', 'NOT_DELETED'),
-        409
-      );
+      return c.json(response.error('Link is not deleted', 'NOT_DELETED'), 409);
     }
 
     const newVersion = (currentVersion.version as number) + 1;
     const newId = generateUUID();
 
     // Set current version's is_latest to false
-    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?')
-      .bind(currentVersion.id)
-      .run();
+    await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
     // Insert new version with is_deleted = 0 and new ID
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
-    `).bind(
-      newId,
-      currentVersion.type_id,
-      currentVersion.source_entity_id,
-      currentVersion.target_entity_id,
-      currentVersion.properties,
-      newVersion,
-      currentVersion.id,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        newId,
+        currentVersion.type_id,
+        currentVersion.source_entity_id,
+        currentVersion.target_entity_id,
+        currentVersion.properties,
+        newVersion,
+        currentVersion.id,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the restored version
-    const restored = await db.prepare('SELECT * FROM links WHERE id = ?')
-      .bind(newId)
-      .first();
+    const restored = await db.prepare('SELECT * FROM links WHERE id = ?').bind(newId).first();
 
     const result = {
       ...restored,
@@ -672,7 +723,9 @@ links.post('/:id/restore', async (c) => {
         version: newVersion,
       });
     } catch (auditError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to create audit log', { error: auditError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to create audit log', { error: auditError });
     }
 
     // Invalidate cache for both the original ID and the old version ID
@@ -682,12 +735,16 @@ links.post('/:id/restore', async (c) => {
         invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
-      getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to invalidate cache', { error: cacheError });
     }
 
     return c.json(response.success(result, 'Link restored successfully'));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error restoring link', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error restoring link', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -696,7 +753,7 @@ links.post('/:id/restore', async (c) => {
  * GET /api/links/:id/versions
  * Get all versions of a link
  */
-links.get('/:id/versions', async (c) => {
+links.get('/:id/versions', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -709,7 +766,9 @@ links.get('/:id/versions', async (c) => {
     }
 
     // Now get all versions in the chain using recursive CTE
-    const { results } = await db.prepare(`
+    const { results } = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1 (no previous_version_id)
         SELECT * FROM links
@@ -735,7 +794,10 @@ links.get('/:id/versions', async (c) => {
         INNER JOIN version_chain vc ON l.previous_version_id = vc.id
       )
       SELECT * FROM version_chain ORDER BY version ASC
-    `).bind(id, id).all();
+    `
+      )
+      .bind(id, id)
+      .all();
 
     // Parse properties for each version
     const versions = results.map(link => ({
@@ -747,7 +809,9 @@ links.get('/:id/versions', async (c) => {
 
     return c.json(response.success(versions));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error fetching link versions', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error fetching link versions', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -756,7 +820,7 @@ links.get('/:id/versions', async (c) => {
  * GET /api/links/:id/versions/:version
  * Get a specific version of a link
  */
-links.get('/:id/versions/:version', async (c) => {
+links.get('/:id/versions/:version', async c => {
   const id = c.req.param('id');
   const versionParam = c.req.param('version');
   const db = c.env.DB;
@@ -776,7 +840,9 @@ links.get('/:id/versions/:version', async (c) => {
     }
 
     // Find the specific version in the chain
-    const link = await db.prepare(`
+    const link = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1
         SELECT * FROM links
@@ -802,7 +868,10 @@ links.get('/:id/versions/:version', async (c) => {
         INNER JOIN version_chain vc ON l.previous_version_id = vc.id
       )
       SELECT * FROM version_chain WHERE version = ? LIMIT 1
-    `).bind(id, id, versionNumber).first();
+    `
+      )
+      .bind(id, id, versionNumber)
+      .first();
 
     if (!link) {
       return c.json(response.notFound('Version'), 404);
@@ -817,7 +886,9 @@ links.get('/:id/versions/:version', async (c) => {
 
     return c.json(response.success(result));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error fetching link version', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error fetching link version', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -826,7 +897,7 @@ links.get('/:id/versions/:version', async (c) => {
  * GET /api/links/:id/history
  * Get version history with diffs showing what changed between versions
  */
-links.get('/:id/history', async (c) => {
+links.get('/:id/history', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
@@ -839,7 +910,9 @@ links.get('/:id/history', async (c) => {
     }
 
     // Get all versions in order
-    const { results } = await db.prepare(`
+    const { results } = await db
+      .prepare(
+        `
       WITH RECURSIVE version_chain AS (
         -- Start with version 1
         SELECT * FROM links
@@ -865,7 +938,10 @@ links.get('/:id/history', async (c) => {
         INNER JOIN version_chain vc ON l.previous_version_id = vc.id
       )
       SELECT * FROM version_chain ORDER BY version ASC
-    `).bind(id, id).all();
+    `
+      )
+      .bind(id, id)
+      .all();
 
     // Calculate diffs between consecutive versions
     const history = results.map((link, index) => {
@@ -896,7 +972,9 @@ links.get('/:id/history', async (c) => {
 
     return c.json(response.success(history));
   } catch (error) {
-    getLogger(c).child({ module: 'links' }).error('Error fetching link history', error instanceof Error ? error : undefined);
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error fetching link history', error instanceof Error ? error : undefined);
     throw error;
   }
 });
@@ -904,7 +982,10 @@ links.get('/:id/history', async (c) => {
 /**
  * Helper function to calculate differences between two JSON objects
  */
-function calculateDiff(oldObj: Record<string, unknown>, newObj: Record<string, unknown>): {
+function calculateDiff(
+  oldObj: Record<string, unknown>,
+  newObj: Record<string, unknown>
+): {
   added: Record<string, unknown>;
   removed: Record<string, unknown>;
   changed: Record<string, unknown>;

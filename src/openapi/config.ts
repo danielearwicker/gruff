@@ -84,92 +84,112 @@ export const securitySchemes = {
 };
 
 // Common response schemas
-export const ErrorResponseSchema = z.object({
-  success: z.literal(false),
-  error: z.string().openapi({
-    example: 'Resource not found',
-    description: 'Error message describing what went wrong',
-  }),
-  code: z.string().optional().openapi({
-    example: 'NOT_FOUND',
-    description: 'Machine-readable error code',
-  }),
-  timestamp: z.string().openapi({
-    example: '2024-01-15T10:30:00.000Z',
-    description: 'ISO 8601 timestamp when the error occurred',
-  }),
-  path: z.string().optional().openapi({
-    example: '/api/entities/123',
-    description: 'Request path that caused the error',
-  }),
-  requestId: z.string().optional().openapi({
-    example: '550e8400-e29b-41d4-a716-446655440000',
-    description: 'Unique request identifier for debugging',
-  }),
-}).openapi('ErrorResponse');
+export const ErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({
+      example: 'Resource not found',
+      description: 'Error message describing what went wrong',
+    }),
+    code: z.string().optional().openapi({
+      example: 'NOT_FOUND',
+      description: 'Machine-readable error code',
+    }),
+    timestamp: z.string().openapi({
+      example: '2024-01-15T10:30:00.000Z',
+      description: 'ISO 8601 timestamp when the error occurred',
+    }),
+    path: z.string().optional().openapi({
+      example: '/api/entities/123',
+      description: 'Request path that caused the error',
+    }),
+    requestId: z.string().optional().openapi({
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Unique request identifier for debugging',
+    }),
+  })
+  .openapi('ErrorResponse');
 
-export const ValidationErrorResponseSchema = z.object({
-  success: z.literal(false),
-  error: z.literal('Validation failed'),
-  code: z.literal('VALIDATION_ERROR'),
-  details: z.array(z.object({
-    path: z.string().openapi({
-      example: 'type_id',
-      description: 'Field path that failed validation',
-    }),
-    message: z.string().openapi({
-      example: 'Invalid UUID format',
-      description: 'Validation error message',
-    }),
-    code: z.string().openapi({
-      example: 'invalid_string',
-      description: 'Zod validation error code',
-    }),
-  })),
-  timestamp: z.string(),
-  path: z.string(),
-  requestId: z.string().optional(),
-}).openapi('ValidationErrorResponse');
+export const ValidationErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.literal('Validation failed'),
+    code: z.literal('VALIDATION_ERROR'),
+    details: z.array(
+      z.object({
+        path: z.string().openapi({
+          example: 'type_id',
+          description: 'Field path that failed validation',
+        }),
+        message: z.string().openapi({
+          example: 'Invalid UUID format',
+          description: 'Validation error message',
+        }),
+        code: z.string().openapi({
+          example: 'invalid_string',
+          description: 'Zod validation error code',
+        }),
+      })
+    ),
+    timestamp: z.string(),
+    path: z.string(),
+    requestId: z.string().optional(),
+  })
+  .openapi('ValidationErrorResponse');
 
-export const SuccessResponseSchema = z.object({
-  success: z.literal(true),
-  message: z.string().optional(),
-  timestamp: z.string(),
-}).openapi('SuccessResponse');
+export const SuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message: z.string().optional(),
+    timestamp: z.string(),
+  })
+  .openapi('SuccessResponse');
 
 // Common parameter schemas
-export const UuidPathParamSchema = z.string().uuid().openapi({
-  param: {
-    name: 'id',
-    in: 'path',
-  },
-  example: '550e8400-e29b-41d4-a716-446655440000',
-  description: 'Unique identifier (UUID)',
-});
+export const UuidPathParamSchema = z
+  .string()
+  .uuid()
+  .openapi({
+    param: {
+      name: 'id',
+      in: 'path',
+    },
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'Unique identifier (UUID)',
+  });
 
 export const PaginationQuerySchema = z.object({
-  limit: z.string().optional().openapi({
-    param: {
-      name: 'limit',
-      in: 'query',
-    },
-    example: '20',
-    description: 'Maximum number of items to return (1-100, default: 20)',
-  }),
-  cursor: z.string().optional().openapi({
-    param: {
-      name: 'cursor',
-      in: 'query',
-    },
-    example: 'eyJpZCI6IjEyMyJ9',
-    description: 'Cursor for pagination (from previous response)',
-  }),
-  include_deleted: z.string().optional().openapi({
-    param: {
-      name: 'include_deleted',
-      in: 'query',
-    },
-    example: 'false',
-    description: 'Include soft-deleted items (default: false)',
-  }),
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: {
+        name: 'limit',
+        in: 'query',
+      },
+      example: '20',
+      description: 'Maximum number of items to return (1-100, default: 20)',
+    }),
+  cursor: z
+    .string()
+    .optional()
+    .openapi({
+      param: {
+        name: 'cursor',
+        in: 'query',
+      },
+      example: 'eyJpZCI6IjEyMyJ9',
+      description: 'Cursor for pagination (from previous response)',
+    }),
+  include_deleted: z
+    .string()
+    .optional()
+    .openapi({
+      param: {
+        name: 'include_deleted',
+        in: 'query',
+      },
+      example: 'false',
+      description: 'Include soft-deleted items (default: false)',
+    }),
 });

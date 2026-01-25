@@ -234,7 +234,7 @@ describe('buildPropertyFilter', () => {
         { path: 'address.city', operator: 'eq', value: 'NYC' },
         'e'
       );
-      expect(result.sql).toBe("json_extract(e.properties, ?) = ?");
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
       expect(result.bindings).toEqual(['$.address.city', 'NYC']);
     });
 
@@ -243,7 +243,7 @@ describe('buildPropertyFilter', () => {
         { path: 'tags[0]', operator: 'eq', value: 'featured' },
         'e'
       );
-      expect(result.sql).toBe("json_extract(e.properties, ?) = ?");
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
       expect(result.bindings).toEqual(['$.tags[0]', 'featured']);
     });
 
@@ -252,7 +252,7 @@ describe('buildPropertyFilter', () => {
         { path: 'tags.0', operator: 'eq', value: 'featured' },
         'e'
       );
-      expect(result.sql).toBe("json_extract(e.properties, ?) = ?");
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
       expect(result.bindings).toEqual(['$.tags[0]', 'featured']);
     });
 
@@ -261,7 +261,7 @@ describe('buildPropertyFilter', () => {
         { path: 'items[0].price', operator: 'gt', value: 10 },
         'e'
       );
-      expect(result.sql).toBe("CAST(json_extract(e.properties, ?) AS REAL) > ?");
+      expect(result.sql).toBe('CAST(json_extract(e.properties, ?) AS REAL) > ?');
       expect(result.bindings).toEqual(['$.items[0].price', 10]);
     });
 
@@ -270,25 +270,19 @@ describe('buildPropertyFilter', () => {
         { path: 'user.profile.settings.theme', operator: 'eq', value: 'dark' },
         'e'
       );
-      expect(result.sql).toBe("json_extract(e.properties, ?) = ?");
+      expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
       expect(result.bindings).toEqual(['$.user.profile.settings.theme', 'dark']);
     });
 
     it('should build exists filter for nested path', () => {
-      const result = buildPropertyFilter(
-        { path: 'profile.website', operator: 'exists' },
-        'e'
-      );
-      expect(result.sql).toBe("json_extract(e.properties, ?) IS NOT NULL");
+      const result = buildPropertyFilter({ path: 'profile.website', operator: 'exists' }, 'e');
+      expect(result.sql).toBe('json_extract(e.properties, ?) IS NOT NULL');
       expect(result.bindings).toEqual(['$.profile.website']);
     });
 
     it('should throw for invalid nested path', () => {
       expect(() =>
-        buildPropertyFilter(
-          { path: 'data[[0]]', operator: 'eq', value: 'test' },
-          'e'
-        )
+        buildPropertyFilter({ path: 'data[[0]]', operator: 'eq', value: 'test' }, 'e')
       ).toThrow('nested brackets');
     });
   });
@@ -311,19 +305,13 @@ describe('buildPropertyFilters', () => {
 describe('buildFilterExpression', () => {
   describe('simple property filters', () => {
     it('should handle a simple property filter', () => {
-      const result = buildFilterExpression(
-        { path: 'name', operator: 'eq', value: 'John' },
-        'e'
-      );
+      const result = buildFilterExpression({ path: 'name', operator: 'eq', value: 'John' }, 'e');
       expect(result.sql).toBe('json_extract(e.properties, ?) = ?');
       expect(result.bindings).toEqual(['$.name', 'John']);
     });
 
     it('should handle different operators', () => {
-      const result = buildFilterExpression(
-        { path: 'age', operator: 'gt', value: 18 },
-        'e'
-      );
+      const result = buildFilterExpression({ path: 'age', operator: 'gt', value: 18 }, 'e');
       expect(result.sql).toBe('CAST(json_extract(e.properties, ?) AS REAL) > ?');
       expect(result.bindings).toEqual(['$.age', 18]);
     });
@@ -358,10 +346,7 @@ describe('buildFilterExpression', () => {
     });
 
     it('should handle empty AND group', () => {
-      const result = buildFilterExpression(
-        { and: [] },
-        'e'
-      );
+      const result = buildFilterExpression({ and: [] }, 'e');
       expect(result.sql).toBe('');
       expect(result.bindings).toEqual([]);
     });
@@ -396,10 +381,7 @@ describe('buildFilterExpression', () => {
     });
 
     it('should handle empty OR group', () => {
-      const result = buildFilterExpression(
-        { or: [] },
-        'e'
-      );
+      const result = buildFilterExpression({ or: [] }, 'e');
       expect(result.sql).toBe('');
       expect(result.bindings).toEqual([]);
     });
@@ -454,14 +436,7 @@ describe('buildFilterExpression', () => {
       expect(result.sql).toBe(
         '((json_extract(e.properties, ?) = ?) AND (CAST(json_extract(e.properties, ?) AS REAL) >= ?)) OR (json_extract(e.properties, ?) = ?)'
       );
-      expect(result.bindings).toEqual([
-        '$.status',
-        'active',
-        '$.age',
-        18,
-        '$.status',
-        'vip',
-      ]);
+      expect(result.bindings).toEqual(['$.status', 'active', '$.age', 18, '$.status', 'vip']);
     });
 
     it('should handle deeply nested groups', () => {
@@ -487,25 +462,13 @@ describe('buildFilterExpression', () => {
       );
       expect(result.sql).toContain(' AND ');
       expect(result.sql).toContain(' OR ');
-      expect(result.bindings).toEqual([
-        '$.a',
-        1,
-        '$.b',
-        2,
-        '$.c',
-        3,
-        '$.d',
-        4,
-      ]);
+      expect(result.bindings).toEqual(['$.a', 1, '$.b', 2, '$.c', 3, '$.d', 4]);
     });
   });
 
   describe('table alias', () => {
     it('should use custom table alias', () => {
-      const result = buildFilterExpression(
-        { path: 'name', operator: 'eq', value: 'John' },
-        'l'
-      );
+      const result = buildFilterExpression({ path: 'name', operator: 'eq', value: 'John' }, 'l');
       expect(result.sql).toBe('json_extract(l.properties, ?) = ?');
     });
 
@@ -564,9 +527,7 @@ describe('buildFilterExpression', () => {
         ],
       };
 
-      expect(() => buildFilterExpression(deeplyNested, 'e')).toThrow(
-        'maximum nesting depth'
-      );
+      expect(() => buildFilterExpression(deeplyNested, 'e')).toThrow('maximum nesting depth');
     });
   });
 

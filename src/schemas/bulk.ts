@@ -14,7 +14,8 @@ export const bulkCreateEntityItemSchema = z.object({
 
 // Schema for bulk create entities request
 export const bulkCreateEntitiesSchema = z.object({
-  entities: z.array(bulkCreateEntityItemSchema)
+  entities: z
+    .array(bulkCreateEntityItemSchema)
     .min(1, 'At least one entity is required')
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} entities per request`),
 });
@@ -31,7 +32,8 @@ export const bulkCreateLinkItemSchema = z.object({
 
 // Schema for bulk create links request
 export const bulkCreateLinksSchema = z.object({
-  links: z.array(bulkCreateLinkItemSchema)
+  links: z
+    .array(bulkCreateLinkItemSchema)
     .min(1, 'At least one link is required')
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} links per request`),
 });
@@ -44,7 +46,8 @@ export const bulkUpdateEntityItemSchema = z.object({
 
 // Schema for bulk update entities request
 export const bulkUpdateEntitiesSchema = z.object({
-  entities: z.array(bulkUpdateEntityItemSchema)
+  entities: z
+    .array(bulkUpdateEntityItemSchema)
     .min(1, 'At least one entity is required')
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} entities per request`),
 });
@@ -57,7 +60,8 @@ export const bulkUpdateLinkItemSchema = z.object({
 
 // Schema for bulk update links request
 export const bulkUpdateLinksSchema = z.object({
-  links: z.array(bulkUpdateLinkItemSchema)
+  links: z
+    .array(bulkUpdateLinkItemSchema)
     .min(1, 'At least one link is required')
     .max(MAX_BULK_ITEMS, `Maximum ${MAX_BULK_ITEMS} links per request`),
 });

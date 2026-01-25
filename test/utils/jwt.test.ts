@@ -16,11 +16,7 @@ describe('JWT Token Service', () => {
 
   describe('createAccessToken', () => {
     it('should create a valid access token', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       expect(token).toBeTruthy();
       expect(typeof token).toBe('string');
@@ -28,11 +24,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should include user_id and email in payload', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const decoded = decodeToken(token);
       expect(decoded).toBeTruthy();
@@ -42,11 +34,7 @@ describe('JWT Token Service', () => {
 
     it('should include iat and exp timestamps', async () => {
       const beforeCreate = Math.floor(Date.now() / 1000);
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
       const afterCreate = Math.floor(Date.now() / 1000);
 
       const decoded = decodeToken(token);
@@ -58,12 +46,9 @@ describe('JWT Token Service', () => {
 
     it('should support custom expiry time', async () => {
       const customExpiry = 3600; // 1 hour
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET,
-        { accessTokenExpiry: customExpiry }
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET, {
+        accessTokenExpiry: customExpiry,
+      });
 
       const decoded = decodeToken(token);
       expect(decoded).toBeTruthy();
@@ -73,11 +58,7 @@ describe('JWT Token Service', () => {
 
   describe('createRefreshToken', () => {
     it('should create a valid refresh token', async () => {
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       expect(token).toBeTruthy();
       expect(typeof token).toBe('string');
@@ -85,11 +66,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should have longer expiry than access token', async () => {
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const decoded = decodeToken(token);
       expect(decoded).toBeTruthy();
@@ -99,12 +76,9 @@ describe('JWT Token Service', () => {
 
     it('should support custom expiry time', async () => {
       const customExpiry = 86400; // 1 day
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET,
-        { refreshTokenExpiry: customExpiry }
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET, {
+        refreshTokenExpiry: customExpiry,
+      });
 
       const decoded = decodeToken(token);
       expect(decoded).toBeTruthy();
@@ -114,11 +88,7 @@ describe('JWT Token Service', () => {
 
   describe('createTokenPair', () => {
     it('should create both access and refresh tokens', async () => {
-      const result = await createTokenPair(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const result = await createTokenPair(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       expect(result.accessToken).toBeTruthy();
       expect(result.refreshToken).toBeTruthy();
@@ -126,21 +96,13 @@ describe('JWT Token Service', () => {
     });
 
     it('should create different tokens', async () => {
-      const result = await createTokenPair(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const result = await createTokenPair(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       expect(result.accessToken).not.toBe(result.refreshToken);
     });
 
     it('should include user data in both tokens', async () => {
-      const result = await createTokenPair(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const result = await createTokenPair(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const accessDecoded = decodeToken(result.accessToken);
       const refreshDecoded = decodeToken(result.refreshToken);
@@ -154,11 +116,7 @@ describe('JWT Token Service', () => {
 
   describe('verifyAccessToken', () => {
     it('should verify a valid access token', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyAccessToken(token, TEST_SECRET);
 
@@ -168,11 +126,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should reject a token with invalid signature', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyAccessToken(token, 'wrong-secret');
 
@@ -192,11 +146,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should reject a refresh token', async () => {
-      const refreshToken = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const refreshToken = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyAccessToken(refreshToken, TEST_SECRET);
 
@@ -220,11 +170,7 @@ describe('JWT Token Service', () => {
 
   describe('verifyRefreshToken', () => {
     it('should verify a valid refresh token', async () => {
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyRefreshToken(token, TEST_SECRET);
 
@@ -234,11 +180,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should reject an access token', async () => {
-      const accessToken = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const accessToken = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyRefreshToken(accessToken, TEST_SECRET);
 
@@ -246,11 +188,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should reject a token with invalid signature', async () => {
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = await verifyRefreshToken(token, 'wrong-secret');
 
@@ -258,12 +196,9 @@ describe('JWT Token Service', () => {
     });
 
     it('should reject an expired token', async () => {
-      const token = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET,
-        { refreshTokenExpiry: -1 }
-      );
+      const token = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET, {
+        refreshTokenExpiry: -1,
+      });
 
       const payload = await verifyRefreshToken(token, TEST_SECRET);
 
@@ -273,11 +208,7 @@ describe('JWT Token Service', () => {
 
   describe('decodeToken', () => {
     it('should decode a token without verification', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const decoded = decodeToken(token);
 
@@ -287,11 +218,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should decode even with wrong secret (no verification)', async () => {
-      const token = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       // decodeToken doesn't need the secret
       const decoded = decodeToken(token);
@@ -315,16 +242,8 @@ describe('JWT Token Service', () => {
 
   describe('Token security', () => {
     it('should produce different signatures for different secrets', async () => {
-      const token1 = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        'secret-one'
-      );
-      const token2 = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        'secret-two'
-      );
+      const token1 = await createAccessToken(TEST_USER_ID, TEST_EMAIL, 'secret-one');
+      const token2 = await createAccessToken(TEST_USER_ID, TEST_EMAIL, 'secret-two');
 
       // Tokens should have different signatures (3rd part)
       const sig1 = token1.split('.')[2];
@@ -334,30 +253,18 @@ describe('JWT Token Service', () => {
     });
 
     it('should produce different tokens for same user at different times', async () => {
-      const token1 = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token1 = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       // Wait a moment to ensure different timestamp
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      const token2 = await createAccessToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const token2 = await createAccessToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       expect(token1).not.toBe(token2);
     });
 
     it('should not expose the refresh flag in decoded payload', async () => {
-      const refreshToken = await createRefreshToken(
-        TEST_USER_ID,
-        TEST_EMAIL,
-        TEST_SECRET
-      );
+      const refreshToken = await createRefreshToken(TEST_USER_ID, TEST_EMAIL, TEST_SECRET);
 
       const payload = decodeToken(refreshToken);
 
@@ -374,10 +281,7 @@ describe('JWT Token Service', () => {
     });
 
     it('should handle token with extra dots', async () => {
-      const payload = await verifyAccessToken(
-        'header.payload.signature.extra',
-        TEST_SECRET
-      );
+      const payload = await verifyAccessToken('header.payload.signature.extra', TEST_SECRET);
 
       expect(payload).toBeNull();
     });

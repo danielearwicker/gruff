@@ -48,7 +48,7 @@ const auditRouter = new Hono<{ Bindings: Bindings }>();
  * - limit: Number of results (default 20, max 100)
  * - cursor: Pagination cursor
  */
-auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async (c) => {
+auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async c => {
   const logger = getLogger(c);
   const validated = c.get('validated_query') as {
     user_id?: string;
@@ -121,10 +121,11 @@ auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async (c
     const items = hasMore ? logs.slice(0, limit) : logs;
 
     // Get the cursor for the next page (timestamp of last item)
-    const nextCursor = hasMore && items.length > 0 ? String(items[items.length - 1].timestamp) : null;
+    const nextCursor =
+      hasMore && items.length > 0 ? String(items[items.length - 1].timestamp) : null;
 
     // Format the audit logs (parse JSON details)
-    const formattedLogs = items.map((log) => ({
+    const formattedLogs = items.map(log => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,
@@ -154,7 +155,7 @@ auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async (c
  * Get audit history for a specific resource
  * Requires authentication
  */
-auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async (c) => {
+auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async c => {
   const logger = getLogger(c);
   const resourceType = c.req.param('resource_type');
   const resourceId = c.req.param('resource_id');
@@ -187,7 +188,7 @@ auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async (c
       .bind(resourceType, resourceId)
       .all();
 
-    const logs = ((results.results || []) as unknown as AuditLogRow[]).map((log) => ({
+    const logs = ((results.results || []) as unknown as AuditLogRow[]).map(log => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,
@@ -231,7 +232,7 @@ auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async (c
  * Get audit logs for actions performed by a specific user
  * Requires authentication
  */
-auditRouter.get('/user/:user_id', requireAuth(), async (c) => {
+auditRouter.get('/user/:user_id', requireAuth(), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('user_id');
 
@@ -262,7 +263,7 @@ auditRouter.get('/user/:user_id', requireAuth(), async (c) => {
       .bind(userId, limit)
       .all();
 
-    const logs = ((results.results || []) as unknown as AuditLogRow[]).map((log) => ({
+    const logs = ((results.results || []) as unknown as AuditLogRow[]).map(log => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,

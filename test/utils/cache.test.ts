@@ -304,7 +304,7 @@ describe('Cache Utility', () => {
 
       // Data should now be cached
       // Wait a bit for the non-blocking cache write
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 10));
       const cached = await getCache(kv, key);
       expect(cached).toEqual(fetchedData);
     });

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { createEntitySchema, updateEntitySchema, entityQuerySchema } from '../../src/schemas/entity.js';
+import {
+  createEntitySchema,
+  updateEntitySchema,
+  entityQuerySchema,
+} from '../../src/schemas/entity.js';
 
 describe('Entity Schemas', () => {
   describe('createEntitySchema', () => {

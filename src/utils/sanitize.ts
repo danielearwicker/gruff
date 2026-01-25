@@ -39,7 +39,7 @@ export function escapeHtml(str: string): string {
   if (typeof str !== 'string') {
     return str;
   }
-  return str.replace(HTML_CHARS_PATTERN, (char) => HTML_ENTITIES[char] || char);
+  return str.replace(HTML_CHARS_PATTERN, char => HTML_ENTITIES[char] || char);
 }
 
 /**
@@ -68,7 +68,7 @@ export function containsDangerousContent(str: string): boolean {
     /vbscript:/gi,
   ];
 
-  return dangerousPatterns.some((pattern) => pattern.test(str));
+  return dangerousPatterns.some(pattern => pattern.test(str));
 }
 
 /**
@@ -91,7 +91,7 @@ export function sanitizeValue(value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeValue(item));
+    return value.map(item => sanitizeValue(item));
   }
 
   if (typeof value === 'object') {
@@ -114,9 +114,7 @@ export function sanitizeValue(value: unknown): unknown {
  * @param properties - The properties object to sanitize
  * @returns The sanitized properties object
  */
-export function sanitizeProperties(
-  properties: Record<string, unknown>
-): Record<string, unknown> {
+export function sanitizeProperties(properties: Record<string, unknown>): Record<string, unknown> {
   if (!properties || typeof properties !== 'object') {
     return {};
   }
@@ -220,7 +218,7 @@ export function sanitizeUrl(url: string): string {
 
   // Allow safe protocols
   const safeProtocols = ['http:', 'https:', 'mailto:', 'tel:', 'ftp:'];
-  const hasProtocol = safeProtocols.some((p) => trimmed.startsWith(p));
+  const hasProtocol = safeProtocols.some(p => trimmed.startsWith(p));
 
   // If it has a protocol, it must be safe; otherwise allow relative URLs
   if (trimmed.includes(':') && !hasProtocol) {

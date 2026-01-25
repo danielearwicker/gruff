@@ -199,7 +199,9 @@ export async function validateRefreshToken(
   refreshToken: string,
   config?: SessionConfig
 ): Promise<boolean> {
-  const session = await getSession(kv, userId, config) as (SessionData & { _legacy?: boolean }) | null;
+  const session = (await getSession(kv, userId, config)) as
+    | (SessionData & { _legacy?: boolean })
+    | null;
 
   if (!session) {
     return false;

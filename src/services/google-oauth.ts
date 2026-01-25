@@ -68,7 +68,7 @@ function generateRandomString(length: number = 43): string {
   const randomValues = new Uint8Array(length);
   crypto.getRandomValues(randomValues);
   return Array.from(randomValues)
-    .map((v) => chars[v % chars.length])
+    .map(v => chars[v % chars.length])
     .join('');
 }
 
@@ -87,10 +87,7 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
   for (let i = 0; i < hashArray.length; i++) {
     binary += String.fromCharCode(hashArray[i]);
   }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 /**
@@ -209,7 +206,7 @@ export async function exchangeCodeForTokens(
     throw new Error(`Failed to exchange code for tokens: ${response.status} ${errorData}`);
   }
 
-  return await response.json() as GoogleTokenResponse;
+  return (await response.json()) as GoogleTokenResponse;
 }
 
 /**
@@ -230,7 +227,7 @@ export async function fetchUserProfile(accessToken: string): Promise<GoogleUserP
     throw new Error(`Failed to fetch user profile: ${response.status} ${errorData}`);
   }
 
-  return await response.json() as GoogleUserProfile;
+  return (await response.json()) as GoogleUserProfile;
 }
 
 /**

@@ -34,7 +34,7 @@ function getCurrentTimestamp(): number {
  * Export entities and links as JSON
  * Supports filtering by type, date range, and inclusion of deleted/versioned data
  */
-exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
+exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
   const query = c.get('validated_query') as ExportQuery;
   const db = c.env.DB;
   const logger = getLogger(c).child({ module: 'export' });
@@ -48,7 +48,8 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     });
 
     // Build entity query
-    let entitySql = 'SELECT e.*, t.name as type_name FROM entities e LEFT JOIN types t ON e.type_id = t.id WHERE 1=1';
+    let entitySql =
+      'SELECT e.*, t.name as type_name FROM entities e LEFT JOIN types t ON e.type_id = t.id WHERE 1=1';
     const entityBindings: (string | number)[] = [];
 
     // Only get latest versions unless include_versions is true
@@ -83,12 +84,15 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     entityBindings.push(query.limit);
 
     // Execute entity query
-    const { results: rawEntities } = await db.prepare(entitySql).bind(...entityBindings).all();
+    const { results: rawEntities } = await db
+      .prepare(entitySql)
+      .bind(...entityBindings)
+      .all();
     const entities = rawEntities.map((e: Record<string, unknown>) => ({
       id: e.id,
       type_id: e.type_id,
       type_name: e.type_name || undefined,
-      properties: JSON.parse(e.properties as string || '{}'),
+      properties: JSON.parse((e.properties as string) || '{}'),
       version: e.version,
       previous_version_id: e.previous_version_id,
       created_at: e.created_at,
@@ -101,7 +105,8 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     const entityIds = new Set(entities.map(e => e.id as string));
 
     // Build link query - only get links where both source and target are in the exported entities
-    let linkSql = 'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
+    let linkSql =
+      'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
     const linkBindings: (string | number)[] = [];
 
     // Only get latest versions unless include_versions is true
@@ -116,7 +121,9 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
 
     // Only include links where both entities are in the export
     if (entityIds.size > 0) {
-      const entityIdPlaceholders = Array.from(entityIds).map(() => '?').join(',');
+      const entityIdPlaceholders = Array.from(entityIds)
+        .map(() => '?')
+        .join(',');
       linkSql += ` AND l.source_entity_id IN (${entityIdPlaceholders}) AND l.target_entity_id IN (${entityIdPlaceholders})`;
       linkBindings.push(...entityIds, ...entityIds);
     } else {
@@ -129,14 +136,17 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     linkBindings.push(query.limit);
 
     // Execute link query
-    const { results: rawLinks } = await db.prepare(linkSql).bind(...linkBindings).all();
+    const { results: rawLinks } = await db
+      .prepare(linkSql)
+      .bind(...linkBindings)
+      .all();
     const links = rawLinks.map((l: Record<string, unknown>) => ({
       id: l.id,
       type_id: l.type_id,
       type_name: l.type_name || undefined,
       source_entity_id: l.source_entity_id,
       target_entity_id: l.target_entity_id,
-      properties: JSON.parse(l.properties as string || '{}'),
+      properties: JSON.parse((l.properties as string) || '{}'),
       version: l.version,
       previous_version_id: l.previous_version_id,
       created_at: l.created_at,
@@ -154,10 +164,13 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     // Fetch used types
     let types: Array<Record<string, unknown>> = [];
     if (usedTypeIds.size > 0) {
-      const typePlaceholders = Array.from(usedTypeIds).map(() => '?').join(',');
-      const { results: rawTypes } = await db.prepare(
-        `SELECT * FROM types WHERE id IN (${typePlaceholders})`
-      ).bind(...usedTypeIds).all();
+      const typePlaceholders = Array.from(usedTypeIds)
+        .map(() => '?')
+        .join(',');
+      const { results: rawTypes } = await db
+        .prepare(`SELECT * FROM types WHERE id IN (${typePlaceholders})`)
+        .bind(...usedTypeIds)
+        .all();
       types = rawTypes.map((t: Record<string, unknown>) => ({
         id: t.id,
         name: t.name,
@@ -202,7 +215,7 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
  * Import entities and links from JSON
  * Creates new records with new IDs, maintaining referential integrity
  */
-exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
+exportRouter.post('/', validateJson(importRequestSchema), async c => {
   const data = c.get('validated_json') as ImportRequest;
   const db = c.env.DB;
   const logger = getLogger(c).child({ module: 'import' });
@@ -235,9 +248,10 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
       const existingTypes: Map<string, string> = new Map();
       if (typeNames.length > 0) {
         const namePlaceholders = typeNames.map(() => '?').join(',');
-        const { results: existing } = await db.prepare(
-          `SELECT id, name FROM types WHERE name IN (${namePlaceholders})`
-        ).bind(...typeNames).all();
+        const { results: existing } = await db
+          .prepare(`SELECT id, name FROM types WHERE name IN (${namePlaceholders})`)
+          .bind(...typeNames)
+          .all();
         for (const t of existing) {
           existingTypes.set(t.name as string, t.id as string);
         }
@@ -261,18 +275,22 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
 
         const id = generateUUID();
         typeStatements.push(
-          db.prepare(`
+          db
+            .prepare(
+              `
             INSERT INTO types (id, name, category, description, json_schema, created_at, created_by)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            id,
-            typeItem.name,
-            typeItem.category,
-            typeItem.description || null,
-            typeItem.json_schema || null,
-            now,
-            systemUserId
-          )
+          `
+            )
+            .bind(
+              id,
+              typeItem.name,
+              typeItem.category,
+              typeItem.description || null,
+              typeItem.json_schema || null,
+              now,
+              systemUserId
+            )
         );
         typeData.push({ name: typeItem.name, clientId: typeItem.client_id, id });
       }
@@ -314,9 +332,9 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
     }> = [];
 
     // Load existing entity types for validation (including json_schema)
-    const { results: existingEntityTypes } = await db.prepare(
-      "SELECT id, name, json_schema FROM types WHERE category = 'entity'"
-    ).all();
+    const { results: existingEntityTypes } = await db
+      .prepare("SELECT id, name, json_schema FROM types WHERE category = 'entity'")
+      .all();
     const entityTypeByName: Map<string, string> = new Map();
     const entityTypeById: Set<string> = new Set();
     const entityTypeSchemas: Map<string, string | null> = new Map();
@@ -389,10 +407,14 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
         const propertiesString = JSON.stringify(entity.properties);
 
         entityStatements.push(
-          db.prepare(`
+          db
+            .prepare(
+              `
             INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
             VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1)
-          `).bind(id, entity.typeId, propertiesString, now, systemUserId)
+          `
+            )
+            .bind(id, entity.typeId, propertiesString, now, systemUserId)
         );
         entityData.push({ clientId: entity.clientId, id });
       }
@@ -430,9 +452,9 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
     }> = [];
 
     // Load existing link types for validation (including json_schema)
-    const { results: existingLinkTypes } = await db.prepare(
-      "SELECT id, name, json_schema FROM types WHERE category = 'link'"
-    ).all();
+    const { results: existingLinkTypes } = await db
+      .prepare("SELECT id, name, json_schema FROM types WHERE category = 'link'")
+      .all();
     const linkTypeByName: Map<string, string> = new Map();
     const linkTypeById: Set<string> = new Set();
     const linkTypeSchemas: Map<string, string | null> = new Map();
@@ -452,9 +474,9 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
     }
 
     // Load existing entities for reference resolution
-    const { results: existingEntities } = await db.prepare(
-      'SELECT id FROM entities WHERE is_latest = 1 AND is_deleted = 0'
-    ).all();
+    const { results: existingEntities } = await db
+      .prepare('SELECT id FROM entities WHERE is_latest = 1 AND is_deleted = 0')
+      .all();
     const existingEntityIds: Set<string> = new Set();
     for (const e of existingEntities) {
       existingEntityIds.add(e.id as string);
@@ -555,10 +577,22 @@ exportRouter.post('/', validateJson(importRequestSchema), async (c) => {
         const propertiesString = JSON.stringify(link.properties);
 
         linkStatements.push(
-          db.prepare(`
+          db
+            .prepare(
+              `
             INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
             VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1)
-          `).bind(id, link.typeId, link.sourceEntityId, link.targetEntityId, propertiesString, now, systemUserId)
+          `
+            )
+            .bind(
+              id,
+              link.typeId,
+              link.sourceEntityId,
+              link.targetEntityId,
+              propertiesString,
+              now,
+              systemUserId
+            )
         );
         linkData.push({ clientId: link.clientId, id });
       }

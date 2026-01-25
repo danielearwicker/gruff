@@ -12,14 +12,16 @@ import {
 import { etag } from './middleware/etag.js';
 import { responseTime } from './middleware/response-time.js';
 import { queryTracking } from './middleware/query-tracking.js';
-import { createEntitySchema, entityQuerySchema, CreateEntity, EntityQuery } from './schemas/index.js';
+import {
+  createEntitySchema,
+  entityQuerySchema,
+  CreateEntity,
+  EntityQuery,
+} from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
 import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
-import {
-  createErrorTracker,
-  AnalyticsEngineDataset,
-} from './utils/error-tracking.js';
+import { createErrorTracker, AnalyticsEngineDataset } from './utils/error-tracking.js';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
@@ -64,7 +66,10 @@ app.use('*', requestContextMiddleware);
 let envValidated = false;
 app.use('*', async (c, next) => {
   if (!envValidated) {
-    const validation = validateEnvironment(c.env as Record<string, unknown>, DEFAULT_ENV_VALIDATION);
+    const validation = validateEnvironment(
+      c.env as Record<string, unknown>,
+      DEFAULT_ENV_VALIDATION
+    );
     const startupLogger = createLogger({ component: 'startup' }, LogLevel.INFO);
 
     // Log warnings (non-fatal issues)
@@ -78,7 +83,10 @@ app.use('*', async (c, next) => {
       const isDevelopment = c.env?.ENVIRONMENT === 'development' || !c.env?.ENVIRONMENT;
       if (!isDevelopment) {
         // Production: return error response
-        startupLogger.error('Environment validation failed', new Error(validation.errors.join('; ')));
+        startupLogger.error(
+          'Environment validation failed',
+          new Error(validation.errors.join('; '))
+        );
         return c.json(
           {
             error: 'Server configuration error',
@@ -121,74 +129,88 @@ app.use('*', async (c, next) => {
 // Response time tracking middleware - tracks all requests for performance analysis
 // Writes metrics to Analytics Engine for performance trend analysis
 // Adds X-Response-Time header to all responses
-app.use('*', responseTime({
-  headerName: 'X-Response-Time', // Add response time to response headers
-  skipPaths: ['/docs'], // Skip documentation endpoints (static content)
-}));
+app.use(
+  '*',
+  responseTime({
+    headerName: 'X-Response-Time', // Add response time to response headers
+    skipPaths: ['/docs'], // Skip documentation endpoints (static content)
+  })
+);
 
 // Rate limiting middleware - applied to all /api/* routes
 // Automatically categorizes requests based on path and method
 // Skip health and version endpoints for operational monitoring
-app.use('/api/*', rateLimit({
-  skip: (c) => {
-    // Skip rate limiting for version endpoint (lightweight, informational)
-    if (c.req.path === '/api/version') {
-      return true;
-    }
-    return false;
-  },
-}));
+app.use(
+  '/api/*',
+  rateLimit({
+    skip: c => {
+      // Skip rate limiting for version endpoint (lightweight, informational)
+      if (c.req.path === '/api/version') {
+        return true;
+      }
+      return false;
+    },
+  })
+);
 
 // Query performance tracking middleware - tracks database query execution times
 // Writes metrics to Analytics Engine for query performance trend analysis
 // Tracks slow queries (configurable threshold, default >100ms)
-app.use('/api/*', queryTracking({
-  slowQueryThreshold: 100, // Mark queries > 100ms as slow
-  minDurationMs: 0, // Track all queries (set higher to filter out fast queries)
-}));
+app.use(
+  '/api/*',
+  queryTracking({
+    slowQueryThreshold: 100, // Mark queries > 100ms as slow
+    minDurationMs: 0, // Track all queries (set higher to filter out fast queries)
+  })
+);
 
 // ETag middleware for conditional requests - applied to data retrieval endpoints
 // Generates ETag headers and returns 304 Not Modified for unchanged resources
 // Skip paths that don't benefit from caching (auth, bulk operations, exports)
-app.use('/api/*', etag({
-  weak: true, // Use weak ETags for semantic equivalence (appropriate for JSON APIs)
-  maxSize: 1048576, // Skip ETag generation for responses > 1MB
-  skip: (c) => {
-    const path = c.req.path;
-    // Skip auth endpoints (security-sensitive, session-based)
-    if (path.startsWith('/api/auth')) {
-      return true;
-    }
-    // Skip bulk operations (typically POST/PUT, dynamic content)
-    if (path.startsWith('/api/bulk')) {
-      return true;
-    }
-    // Skip export operations (large payloads, dynamic content)
-    if (path.startsWith('/api/export')) {
-      return true;
-    }
-    // Skip audit endpoints (time-sensitive, always fresh)
-    if (path.startsWith('/api/audit')) {
-      return true;
-    }
-    // Skip search endpoints (query results should be fresh)
-    if (path.startsWith('/api/search')) {
-      return true;
-    }
-    return false;
-  },
-}));
+app.use(
+  '/api/*',
+  etag({
+    weak: true, // Use weak ETags for semantic equivalence (appropriate for JSON APIs)
+    maxSize: 1048576, // Skip ETag generation for responses > 1MB
+    skip: c => {
+      const path = c.req.path;
+      // Skip auth endpoints (security-sensitive, session-based)
+      if (path.startsWith('/api/auth')) {
+        return true;
+      }
+      // Skip bulk operations (typically POST/PUT, dynamic content)
+      if (path.startsWith('/api/bulk')) {
+        return true;
+      }
+      // Skip export operations (large payloads, dynamic content)
+      if (path.startsWith('/api/export')) {
+        return true;
+      }
+      // Skip audit endpoints (time-sensitive, always fresh)
+      if (path.startsWith('/api/audit')) {
+        return true;
+      }
+      // Skip search endpoints (query results should be fresh)
+      if (path.startsWith('/api/search')) {
+        return true;
+      }
+      return false;
+    },
+  })
+);
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {
   // Get request ID and logger from context (set by request context middleware)
   // Fallback to generating new ones if not available (shouldn't happen in normal flow)
   const requestId = getRequestId(c) || crypto.randomUUID();
-  const logger = getLogger(c) || createLogger({
-    requestId,
-    path: c.req.path,
-    method: c.req.method,
-  });
+  const logger =
+    getLogger(c) ||
+    createLogger({
+      requestId,
+      path: c.req.path,
+      method: c.req.method,
+    });
   let statusCode = 500;
   let errorResponse: Record<string, unknown> = {
     error: 'Internal server error',
@@ -205,7 +227,7 @@ app.onError((err, c) => {
     errorResponse = {
       error: 'Validation failed',
       code: 'VALIDATION_ERROR',
-      details: zodError.issues.map((issue) => ({
+      details: zodError.issues.map(issue => ({
         path: issue.path.join('.'),
         message: issue.message,
         code: issue.code,
@@ -241,34 +263,34 @@ app.onError((err, c) => {
   }
 
   // Log error details for monitoring
-  logger.error(
-    'Request error',
-    err instanceof Error ? err : new Error(String(err)),
-    {
-      statusCode,
-      errorCode: errorResponse.code,
-    }
-  );
+  logger.error('Request error', err instanceof Error ? err : new Error(String(err)), {
+    statusCode,
+    errorCode: errorResponse.code,
+  });
 
   // Track error in Analytics Engine for monitoring and metrics
   const errorTracker = createErrorTracker(c.env?.ANALYTICS, {
     environment: c.env?.ENVIRONMENT || 'development',
   });
-  errorTracker.track(err, {
-    requestId,
-    path: c.req.path,
-    method: c.req.method,
-    statusCode,
-    userId: c.get('user')?.user_id,
-    userAgent: c.req.header('user-agent'),
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
-  }, statusCode);
+  errorTracker.track(
+    err,
+    {
+      requestId,
+      path: c.req.path,
+      method: c.req.method,
+      statusCode,
+      userId: c.get('user')?.user_id,
+      userAgent: c.req.header('user-agent'),
+      ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
+    },
+    statusCode
+  );
 
   return c.json(errorResponse, statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503);
 });
 
 // Health check endpoint
-app.get('/health', async (c) => {
+app.get('/health', async c => {
   try {
     // Test D1 connection
     const dbResult = await c.env.DB.prepare('SELECT 1 as test').first();
@@ -322,15 +344,18 @@ app.get('/health', async (c) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    return c.json({
-      status: 'unhealthy',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    }, 500);
+    return c.json(
+      {
+        status: 'unhealthy',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
   }
 });
 
 // Version information endpoint
-app.get('/api/version', (c) => {
+app.get('/api/version', c => {
   return c.json({
     version: '1.0.0',
     name: 'gruff',
@@ -354,7 +379,7 @@ app.get('/api/version', (c) => {
 });
 
 // Root endpoint
-app.get('/', (c) => {
+app.get('/', c => {
   return c.json({
     name: 'Gruff - Graph Database API',
     version: '1.0.0',
@@ -369,7 +394,7 @@ app.get('/', (c) => {
 });
 
 // API routes
-app.get('/api', (c) => {
+app.get('/api', c => {
   return c.json({
     message: 'Gruff API - Entity-Relationship Database with Versioning',
   });
@@ -413,7 +438,7 @@ app.route('/api/schema/query-plan', queryPlanRouter);
 app.route('/docs', docsRouter);
 
 // Validation demo endpoint - validates JSON body
-app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {
+app.post('/api/validate/entity', validateJson(createEntitySchema), c => {
   const validated = c.get('validated_json') as CreateEntity;
   return c.json({
     success: true,
@@ -423,7 +448,7 @@ app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {
 });
 
 // Validation demo endpoint - validates query parameters
-app.get('/api/validate/query', validateQuery(entityQuerySchema), (c) => {
+app.get('/api/validate/query', validateQuery(entityQuerySchema), c => {
   const validated = c.get('validated_query') as EntityQuery;
   return c.json({
     success: true,
@@ -439,7 +464,7 @@ const testSchema = z.object({
   email: z.string().email(),
 });
 
-app.post('/api/validate/test', validateJson(testSchema), (c) => {
+app.post('/api/validate/test', validateJson(testSchema), c => {
   const validated = c.get('validated_json') as z.infer<typeof testSchema>;
   return c.json({
     success: true,
@@ -449,23 +474,23 @@ app.post('/api/validate/test', validateJson(testSchema), (c) => {
 });
 
 // Response formatting demo endpoints
-app.get('/api/demo/response/success', (c) => {
+app.get('/api/demo/response/success', c => {
   return c.json(response.success({ id: '123', name: 'Example' }, 'Operation successful'));
 });
 
-app.get('/api/demo/response/created', (c) => {
+app.get('/api/demo/response/created', c => {
   return c.json(response.created({ id: '456', name: 'New Resource' }), 201);
 });
 
-app.get('/api/demo/response/updated', (c) => {
+app.get('/api/demo/response/updated', c => {
   return c.json(response.updated({ id: '789', name: 'Updated Resource' }));
 });
 
-app.get('/api/demo/response/deleted', (c) => {
+app.get('/api/demo/response/deleted', c => {
   return c.json(response.deleted());
 });
 
-app.get('/api/demo/response/paginated', (c) => {
+app.get('/api/demo/response/paginated', c => {
   const items = [
     { id: '1', name: 'Item 1' },
     { id: '2', name: 'Item 2' },
@@ -474,7 +499,7 @@ app.get('/api/demo/response/paginated', (c) => {
   return c.json(response.paginated(items, 10, 1, 3, true));
 });
 
-app.get('/api/demo/response/cursor-paginated', (c) => {
+app.get('/api/demo/response/cursor-paginated', c => {
   const items = [
     { id: '1', name: 'Item 1' },
     { id: '2', name: 'Item 2' },
@@ -482,26 +507,29 @@ app.get('/api/demo/response/cursor-paginated', (c) => {
   return c.json(response.cursorPaginated(items, 'next-cursor-token', true, 5));
 });
 
-app.get('/api/demo/response/not-found', (c) => {
+app.get('/api/demo/response/not-found', c => {
   return c.json(response.notFound('User'), 404);
 });
 
-app.get('/api/demo/response/error', (c) => {
+app.get('/api/demo/response/error', c => {
   return c.json(response.error('Something went wrong', 'DEMO_ERROR'), 500);
 });
 
-app.get('/api/demo/response/validation-error', (c) => {
-  return c.json(response.validationError([
-    { field: 'email', message: 'Invalid email format' },
-    { field: 'age', message: 'Must be a positive number' },
-  ]), 400);
+app.get('/api/demo/response/validation-error', c => {
+  return c.json(
+    response.validationError([
+      { field: 'email', message: 'Invalid email format' },
+      { field: 'age', message: 'Must be a positive number' },
+    ]),
+    400
+  );
 });
 
-app.get('/api/demo/response/unauthorized', (c) => {
+app.get('/api/demo/response/unauthorized', c => {
   return c.json(response.unauthorized('Invalid credentials'), 401);
 });
 
-app.get('/api/demo/response/forbidden', (c) => {
+app.get('/api/demo/response/forbidden', c => {
   return c.json(response.forbidden('Access denied'), 403);
 });
 

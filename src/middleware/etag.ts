@@ -23,7 +23,7 @@ async function generateETag(content: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   // Convert to hex and truncate to 16 characters for a compact ETag
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex.substring(0, 16);
 }
 
@@ -44,9 +44,9 @@ function parseIfNoneMatch(header: string | undefined): string[] {
   // Parse comma-separated ETags
   return header
     .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.length > 0)
-    .map((tag) => {
+    .map(tag => tag.trim())
+    .filter(tag => tag.length > 0)
+    .map(tag => {
       // Remove quotes and weak indicator if present
       // Weak ETags look like: W/"abc123"
       // Strong ETags look like: "abc123"

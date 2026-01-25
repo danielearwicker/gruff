@@ -7,7 +7,7 @@ describe('ETag Middleware', () => {
     it('should add ETag header to GET responses', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
       const etagHeader = res.headers.get('ETag');
@@ -20,7 +20,7 @@ describe('ETag Middleware', () => {
     it('should not add ETag header to POST responses', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.post('/test', (c) => c.json({ message: 'created' }, 201));
+      app.post('/test', c => c.json({ message: 'created' }, 201));
 
       const res = await app.request('/test', { method: 'POST' });
       const etagHeader = res.headers.get('ETag');
@@ -32,7 +32,7 @@ describe('ETag Middleware', () => {
     it('should generate consistent ETags for same content', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'consistent' }));
+      app.get('/test', c => c.json({ message: 'consistent' }));
 
       const res1 = await app.request('/test');
       const res2 = await app.request('/test');
@@ -49,7 +49,7 @@ describe('ETag Middleware', () => {
       const app = new Hono();
       let counter = 0;
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: `value-${counter++}` }));
+      app.get('/test', c => c.json({ message: `value-${counter++}` }));
 
       const res1 = await app.request('/test');
       const res2 = await app.request('/test');
@@ -65,7 +65,7 @@ describe('ETag Middleware', () => {
     it('should return 304 Not Modified when ETag matches', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       // First request to get ETag
       const res1 = await app.request('/test');
@@ -85,7 +85,7 @@ describe('ETag Middleware', () => {
     it('should return 200 when ETag does not match', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test', {
         headers: { 'If-None-Match': '"non-matching-etag"' },
@@ -99,7 +99,7 @@ describe('ETag Middleware', () => {
     it('should handle wildcard * in If-None-Match', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test', {
         headers: { 'If-None-Match': '*' },
@@ -111,7 +111,7 @@ describe('ETag Middleware', () => {
     it('should handle multiple ETags in If-None-Match', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       // First request to get ETag
       const res1 = await app.request('/test');
@@ -128,7 +128,7 @@ describe('ETag Middleware', () => {
     it('should parse weak ETags correctly', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       // First request to get ETag
       const res1 = await app.request('/test');
@@ -148,7 +148,7 @@ describe('ETag Middleware', () => {
     it('should skip ETag for POST requests', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.post('/test', (c) => c.json({ id: '123' }));
+      app.post('/test', c => c.json({ id: '123' }));
 
       const res = await app.request('/test', { method: 'POST' });
 
@@ -158,7 +158,7 @@ describe('ETag Middleware', () => {
     it('should skip ETag for PUT requests', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.put('/test', (c) => c.json({ updated: true }));
+      app.put('/test', c => c.json({ updated: true }));
 
       const res = await app.request('/test', { method: 'PUT' });
 
@@ -168,7 +168,7 @@ describe('ETag Middleware', () => {
     it('should skip ETag for DELETE requests', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.delete('/test', (c) => c.json({ deleted: true }));
+      app.delete('/test', c => c.json({ deleted: true }));
 
       const res = await app.request('/test', { method: 'DELETE' });
 
@@ -178,7 +178,7 @@ describe('ETag Middleware', () => {
     it('should skip ETag for error responses (4xx)', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ error: 'Not found' }, 404));
+      app.get('/test', c => c.json({ error: 'Not found' }, 404));
 
       const res = await app.request('/test');
 
@@ -189,7 +189,7 @@ describe('ETag Middleware', () => {
     it('should skip ETag for error responses (5xx)', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ error: 'Server error' }, 500));
+      app.get('/test', c => c.json({ error: 'Server error' }, 500));
 
       const res = await app.request('/test');
 
@@ -202,11 +202,11 @@ describe('ETag Middleware', () => {
       app.use(
         '*',
         etag({
-          skip: (c) => c.req.path === '/skip-me',
+          skip: c => c.req.path === '/skip-me',
         })
       );
-      app.get('/skip-me', (c) => c.json({ message: 'skipped' }));
-      app.get('/include-me', (c) => c.json({ message: 'included' }));
+      app.get('/skip-me', c => c.json({ message: 'skipped' }));
+      app.get('/include-me', c => c.json({ message: 'included' }));
 
       const res1 = await app.request('/skip-me');
       const res2 = await app.request('/include-me');
@@ -218,7 +218,9 @@ describe('ETag Middleware', () => {
     it('should skip responses larger than maxSize', async () => {
       const app = new Hono();
       app.use('*', etag({ maxSize: 10 })); // Very small limit
-      app.get('/test', (c) => c.json({ message: 'This is a longer response that exceeds the limit' }));
+      app.get('/test', c =>
+        c.json({ message: 'This is a longer response that exceeds the limit' })
+      );
 
       const res = await app.request('/test');
 
@@ -229,7 +231,7 @@ describe('ETag Middleware', () => {
     it('should not skip responses within maxSize', async () => {
       const app = new Hono();
       app.use('*', etag({ maxSize: 1000 }));
-      app.get('/test', (c) => c.json({ ok: true }));
+      app.get('/test', c => c.json({ ok: true }));
 
       const res = await app.request('/test');
 
@@ -242,7 +244,7 @@ describe('ETag Middleware', () => {
     it('should use weak ETags by default', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
       const etagValue = res.headers.get('ETag');
@@ -253,7 +255,7 @@ describe('ETag Middleware', () => {
     it('should use strong ETags when weak is false', async () => {
       const app = new Hono();
       app.use('*', etag({ weak: false }));
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
       const etagValue = res.headers.get('ETag');
@@ -267,7 +269,7 @@ describe('ETag Middleware', () => {
     it('should preserve existing headers', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => {
+      app.get('/test', c => {
         c.header('X-Custom-Header', 'custom-value');
         return c.json({ message: 'hello' });
       });
@@ -281,7 +283,7 @@ describe('ETag Middleware', () => {
     it('should not overwrite existing ETag header', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => {
+      app.get('/test', c => {
         c.header('ETag', '"existing-etag"');
         return c.json({ message: 'hello' });
       });
@@ -294,7 +296,7 @@ describe('ETag Middleware', () => {
     it('should preserve response body for 200 responses', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello', data: [1, 2, 3] }));
+      app.get('/test', c => c.json({ message: 'hello', data: [1, 2, 3] }));
 
       const res = await app.request('/test');
       const data = await res.json();
@@ -309,7 +311,7 @@ describe('ETag Middleware', () => {
     it('should add ETag header to HEAD responses', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test', { method: 'HEAD' });
 
@@ -323,7 +325,7 @@ describe('ETag Middleware', () => {
     it('should include ETag in 304 response', async () => {
       const app = new Hono();
       app.use('*', etag());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res1 = await app.request('/test');
       const etagValue = res1.headers.get('ETag');

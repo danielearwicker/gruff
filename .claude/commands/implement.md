@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(npm test:*), Bash(npm run test:*), Bash(npm run lint:*), Bash(npm run format:*), Bash(npm run dev:*), Bash(tsc:*), Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git push:*), Read(*), Write(*), Edit(*)
+allowed-tools: Bash(npm format:*), Bash(npm test:*), Bash(npm run test:*), Bash(npm run lint:*), Bash(npm run format:*), Bash(npm run dev:*), Bash(tsc:*), Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git push:*), Read(*), Write(*), Edit(*)
 description: Carries out development according to the specification
 ---
 
@@ -23,6 +23,8 @@ In addition, to preserve the robustness of the product, you should refer to `TES
 ## Hygiene
 
 Check for TS type errors and lint errors and make sure these are fixed.
+
+Run `npm run format:check` to ensure the code is correctly formatted with prettier, or just run `npm run format` to reformat it. This is essentially because the CI pipeline runs the check, so a commit that is not formatted correctly is entirely invalid.
 
 ## What to do if there's nothing to do!
 

@@ -27,7 +27,7 @@ const generatedColumnsRouter = new Hono<{ Bindings: Bindings }>();
  * - table_name: Filter by table ('entities' or 'links')
  * - is_indexed: Filter by indexed status ('true' or 'false')
  */
-generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), async (c) => {
+generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), async c => {
   const query = c.get('validated_query') as { table_name?: string; is_indexed?: number };
   const db = c.env.DB;
   const logger = getLogger(c);
@@ -44,11 +44,11 @@ generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), 
 
     // Apply is_indexed filter if specified
     if (query.is_indexed !== undefined) {
-      columns = columns.filter((c) => c.is_indexed === query.is_indexed);
+      columns = columns.filter(c => c.is_indexed === query.is_indexed);
     }
 
     // Convert is_indexed to boolean for response
-    const formattedColumns = columns.map((c) => ({
+    const formattedColumns = columns.map(c => ({
       ...c,
       is_indexed: c.is_indexed === 1,
     }));
@@ -69,7 +69,7 @@ generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), 
  * Returns information about which JSON paths have optimized generated columns
  * that can be used for efficient querying.
  */
-generatedColumnsRouter.get('/optimization', async (c) => {
+generatedColumnsRouter.get('/optimization', async c => {
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -83,17 +83,19 @@ generatedColumnsRouter.get('/optimization', async (c) => {
       linkColumns: info.links.length,
     });
 
-    return c.json(response.success({
-      ...info,
-      usage: {
-        description: 'These JSON properties have indexed generated columns for optimized queries',
-        example: {
-          instead_of: "json_extract(properties, '$.name') = 'John'",
-          use: "prop_name = 'John'",
-          benefit: 'Uses B-tree index for O(log n) lookup instead of full table scan',
+    return c.json(
+      response.success({
+        ...info,
+        usage: {
+          description: 'These JSON properties have indexed generated columns for optimized queries',
+          example: {
+            instead_of: "json_extract(properties, '$.name') = 'John'",
+            use: "prop_name = 'John'",
+            benefit: 'Uses B-tree index for O(log n) lookup instead of full table scan',
+          },
         },
-      },
-    }));
+      })
+    );
   } catch (error) {
     logger.error('Failed to get optimization info', error as Error);
     return c.json(response.error('Failed to get optimization info', 'DATABASE_ERROR'), 500);
@@ -108,28 +110,36 @@ generatedColumnsRouter.get('/optimization', async (c) => {
  * - table: The table name ('entities' or 'links')
  * - path: The JSON property path to analyze
  */
-generatedColumnsRouter.get('/analyze', async (c) => {
+generatedColumnsRouter.get('/analyze', async c => {
   const table = c.req.query('table');
   const path = c.req.query('path');
   const logger = getLogger(c);
 
   if (!table || !path) {
-    return c.json(response.error('Missing required query parameters: table and path', 'MISSING_PARAMETERS'), 400);
+    return c.json(
+      response.error('Missing required query parameters: table and path', 'MISSING_PARAMETERS'),
+      400
+    );
   }
 
   if (table !== 'entities' && table !== 'links') {
-    return c.json(response.error('Invalid table name. Must be "entities" or "links"', 'INVALID_TABLE'), 400);
+    return c.json(
+      response.error('Invalid table name. Must be "entities" or "links"', 'INVALID_TABLE'),
+      400
+    );
   }
 
   logger.info('Analyzing query path', { table, path });
 
   const analysis = analyzeQueryPath(table, path);
 
-  return c.json(response.success({
-    table,
-    json_path: path,
-    ...analysis,
-  }));
+  return c.json(
+    response.success({
+      table,
+      json_path: path,
+      ...analysis,
+    })
+  );
 });
 
 /**
@@ -139,23 +149,25 @@ generatedColumnsRouter.get('/analyze', async (c) => {
  * This returns the compile-time constant mappings without
  * querying the database.
  */
-generatedColumnsRouter.get('/mappings', (c) => {
+generatedColumnsRouter.get('/mappings', c => {
   const logger = getLogger(c);
 
   logger.info('Getting generated column mappings');
 
-  return c.json(response.success({
-    entities: Object.entries(GENERATED_COLUMNS.entities).map(([path, info]) => ({
-      json_path: `$.${path}`,
-      column_name: info.columnName,
-      data_type: info.dataType,
-    })),
-    links: Object.entries(GENERATED_COLUMNS.links).map(([path, info]) => ({
-      json_path: `$.${path}`,
-      column_name: info.columnName,
-      data_type: info.dataType,
-    })),
-  }));
+  return c.json(
+    response.success({
+      entities: Object.entries(GENERATED_COLUMNS.entities).map(([path, info]) => ({
+        json_path: `$.${path}`,
+        column_name: info.columnName,
+        data_type: info.dataType,
+      })),
+      links: Object.entries(GENERATED_COLUMNS.links).map(([path, info]) => ({
+        json_path: `$.${path}`,
+        column_name: info.columnName,
+        data_type: info.dataType,
+      })),
+    })
+  );
 });
 
 export default generatedColumnsRouter;

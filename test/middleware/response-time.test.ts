@@ -20,7 +20,7 @@ describe('Response Time Middleware', () => {
     it('should add X-Response-Time header to responses', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
       const responseTimeHeader = res.headers.get('X-Response-Time');
@@ -33,7 +33,7 @@ describe('Response Time Middleware', () => {
     it('should add header with custom name', async () => {
       const app = new Hono();
       app.use('*', responseTime({ headerName: 'X-Custom-Time' }));
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
 
@@ -44,7 +44,7 @@ describe('Response Time Middleware', () => {
     it('should not add header when headerName is null', async () => {
       const app = new Hono();
       app.use('*', responseTime({ headerName: null }));
-      app.get('/test', (c) => c.json({ message: 'hello' }));
+      app.get('/test', c => c.json({ message: 'hello' }));
 
       const res = await app.request('/test');
 
@@ -54,10 +54,10 @@ describe('Response Time Middleware', () => {
     it('should add header to all HTTP methods', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ message: 'get' }));
-      app.post('/test', (c) => c.json({ message: 'post' }));
-      app.put('/test', (c) => c.json({ message: 'put' }));
-      app.delete('/test', (c) => c.json({ message: 'delete' }));
+      app.get('/test', c => c.json({ message: 'get' }));
+      app.post('/test', c => c.json({ message: 'post' }));
+      app.put('/test', c => c.json({ message: 'put' }));
+      app.delete('/test', c => c.json({ message: 'delete' }));
 
       const resGet = await app.request('/test', { method: 'GET' });
       const resPost = await app.request('/test', { method: 'POST' });
@@ -73,7 +73,7 @@ describe('Response Time Middleware', () => {
     it('should add header to error responses', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ error: 'Not found' }, 404));
+      app.get('/test', c => c.json({ error: 'Not found' }, 404));
 
       const res = await app.request('/test');
 
@@ -89,7 +89,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.get('/api/entities', (c) => c.json({ data: [] }));
+      app.get('/api/entities', c => c.json({ data: [] }));
 
       // Create a mock request with env bindings
       const req = new Request('http://localhost/api/entities');
@@ -112,7 +112,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.post('/api/entities', (c) => c.json({ data: { id: '123' } }, 201));
+      app.post('/api/entities', c => c.json({ data: { id: '123' } }, 201));
 
       const req = new Request('http://localhost/api/entities', { method: 'POST' });
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
@@ -130,9 +130,9 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.get('/api/search/entities', (c) => c.json({ results: [] }));
-      app.get('/api/graph/path', (c) => c.json({ path: [] }));
-      app.post('/api/auth/login', (c) => c.json({ token: 'abc' }));
+      app.get('/api/search/entities', c => c.json({ results: [] }));
+      app.get('/api/graph/path', c => c.json({ path: [] }));
+      app.post('/api/auth/login', c => c.json({ token: 'abc' }));
 
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
 
@@ -158,7 +158,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime({ environment: 'production' }));
-      app.get('/test', (c) => c.json({ ok: true }));
+      app.get('/test', c => c.json({ ok: true }));
 
       const req = new Request('http://localhost/test');
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'production' };
@@ -175,7 +175,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.get('/api/entities/:id', (c) => c.json({ id: c.req.param('id') }));
+      app.get('/api/entities/:id', c => c.json({ id: c.req.param('id') }));
 
       const req = new Request('http://localhost/api/entities/550e8400-e29b-41d4-a716-446655440000');
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
@@ -195,11 +195,11 @@ describe('Response Time Middleware', () => {
       app.use(
         '*',
         responseTime({
-          skip: (c) => c.req.path === '/skip-me',
+          skip: c => c.req.path === '/skip-me',
         })
       );
-      app.get('/skip-me', (c) => c.json({ skipped: true }));
-      app.get('/include-me', (c) => c.json({ included: true }));
+      app.get('/skip-me', c => c.json({ skipped: true }));
+      app.get('/include-me', c => c.json({ included: true }));
 
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
 
@@ -225,9 +225,9 @@ describe('Response Time Middleware', () => {
           skipPaths: ['/docs'],
         })
       );
-      app.get('/docs', (c) => c.text('Documentation'));
-      app.get('/docs/openapi.json', (c) => c.json({ openapi: '3.0.0' }));
-      app.get('/api/test', (c) => c.json({ ok: true }));
+      app.get('/docs', c => c.text('Documentation'));
+      app.get('/docs/openapi.json', c => c.json({ openapi: '3.0.0' }));
+      app.get('/api/test', c => c.json({ ok: true }));
 
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
 
@@ -249,7 +249,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime({ minDurationMs: 1000 })); // Very high threshold
-      app.get('/test', (c) => c.json({ fast: true }));
+      app.get('/test', c => c.json({ fast: true }));
 
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
       await app.fetch(new Request('http://localhost/test'), env);
@@ -264,7 +264,7 @@ describe('Response Time Middleware', () => {
     it('should preserve response body', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ message: 'hello', data: [1, 2, 3] }));
+      app.get('/test', c => c.json({ message: 'hello', data: [1, 2, 3] }));
 
       const res = await app.request('/test');
       const data = await res.json();
@@ -277,7 +277,7 @@ describe('Response Time Middleware', () => {
     it('should preserve existing headers', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => {
+      app.get('/test', c => {
         c.header('X-Custom-Header', 'custom-value');
         return c.json({ message: 'hello' });
       });
@@ -291,7 +291,7 @@ describe('Response Time Middleware', () => {
     it('should preserve error responses', async () => {
       const app = new Hono();
       app.use('*', responseTime());
-      app.get('/test', (c) => {
+      app.get('/test', c => {
         return c.json({ error: 'Something went wrong' }, 500);
       });
 
@@ -317,7 +317,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ message: 'success' }));
+      app.get('/test', c => c.json({ message: 'success' }));
 
       const req = new Request('http://localhost/test');
       const env = { ANALYTICS: failingAnalytics, ENVIRONMENT: 'test' };
@@ -337,7 +337,7 @@ describe('Response Time Middleware', () => {
       }>();
 
       app.use('*', responseTime());
-      app.get('/test', (c) => c.json({ message: 'no analytics' }));
+      app.get('/test', c => c.json({ message: 'no analytics' }));
 
       const req = new Request('http://localhost/test');
       const env = { ENVIRONMENT: 'test' };

@@ -41,12 +41,12 @@ export const auditLogQuerySchema = paginationQuerySchema.omit({ include_deleted:
   operation: auditOperationSchema.optional(),
   start_date: z
     .string()
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
   end_date: z
     .string()
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
 });

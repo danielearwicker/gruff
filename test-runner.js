@@ -163,15 +163,15 @@ async function resetDatabase() {
 
     let output = '';
 
-    migration.stdout.on('data', (data) => {
+    migration.stdout.on('data', data => {
       output += data.toString();
     });
 
-    migration.stderr.on('data', (data) => {
+    migration.stderr.on('data', data => {
       output += data.toString();
     });
 
-    migration.on('close', (code) => {
+    migration.on('close', code => {
       if (code === 0) {
         logSuccess('Database migrated successfully');
 
@@ -183,15 +183,15 @@ async function resetDatabase() {
 
         let seedOutput = '';
 
-        seed.stdout.on('data', (data) => {
+        seed.stdout.on('data', data => {
           seedOutput += data.toString();
         });
 
-        seed.stderr.on('data', (data) => {
+        seed.stderr.on('data', data => {
           seedOutput += data.toString();
         });
 
-        seed.on('close', (seedCode) => {
+        seed.on('close', seedCode => {
           if (seedCode === 0) {
             logSuccess('Seed data loaded successfully');
             resolve();
@@ -233,14 +233,16 @@ async function startDevServer() {
       }
     }, STARTUP_TIMEOUT);
 
-    devServerProcess.stdout.on('data', (data) => {
+    devServerProcess.stdout.on('data', data => {
       const text = data.toString();
       output += text;
 
       // Look for various indicators that server is ready
-      if (text.includes('Ready on') ||
-          text.includes('localhost:8787') ||
-          text.includes('http://127.0.0.1:8787')) {
+      if (
+        text.includes('Ready on') ||
+        text.includes('localhost:8787') ||
+        text.includes('http://127.0.0.1:8787')
+      ) {
         if (!serverReady) {
           serverReady = true;
           clearTimeout(timeout);
@@ -251,16 +253,16 @@ async function startDevServer() {
       }
     });
 
-    devServerProcess.stderr.on('data', (data) => {
+    devServerProcess.stderr.on('data', data => {
       output += data.toString();
     });
 
-    devServerProcess.on('error', (error) => {
+    devServerProcess.on('error', error => {
       logFailure(`Failed to start server: ${error.message}`);
       reject(error);
     });
 
-    devServerProcess.on('close', (code) => {
+    devServerProcess.on('close', code => {
       if (!serverReady && code !== 0) {
         logFailure(`Server exited with code ${code}`);
         console.log(output);
@@ -307,7 +309,11 @@ async function testHealthEndpoint() {
 
   // Verify Workers runtime status
   assert(response.data.runtime, 'Should have runtime status');
-  assertEquals(response.data.runtime.platform, 'cloudflare-workers', 'Platform should be cloudflare-workers');
+  assertEquals(
+    response.data.runtime.platform,
+    'cloudflare-workers',
+    'Platform should be cloudflare-workers'
+  );
   assert(response.data.runtime.mode, 'Should have runtime mode (local or edge)');
   assert(response.data.runtime.context, 'Should have runtime context');
   assert(response.data.runtime.capabilities, 'Should have runtime capabilities');
@@ -426,7 +432,11 @@ async function testValidationSuccessEntity() {
   assert(response.ok, 'Response should be OK');
   assert(response.data.success, 'Validation should succeed');
   assert(response.data.received, 'Should return validated data');
-  assertEquals(response.data.received.type_id, '550e8400-e29b-41d4-a716-446655440000', 'Should have correct type_id');
+  assertEquals(
+    response.data.received.type_id,
+    '550e8400-e29b-41d4-a716-446655440000',
+    'Should have correct type_id'
+  );
 }
 
 async function testValidationFailureInvalidUUID() {
@@ -493,7 +503,10 @@ async function testValidationCustomSchemaFailure() {
 async function testValidationQueryParameters() {
   logTest('Validation - Query Parameter Validation');
 
-  const response = await makeRequest('GET', '/api/validate/query?type_id=550e8400-e29b-41d4-a716-446655440000&include_deleted=false');
+  const response = await makeRequest(
+    'GET',
+    '/api/validate/query?type_id=550e8400-e29b-41d4-a716-446655440000&include_deleted=false'
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -720,7 +733,11 @@ async function testUserRegistration() {
   assert(response.data.data, 'Should have data object');
   assert(response.data.data.user, 'Should have user object');
   assertEquals(response.data.data.user.email, 'newuser@example.com', 'Should have correct email');
-  assertEquals(response.data.data.user.display_name, 'New Test User', 'Should have correct display name');
+  assertEquals(
+    response.data.data.user.display_name,
+    'New Test User',
+    'Should have correct display name'
+  );
   assertEquals(response.data.data.user.provider, 'local', 'Should have provider: local');
   assert(response.data.data.user.id, 'Should have user ID');
   assert(response.data.data.access_token, 'Should have access token');
@@ -799,7 +816,11 @@ async function testUserLogin() {
   assert(response.data.data, 'Should have data object');
   assert(response.data.data.user, 'Should have user object');
   assertEquals(response.data.data.user.email, 'logintest@example.com', 'Should have correct email');
-  assertEquals(response.data.data.user.display_name, 'Login Test User', 'Should have correct display name');
+  assertEquals(
+    response.data.data.user.display_name,
+    'Login Test User',
+    'Should have correct display name'
+  );
   assertEquals(response.data.data.user.provider, 'local', 'Should have provider: local');
   assert(response.data.data.user.id, 'Should have user ID');
   assert(response.data.data.access_token, 'Should have access token');
@@ -962,14 +983,22 @@ async function testLogout() {
   assertEquals(logoutResponse.status, 200, 'Status code should be 200 OK');
   assert(logoutResponse.ok, 'Response should be OK');
   assertEquals(logoutResponse.data.success, true, 'Should have success: true');
-  assertEquals(logoutResponse.data.data.message, 'Logged out successfully', 'Should return success message');
+  assertEquals(
+    logoutResponse.data.data.message,
+    'Logged out successfully',
+    'Should return success message'
+  );
 
   // Try to refresh using the invalidated token
   const refreshAfterLogout = await makeRequest('POST', '/api/auth/refresh', {
     refresh_token: refreshToken,
   });
 
-  assertEquals(refreshAfterLogout.status, 401, 'Refresh should fail after logout with 401 Unauthorized');
+  assertEquals(
+    refreshAfterLogout.status,
+    401,
+    'Refresh should fail after logout with 401 Unauthorized'
+  );
   assert(!refreshAfterLogout.ok, 'Refresh response should not be OK');
   assertEquals(refreshAfterLogout.data.success, false, 'Should have success: false');
 }
@@ -1007,7 +1036,7 @@ async function testGetCurrentUser() {
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'currentuser@example.com',
     password: 'password123',
-    display_name: 'Current User'
+    display_name: 'Current User',
   });
 
   assertEquals(registerResponse.status, 201, 'Registration should succeed');
@@ -1020,7 +1049,7 @@ async function testGetCurrentUser() {
   const meResponse = await fetch(`${DEV_SERVER_URL}/api/auth/me`, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
   });
@@ -1060,7 +1089,7 @@ async function testGetCurrentUserInvalidToken() {
   const invalidResponse = await fetch(`${DEV_SERVER_URL}/api/auth/me`, {
     method: 'GET',
     headers: {
-      'Authorization': 'Bearer invalid-token-here',
+      Authorization: 'Bearer invalid-token-here',
       'Content-Type': 'application/json',
     },
   });
@@ -1107,7 +1136,10 @@ async function testGoogleOAuthInitiate() {
 
   // Verify the authorization URL points to Google
   const authUrl = response.data.data.authorization_url;
-  assert(authUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth'), 'URL should be Google OAuth endpoint');
+  assert(
+    authUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth'),
+    'URL should be Google OAuth endpoint'
+  );
   assert(authUrl.includes('client_id='), 'URL should include client_id');
   assert(authUrl.includes('redirect_uri='), 'URL should include redirect_uri');
   assert(authUrl.includes('response_type=code'), 'URL should include response_type=code');
@@ -1133,12 +1165,15 @@ async function testGoogleOAuthCallbackInvalidState() {
   logTest('Google OAuth - Callback Invalid State');
 
   // Test callback with invalid state
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=invalid_state`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=invalid_state`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1152,12 +1187,15 @@ async function testGoogleOAuthCallbackErrorResponse() {
   logTest('Google OAuth - Callback Error Response from Google');
 
   // Test callback with error parameter (simulating Google returning an error)
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?error=access_denied&error_description=User%20denied%20access`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/google/callback?error=access_denied&error_description=User%20denied%20access`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1178,14 +1216,18 @@ async function testGoogleOAuthCallbackExpiredState() {
   // Try to use the state twice (second time should fail as state is deleted after first use)
   // But first we need to use it - which we can't fully test without a real Google callback
   // Instead, test with a completely fabricated state that looks valid but isn't in KV
-  const fakeState = 'eyJub25jZSI6InRlc3Rub25jZSIsInRpbWVzdGFtcCI6MTcwMDAwMDAwMDAwMCwiY29kZVZlcmlmaWVyIjoidGVzdHZlcmlmaWVyIn0';
+  const fakeState =
+    'eyJub25jZSI6InRlc3Rub25jZSIsInRpbWVzdGFtcCI6MTcwMDAwMDAwMDAwMCwiY29kZVZlcmlmaWVyIjoidGVzdHZlcmlmaWVyIn0';
 
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=${fakeState}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/google/callback?code=fake_code&state=${fakeState}`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1216,7 +1258,10 @@ async function testGitHubOAuthInitiate() {
 
   // Verify the authorization URL points to GitHub
   const authUrl = response.data.data.authorization_url;
-  assert(authUrl.startsWith('https://github.com/login/oauth/authorize'), 'URL should be GitHub OAuth endpoint');
+  assert(
+    authUrl.startsWith('https://github.com/login/oauth/authorize'),
+    'URL should be GitHub OAuth endpoint'
+  );
   assert(authUrl.includes('client_id='), 'URL should include client_id');
   assert(authUrl.includes('redirect_uri='), 'URL should include redirect_uri');
   assert(authUrl.includes('scope='), 'URL should include scope');
@@ -1239,12 +1284,15 @@ async function testGitHubOAuthCallbackInvalidState() {
   logTest('GitHub OAuth - Callback Invalid State');
 
   // Test callback with invalid state
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=invalid_state`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=invalid_state`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1258,12 +1306,15 @@ async function testGitHubOAuthCallbackErrorResponse() {
   logTest('GitHub OAuth - Callback Error Response from GitHub');
 
   // Test callback with error parameter (simulating GitHub returning an error)
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?error=access_denied&error_description=The%20user%20has%20denied%20your%20application%20access`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/github/callback?error=access_denied&error_description=The%20user%20has%20denied%20your%20application%20access`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1284,12 +1335,15 @@ async function testGitHubOAuthCallbackExpiredState() {
   // Try to use a completely fabricated state that looks valid but isn't in KV
   const fakeState = 'eyJub25jZSI6InRlc3Rub25jZSIsInRpbWVzdGFtcCI6MTcwMDAwMDAwMDAwMH0';
 
-  const response = await fetch(`${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=${fakeState}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/auth/github/callback?code=fake_code&state=${fakeState}`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const data = await response.json();
 
@@ -1335,18 +1389,34 @@ async function testAuthProvidersEndpoint() {
   assert(googleProvider, 'Should have Google provider');
   assertEquals(googleProvider.name, 'Google', 'Google provider should have correct name');
   assertEquals(googleProvider.type, 'oauth2', 'Google provider should have type oauth2');
-  assertEquals(typeof googleProvider.enabled, 'boolean', 'Google provider enabled should be boolean');
+  assertEquals(
+    typeof googleProvider.enabled,
+    'boolean',
+    'Google provider enabled should be boolean'
+  );
   if (googleProvider.enabled) {
-    assertEquals(googleProvider.authorize_url, '/api/auth/google', 'Google provider should have authorize_url when enabled');
+    assertEquals(
+      googleProvider.authorize_url,
+      '/api/auth/google',
+      'Google provider should have authorize_url when enabled'
+    );
   }
 
   // Validate GitHub provider structure
   assert(githubProvider, 'Should have GitHub provider');
   assertEquals(githubProvider.name, 'GitHub', 'GitHub provider should have correct name');
   assertEquals(githubProvider.type, 'oauth2', 'GitHub provider should have type oauth2');
-  assertEquals(typeof githubProvider.enabled, 'boolean', 'GitHub provider enabled should be boolean');
+  assertEquals(
+    typeof githubProvider.enabled,
+    'boolean',
+    'GitHub provider enabled should be boolean'
+  );
   if (githubProvider.enabled) {
-    assertEquals(githubProvider.authorize_url, '/api/auth/github', 'GitHub provider should have authorize_url when enabled');
+    assertEquals(
+      githubProvider.authorize_url,
+      '/api/auth/github',
+      'GitHub provider should have authorize_url when enabled'
+    );
   }
 }
 
@@ -1386,10 +1456,10 @@ async function testCreateTypeEntity() {
       properties: {
         name: { type: 'string' },
         price: { type: 'number' },
-        sku: { type: 'string' }
+        sku: { type: 'string' },
       },
-      required: ['name', 'price']
-    }
+      required: ['name', 'price'],
+    },
   });
 
   if (response.status !== 201) {
@@ -1415,7 +1485,7 @@ async function testCreateTypeLink() {
   const response = await makeRequest('POST', '/api/types', {
     name: 'Purchased',
     category: 'link',
-    description: 'A relationship indicating one person purchased a product'
+    description: 'A relationship indicating one person purchased a product',
   });
 
   assertEquals(response.status, 201, 'Status code should be 201');
@@ -1423,7 +1493,11 @@ async function testCreateTypeLink() {
   assertEquals(response.data.success, true, 'Should have success: true');
   assertEquals(response.data.data.name, 'Purchased', 'Should have correct name');
   assertEquals(response.data.data.category, 'link', 'Should have correct category');
-  assertEquals(response.data.data.json_schema, null, 'Should have null json_schema when not provided');
+  assertEquals(
+    response.data.data.json_schema,
+    null,
+    'Should have null json_schema when not provided'
+  );
 }
 
 async function testCreateTypeDuplicateName() {
@@ -1432,13 +1506,13 @@ async function testCreateTypeDuplicateName() {
   // First, create a type
   await makeRequest('POST', '/api/types', {
     name: 'UniqueType',
-    category: 'entity'
+    category: 'entity',
   });
 
   // Try to create another type with the same name
   const response = await makeRequest('POST', '/api/types', {
     name: 'UniqueType',
-    category: 'link'
+    category: 'link',
   });
 
   assertEquals(response.status, 409, 'Status code should be 409 Conflict');
@@ -1452,7 +1526,7 @@ async function testCreateTypeValidation() {
 
   const response = await makeRequest('POST', '/api/types', {
     // missing name
-    category: 'entity'
+    category: 'entity',
   });
 
   assertEquals(response.status, 400, 'Status code should be 400');
@@ -1469,7 +1543,10 @@ async function testListTypes() {
   assert(response.ok, 'Response should be OK');
   assertEquals(response.data.success, true, 'Should have success: true');
   assert(Array.isArray(response.data.data), 'Data should be an array');
-  assert(response.data.data.length > 0, 'Should have at least one type from seed data or previous tests');
+  assert(
+    response.data.data.length > 0,
+    'Should have at least one type from seed data or previous tests'
+  );
 }
 
 async function testListTypesFilterByCategory() {
@@ -1516,7 +1593,7 @@ async function testGetTypeById() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'Company',
     category: 'entity',
-    description: 'A business organization'
+    description: 'A business organization',
   });
 
   const typeId = createResponse.data.data.id;
@@ -1549,14 +1626,14 @@ async function testUpdateTypeName() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'OriginalName',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
 
   // Update the name
   const response = await makeRequest('PUT', `/api/types/${typeId}`, {
-    name: 'UpdatedName'
+    name: 'UpdatedName',
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -1573,18 +1650,22 @@ async function testUpdateTypeDescription() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'DescTest',
     category: 'entity',
-    description: 'Original description'
+    description: 'Original description',
   });
 
   const typeId = createResponse.data.data.id;
 
   // Update the description
   const response = await makeRequest('PUT', `/api/types/${typeId}`, {
-    description: 'Updated description'
+    description: 'Updated description',
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assertEquals(response.data.data.description, 'Updated description', 'Description should be updated');
+  assertEquals(
+    response.data.data.description,
+    'Updated description',
+    'Description should be updated'
+  );
 }
 
 async function testUpdateTypeJsonSchema() {
@@ -1593,7 +1674,7 @@ async function testUpdateTypeJsonSchema() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'SchemaTest',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
@@ -1603,9 +1684,9 @@ async function testUpdateTypeJsonSchema() {
     json_schema: {
       type: 'object',
       properties: {
-        newField: { type: 'string' }
-      }
-    }
+        newField: { type: 'string' },
+      },
+    },
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -1618,7 +1699,7 @@ async function testUpdateTypeNotFound() {
   logTest('Type Management - Update Non-existent Type Returns 404');
 
   const response = await makeRequest('PUT', '/api/types/00000000-0000-0000-0000-000000000000', {
-    name: 'NewName'
+    name: 'NewName',
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
@@ -1631,19 +1712,19 @@ async function testUpdateTypeDuplicateName() {
   // Create two types
   await makeRequest('POST', '/api/types', {
     name: 'Type1',
-    category: 'entity'
+    category: 'entity',
   });
 
   const response2 = await makeRequest('POST', '/api/types', {
     name: 'Type2',
-    category: 'entity'
+    category: 'entity',
   });
 
   const type2Id = response2.data.data.id;
 
   // Try to rename Type2 to Type1
   const updateResponse = await makeRequest('PUT', `/api/types/${type2Id}`, {
-    name: 'Type1'
+    name: 'Type1',
   });
 
   assertEquals(updateResponse.status, 409, 'Status code should be 409 Conflict');
@@ -1656,7 +1737,7 @@ async function testDeleteType() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'TypeToDelete',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
@@ -1692,7 +1773,7 @@ async function testCreateEntity() {
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'TestEntityType',
     category: 'entity',
-    description: 'Type for entity tests'
+    description: 'Type for entity tests',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -1701,8 +1782,8 @@ async function testCreateEntity() {
     type_id: typeId,
     properties: {
       name: 'Test Entity',
-      value: 42
-    }
+      value: 42,
+    },
   });
 
   if (response.status !== 201) {
@@ -1716,9 +1797,17 @@ async function testCreateEntity() {
   assert(response.data.data.id, 'Should have generated ID');
   assertEquals(response.data.data.type_id, typeId, 'Should have correct type_id');
   assert(response.data.data.properties, 'Should have properties');
-  assertEquals(response.data.data.properties.name, 'Test Entity', 'Should have correct property value');
+  assertEquals(
+    response.data.data.properties.name,
+    'Test Entity',
+    'Should have correct property value'
+  );
   assertEquals(response.data.data.version, 1, 'Should be version 1');
-  assertEquals(response.data.data.previous_version_id, null, 'Should have null previous_version_id for v1');
+  assertEquals(
+    response.data.data.previous_version_id,
+    null,
+    'Should have null previous_version_id for v1'
+  );
   assertEquals(response.data.data.is_deleted, false, 'Should not be deleted');
   assertEquals(response.data.data.is_latest, true, 'Should be latest version');
   assert(response.data.data.created_at, 'Should have created_at timestamp');
@@ -1730,7 +1819,7 @@ async function testCreateEntityWithoutType() {
 
   const response = await makeRequest('POST', '/api/entities', {
     type_id: '00000000-0000-0000-0000-000000000000',
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
@@ -1743,7 +1832,7 @@ async function testCreateEntityValidation() {
 
   const response = await makeRequest('POST', '/api/entities', {
     // missing type_id
-    properties: {}
+    properties: {},
   });
 
   assertEquals(response.status, 400, 'Status code should be 400');
@@ -1768,13 +1857,13 @@ async function testListEntitiesFilterByType() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { test: 'value' }
+    properties: { test: 'value' },
   });
 
   // Filter by type_id
@@ -1795,13 +1884,13 @@ async function testGetEntityById() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'GetTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Get Test Entity' }
+    properties: { name: 'Get Test Entity' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -1812,7 +1901,11 @@ async function testGetEntityById() {
   assert(response.ok, 'Response should be OK');
   assertEquals(response.data.success, true, 'Should have success: true');
   assertEquals(response.data.data.id, entityId, 'Should return the correct entity');
-  assertEquals(response.data.data.properties.name, 'Get Test Entity', 'Should have correct properties');
+  assertEquals(
+    response.data.data.properties.name,
+    'Get Test Entity',
+    'Should have correct properties'
+  );
 }
 
 async function testGetEntityByIdNotFound() {
@@ -1832,19 +1925,19 @@ async function testUpdateEntity() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Original Name', value: 1 }
+    properties: { name: 'Original Name', value: 1 },
   });
   const entityId = createResponse.data.data.id;
 
   // Update the entity
   const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated Name', value: 2, newField: 'added' }
+    properties: { name: 'Updated Name', value: 2, newField: 'added' },
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -1852,7 +1945,11 @@ async function testUpdateEntity() {
   assertEquals(response.data.success, true, 'Should have success: true');
   // Note: The ID changes with each version in our implementation
   assert(response.data.data.id, 'Should have an ID');
-  assertEquals(response.data.data.previous_version_id, entityId, 'Should reference previous version');
+  assertEquals(
+    response.data.data.previous_version_id,
+    entityId,
+    'Should reference previous version'
+  );
   assertEquals(response.data.data.version, 2, 'Should be version 2');
   assertEquals(response.data.data.properties.name, 'Updated Name', 'Properties should be updated');
   assertEquals(response.data.data.properties.value, 2, 'Properties should be updated');
@@ -1869,7 +1966,7 @@ async function testUpdateEntityNotFound() {
   logTest('Entity CRUD - Update Non-existent Entity Returns 404');
 
   const response = await makeRequest('PUT', '/api/entities/00000000-0000-0000-0000-000000000000', {
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
@@ -1882,13 +1979,13 @@ async function testDeleteEntity() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeleteTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'To Be Deleted' }
+    properties: { name: 'To Be Deleted' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -1908,7 +2005,10 @@ async function testDeleteEntity() {
 async function testDeleteEntityNotFound() {
   logTest('Entity CRUD - Delete Non-existent Entity Returns 404');
 
-  const response = await makeRequest('DELETE', '/api/entities/00000000-0000-0000-0000-000000000000');
+  const response = await makeRequest(
+    'DELETE',
+    '/api/entities/00000000-0000-0000-0000-000000000000'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -1920,13 +2020,13 @@ async function testDeleteEntityAlreadyDeleted() {
   // Create and delete an entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'DoubleDeleteType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -1945,13 +2045,13 @@ async function testRestoreEntity() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'RestoreTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Restored Entity' }
+    properties: { name: 'Restored Entity' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -1971,7 +2071,11 @@ async function testRestoreEntity() {
   // Verify we can still retrieve the entity using the original ID
   const getResponse = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(getResponse.status, 200, 'Should be able to get entity by original ID');
-  assertEquals(getResponse.data.data.is_deleted, false, 'Should return the restored (not deleted) version');
+  assertEquals(
+    getResponse.data.data.is_deleted,
+    false,
+    'Should return the restored (not deleted) version'
+  );
 }
 
 async function testRestoreEntityNotDeleted() {
@@ -1980,13 +2084,13 @@ async function testRestoreEntityNotDeleted() {
   // Create an entity (not deleted)
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NotDeletedType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2000,7 +2104,10 @@ async function testRestoreEntityNotDeleted() {
 async function testRestoreEntityNotFound() {
   logTest('Entity CRUD - Restore Non-existent Entity Returns 404');
 
-  const response = await makeRequest('POST', '/api/entities/00000000-0000-0000-0000-000000000000/restore');
+  const response = await makeRequest(
+    'POST',
+    '/api/entities/00000000-0000-0000-0000-000000000000/restore'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2012,13 +2119,13 @@ async function testUpdateDeletedEntity() {
   // Create and delete an entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateDeletedType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2026,7 +2133,7 @@ async function testUpdateDeletedEntity() {
 
   // Try to update deleted entity
   const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated' }
+    properties: { name: 'Updated' },
   });
 
   assertEquals(response.status, 409, 'Status code should be 409 Conflict');
@@ -2039,18 +2146,18 @@ async function testListEntitiesExcludesDeleted() {
   // Create a type and two entities
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'ListDeletedType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Active Entity' }
+    properties: { name: 'Active Entity' },
   });
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Deleted Entity' }
+    properties: { name: 'Deleted Entity' },
   });
 
   const entity2Id = entity2.data.data.id;
@@ -2075,13 +2182,13 @@ async function testListEntitiesIncludesDeleted() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'IncludeDeletedType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Will Be Deleted' }
+    properties: { name: 'Will Be Deleted' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2096,14 +2203,16 @@ async function testListEntitiesIncludesDeleted() {
 
   // Should include the deleted entity (note: the entity has a new ID for the deleted version)
   // We need to find it by checking the version chain or properties
-  const deletedEntity = response.data.data.find(e =>
-    e.type_id === typeId &&
-    e.is_deleted === true &&
-    e.properties.name === 'Will Be Deleted'
+  const deletedEntity = response.data.data.find(
+    e => e.type_id === typeId && e.is_deleted === true && e.properties.name === 'Will Be Deleted'
   );
   assert(deletedEntity, 'Should find the deleted entity');
   assertEquals(deletedEntity.is_deleted, true, 'Entity should be marked as deleted');
-  assertEquals(deletedEntity.previous_version_id, entityId, 'Should reference the original entity as previous version');
+  assertEquals(
+    deletedEntity.previous_version_id,
+    entityId,
+    'Should reference the original entity as previous version'
+  );
 }
 
 // ============================================================================
@@ -2116,24 +2225,24 @@ async function testGetEntityVersions() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'VersionTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Version 1', count: 1 }
+    properties: { name: 'Version 1', count: 1 },
   });
   const entityId = createResponse.data.data.id;
 
   // Update the entity to create version 2
   await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Version 2', count: 2 }
+    properties: { name: 'Version 2', count: 2 },
   });
 
   // Update again to create version 3
   await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Version 3', count: 3 }
+    properties: { name: 'Version 3', count: 3 },
   });
 
   // Get all versions
@@ -2151,9 +2260,21 @@ async function testGetEntityVersions() {
   assertEquals(response.data.data[2].version, 3, 'Third item should be version 3');
 
   // Verify properties
-  assertEquals(response.data.data[0].properties.name, 'Version 1', 'Version 1 should have correct properties');
-  assertEquals(response.data.data[1].properties.name, 'Version 2', 'Version 2 should have correct properties');
-  assertEquals(response.data.data[2].properties.name, 'Version 3', 'Version 3 should have correct properties');
+  assertEquals(
+    response.data.data[0].properties.name,
+    'Version 1',
+    'Version 1 should have correct properties'
+  );
+  assertEquals(
+    response.data.data[1].properties.name,
+    'Version 2',
+    'Version 2 should have correct properties'
+  );
+  assertEquals(
+    response.data.data[2].properties.name,
+    'Version 3',
+    'Version 3 should have correct properties'
+  );
 
   // Verify is_latest flag
   assertEquals(response.data.data[0].is_latest, false, 'Version 1 should not be latest');
@@ -2164,7 +2285,10 @@ async function testGetEntityVersions() {
 async function testGetEntityVersionsNotFound() {
   logTest('Entity Versions - Get Versions of Non-existent Entity Returns 404');
 
-  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/versions');
+  const response = await makeRequest(
+    'GET',
+    '/api/entities/00000000-0000-0000-0000-000000000000/versions'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2177,23 +2301,23 @@ async function testGetSpecificEntityVersion() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'SpecificVersionType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Original', value: 100 }
+    properties: { name: 'Original', value: 100 },
   });
   const entityId = createResponse.data.data.id;
 
   // Update twice
   await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated Once', value: 200 }
+    properties: { name: 'Updated Once', value: 200 },
   });
 
   await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated Twice', value: 300 }
+    properties: { name: 'Updated Twice', value: 300 },
   });
 
   // Get version 2 specifically
@@ -2203,7 +2327,11 @@ async function testGetSpecificEntityVersion() {
   assert(response.ok, 'Response should be OK');
   assertEquals(response.data.success, true, 'Should have success: true');
   assertEquals(response.data.data.version, 2, 'Should return version 2');
-  assertEquals(response.data.data.properties.name, 'Updated Once', 'Should have version 2 properties');
+  assertEquals(
+    response.data.data.properties.name,
+    'Updated Once',
+    'Should have version 2 properties'
+  );
   assertEquals(response.data.data.properties.value, 200, 'Should have version 2 value');
   assertEquals(response.data.data.is_latest, false, 'Version 2 should not be latest');
 }
@@ -2214,13 +2342,13 @@ async function testGetSpecificEntityVersionNotFound() {
   // Create a type and entity (only version 1 exists)
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NoVersionType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2238,13 +2366,13 @@ async function testGetSpecificEntityVersionInvalidNumber() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidVersionType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2262,7 +2390,7 @@ async function testGetEntityHistory() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'HistoryTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -2271,8 +2399,8 @@ async function testGetEntityHistory() {
     properties: {
       name: 'Original Name',
       description: 'Original description',
-      count: 1
-    }
+      count: 1,
+    },
   });
   const entityId = createResponse.data.data.id;
 
@@ -2282,8 +2410,8 @@ async function testGetEntityHistory() {
       name: 'Updated Name',
       description: 'Original description',
       count: 2,
-      status: 'active'
-    }
+      status: 'active',
+    },
   });
 
   // Update 2: Remove description, change status
@@ -2291,8 +2419,8 @@ async function testGetEntityHistory() {
     properties: {
       name: 'Updated Name',
       count: 2,
-      status: 'inactive'
-    }
+      status: 'inactive',
+    },
   });
 
   // Get history with diffs
@@ -2326,13 +2454,20 @@ async function testGetEntityHistory() {
   assert(v3Diff, 'Version 3 should have diff object');
   assertEquals(v3Diff.changed.status.old, 'active', 'Should track status change');
   assertEquals(v3Diff.changed.status.new, 'inactive', 'Should track status change');
-  assertEquals(v3Diff.removed.description, 'Original description', 'Should track removed description field');
+  assertEquals(
+    v3Diff.removed.description,
+    'Original description',
+    'Should track removed description field'
+  );
 }
 
 async function testGetEntityHistoryNotFound() {
   logTest('Entity Versions - Get History of Non-existent Entity Returns 404');
 
-  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/history');
+  const response = await makeRequest(
+    'GET',
+    '/api/entities/00000000-0000-0000-0000-000000000000/history'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2345,19 +2480,19 @@ async function testGetVersionsWithDeletedEntity() {
   // Create a type and entity
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedVersionType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const entityId = createResponse.data.data.id;
 
   // Update
   await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated' }
+    properties: { name: 'Updated' },
   });
 
   // Delete
@@ -2370,13 +2505,21 @@ async function testGetVersionsWithDeletedEntity() {
   const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assertEquals(response.data.data.length, 4, 'Should have 4 versions (create, update, delete, restore)');
+  assertEquals(
+    response.data.data.length,
+    4,
+    'Should have 4 versions (create, update, delete, restore)'
+  );
 
   // Check deletion states
   assertEquals(response.data.data[0].is_deleted, false, 'Version 1 should not be deleted');
   assertEquals(response.data.data[1].is_deleted, false, 'Version 2 should not be deleted');
   assertEquals(response.data.data[2].is_deleted, true, 'Version 3 should be deleted');
-  assertEquals(response.data.data[3].is_deleted, false, 'Version 4 should not be deleted (restored)');
+  assertEquals(
+    response.data.data[3].is_deleted,
+    false,
+    'Version 4 should not be deleted (restored)'
+  );
 }
 
 // ============================================================================
@@ -2389,27 +2532,27 @@ async function testCreateLink() {
   // First, create types and entities to link
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkTestLinkType',
     category: 'link',
-    description: 'Type for link tests'
+    description: 'Type for link tests',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create two entities to link
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2420,8 +2563,8 @@ async function testCreateLink() {
     target_entity_id: entity2Id,
     properties: {
       strength: 'strong',
-      weight: 10
-    }
+      weight: 10,
+    },
   });
 
   if (response.status !== 201) {
@@ -2434,12 +2577,28 @@ async function testCreateLink() {
   assert(response.data.data, 'Should have data object');
   assert(response.data.data.id, 'Should have generated ID');
   assertEquals(response.data.data.type_id, linkTypeId, 'Should have correct type_id');
-  assertEquals(response.data.data.source_entity_id, entity1Id, 'Should have correct source_entity_id');
-  assertEquals(response.data.data.target_entity_id, entity2Id, 'Should have correct target_entity_id');
+  assertEquals(
+    response.data.data.source_entity_id,
+    entity1Id,
+    'Should have correct source_entity_id'
+  );
+  assertEquals(
+    response.data.data.target_entity_id,
+    entity2Id,
+    'Should have correct target_entity_id'
+  );
   assert(response.data.data.properties, 'Should have properties');
-  assertEquals(response.data.data.properties.strength, 'strong', 'Should have correct property value');
+  assertEquals(
+    response.data.data.properties.strength,
+    'strong',
+    'Should have correct property value'
+  );
   assertEquals(response.data.data.version, 1, 'Should be version 1');
-  assertEquals(response.data.data.previous_version_id, null, 'Should have null previous_version_id for v1');
+  assertEquals(
+    response.data.data.previous_version_id,
+    null,
+    'Should have null previous_version_id for v1'
+  );
   assertEquals(response.data.data.is_deleted, false, 'Should not be deleted');
   assertEquals(response.data.data.is_latest, true, 'Should be latest version');
   assert(response.data.data.created_at, 'Should have created_at timestamp');
@@ -2452,19 +2611,19 @@ async function testCreateLinkWithInvalidType() {
   // Create entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidLinkTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2472,7 +2631,7 @@ async function testCreateLinkWithInvalidType() {
     type_id: '00000000-0000-0000-0000-000000000000',
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: {}
+    properties: {},
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
@@ -2485,19 +2644,19 @@ async function testCreateLinkWithInvalidSourceEntity() {
 
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidSourceEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidSourceLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target Entity' }
+    properties: { name: 'Target Entity' },
   });
   const entityId = entity.data.data.id;
 
@@ -2505,12 +2664,16 @@ async function testCreateLinkWithInvalidSourceEntity() {
     type_id: linkTypeId,
     source_entity_id: '00000000-0000-0000-0000-000000000000',
     target_entity_id: entityId,
-    properties: {}
+    properties: {},
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
-  assertEquals(response.data.code, 'SOURCE_ENTITY_NOT_FOUND', 'Should have SOURCE_ENTITY_NOT_FOUND error code');
+  assertEquals(
+    response.data.code,
+    'SOURCE_ENTITY_NOT_FOUND',
+    'Should have SOURCE_ENTITY_NOT_FOUND error code'
+  );
 }
 
 async function testListLinks() {
@@ -2530,25 +2693,25 @@ async function testListLinksFilterByType() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2557,7 +2720,7 @@ async function testListLinksFilterByType() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { test: 'value' }
+    properties: { test: 'value' },
   });
 
   // Filter by type_id
@@ -2578,25 +2741,25 @@ async function testGetLinkById() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'GetLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'GetLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2604,7 +2767,7 @@ async function testGetLinkById() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Test Link' }
+    properties: { name: 'Test Link' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -2635,25 +2798,25 @@ async function testUpdateLink() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2661,13 +2824,13 @@ async function testUpdateLink() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { strength: 'weak', weight: 1 }
+    properties: { strength: 'weak', weight: 1 },
   });
   const linkId = createResponse.data.data.id;
 
   // Update the link
   const response = await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { strength: 'strong', weight: 10, newField: 'added' }
+    properties: { strength: 'strong', weight: 10, newField: 'added' },
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -2693,25 +2856,25 @@ async function testDeleteLink() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeleteLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeleteLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2719,7 +2882,7 @@ async function testDeleteLink() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'To Be Deleted' }
+    properties: { name: 'To Be Deleted' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -2742,25 +2905,25 @@ async function testRestoreLink() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'RestoreLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'RestoreLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2768,7 +2931,7 @@ async function testRestoreLink() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Restored Link' }
+    properties: { name: 'Restored Link' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -2787,7 +2950,11 @@ async function testRestoreLink() {
   // Verify we can still retrieve the link using the original ID
   const getResponse = await makeRequest('GET', `/api/links/${linkId}`);
   assertEquals(getResponse.status, 200, 'Should be able to get link by original ID');
-  assertEquals(getResponse.data.data.is_deleted, false, 'Should return the restored (not deleted) version');
+  assertEquals(
+    getResponse.data.data.is_deleted,
+    false,
+    'Should return the restored (not deleted) version'
+  );
 }
 
 async function testUpdateDeletedLink() {
@@ -2796,25 +2963,25 @@ async function testUpdateDeletedLink() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateDeletedLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'UpdateDeletedLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2822,7 +2989,7 @@ async function testUpdateDeletedLink() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -2830,7 +2997,7 @@ async function testUpdateDeletedLink() {
 
   // Try to update deleted link
   const response = await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { name: 'Updated' }
+    properties: { name: 'Updated' },
   });
 
   assertEquals(response.status, 409, 'Status code should be 409 Conflict');
@@ -2847,25 +3014,25 @@ async function testGetLinkVersions() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkVersionTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkVersionTestType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2874,18 +3041,18 @@ async function testGetLinkVersions() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { strength: 'weak', version: 1 }
+    properties: { strength: 'weak', version: 1 },
   });
   const linkId = createResponse.data.data.id;
 
   // Update the link to create version 2
   await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { strength: 'medium', version: 2 }
+    properties: { strength: 'medium', version: 2 },
   });
 
   // Update again to create version 3
   await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { strength: 'strong', version: 3 }
+    properties: { strength: 'strong', version: 3 },
   });
 
   // Get all versions
@@ -2903,9 +3070,21 @@ async function testGetLinkVersions() {
   assertEquals(response.data.data[2].version, 3, 'Third item should be version 3');
 
   // Verify properties
-  assertEquals(response.data.data[0].properties.strength, 'weak', 'Version 1 should have correct properties');
-  assertEquals(response.data.data[1].properties.strength, 'medium', 'Version 2 should have correct properties');
-  assertEquals(response.data.data[2].properties.strength, 'strong', 'Version 3 should have correct properties');
+  assertEquals(
+    response.data.data[0].properties.strength,
+    'weak',
+    'Version 1 should have correct properties'
+  );
+  assertEquals(
+    response.data.data[1].properties.strength,
+    'medium',
+    'Version 2 should have correct properties'
+  );
+  assertEquals(
+    response.data.data[2].properties.strength,
+    'strong',
+    'Version 3 should have correct properties'
+  );
 
   // Verify is_latest flag
   assertEquals(response.data.data[0].is_latest, false, 'Version 1 should not be latest');
@@ -2916,7 +3095,10 @@ async function testGetLinkVersions() {
 async function testGetLinkVersionsNotFound() {
   logTest('Link Versions - Get Versions of Non-existent Link Returns 404');
 
-  const response = await makeRequest('GET', '/api/links/00000000-0000-0000-0000-000000000000/versions');
+  const response = await makeRequest(
+    'GET',
+    '/api/links/00000000-0000-0000-0000-000000000000/versions'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2929,25 +3111,25 @@ async function testGetSpecificLinkVersion() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'SpecificLinkVersionEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'SpecificLinkVersionType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -2955,17 +3137,17 @@ async function testGetSpecificLinkVersion() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { weight: 100 }
+    properties: { weight: 100 },
   });
   const linkId = createResponse.data.data.id;
 
   // Update twice
   await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { weight: 200 }
+    properties: { weight: 200 },
   });
 
   await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { weight: 300 }
+    properties: { weight: 300 },
   });
 
   // Get version 2 specifically
@@ -2985,25 +3167,25 @@ async function testGetSpecificLinkVersionNotFound() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NoLinkVersionEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NoLinkVersionType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -3011,7 +3193,7 @@ async function testGetSpecificLinkVersionNotFound() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -3029,25 +3211,25 @@ async function testGetSpecificLinkVersionInvalidNumber() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidLinkVersionEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidLinkVersionType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -3055,7 +3237,7 @@ async function testGetSpecificLinkVersionInvalidNumber() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const linkId = createResponse.data.data.id;
 
@@ -3073,25 +3255,25 @@ async function testGetLinkHistory() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkHistoryTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkHistoryTestType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -3102,8 +3284,8 @@ async function testGetLinkHistory() {
     properties: {
       strength: 'weak',
       description: 'Original description',
-      weight: 1
-    }
+      weight: 1,
+    },
   });
   const linkId = createResponse.data.data.id;
 
@@ -3113,8 +3295,8 @@ async function testGetLinkHistory() {
       strength: 'medium',
       description: 'Original description',
       weight: 5,
-      status: 'active'
-    }
+      status: 'active',
+    },
   });
 
   // Update 2: Remove description, change status
@@ -3122,8 +3304,8 @@ async function testGetLinkHistory() {
     properties: {
       strength: 'medium',
       weight: 5,
-      status: 'inactive'
-    }
+      status: 'inactive',
+    },
   });
 
   // Get history with diffs
@@ -3157,13 +3339,20 @@ async function testGetLinkHistory() {
   assert(v3Diff, 'Version 3 should have diff object');
   assertEquals(v3Diff.changed.status.old, 'active', 'Should track status change');
   assertEquals(v3Diff.changed.status.new, 'inactive', 'Should track status change');
-  assertEquals(v3Diff.removed.description, 'Original description', 'Should track removed description field');
+  assertEquals(
+    v3Diff.removed.description,
+    'Original description',
+    'Should track removed description field'
+  );
 }
 
 async function testGetLinkHistoryNotFound() {
   logTest('Link Versions - Get History of Non-existent Link Returns 404');
 
-  const response = await makeRequest('GET', '/api/links/00000000-0000-0000-0000-000000000000/history');
+  const response = await makeRequest(
+    'GET',
+    '/api/links/00000000-0000-0000-0000-000000000000/history'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -3176,25 +3365,25 @@ async function testGetLinkVersionsWithDeletedLink() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedLinkVersionEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedLinkVersionType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -3202,13 +3391,13 @@ async function testGetLinkVersionsWithDeletedLink() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   const linkId = createResponse.data.data.id;
 
   // Update
   await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { name: 'Updated' }
+    properties: { name: 'Updated' },
   });
 
   // Delete
@@ -3221,13 +3410,21 @@ async function testGetLinkVersionsWithDeletedLink() {
   const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assertEquals(response.data.data.length, 4, 'Should have 4 versions (create, update, delete, restore)');
+  assertEquals(
+    response.data.data.length,
+    4,
+    'Should have 4 versions (create, update, delete, restore)'
+  );
 
   // Check deletion states
   assertEquals(response.data.data[0].is_deleted, false, 'Version 1 should not be deleted');
   assertEquals(response.data.data[1].is_deleted, false, 'Version 2 should not be deleted');
   assertEquals(response.data.data[2].is_deleted, true, 'Version 3 should be deleted');
-  assertEquals(response.data.data[3].is_deleted, false, 'Version 4 should not be deleted (restored)');
+  assertEquals(
+    response.data.data[3].is_deleted,
+    false,
+    'Version 4 should not be deleted (restored)'
+  );
 }
 
 async function testGetOutboundLinks() {
@@ -3236,40 +3433,40 @@ async function testGetOutboundLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'OutboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'OutboundTestLinkType1',
     category: 'link',
-    description: 'First link type for outbound tests'
+    description: 'First link type for outbound tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'OutboundTestLinkType2',
     category: 'link',
-    description: 'Second link type for outbound tests'
+    description: 'Second link type for outbound tests',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create three entities: source and two targets
   const sourceEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source Entity' }
+    properties: { name: 'Source Entity' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
   const targetEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target Entity 1' }
+    properties: { name: 'Target Entity 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
   const targetEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target Entity 2' }
+    properties: { name: 'Target Entity 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
@@ -3278,7 +3475,7 @@ async function testGetOutboundLinks() {
     type_id: linkType1Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
-    properties: { relationship: 'knows' }
+    properties: { relationship: 'knows' },
   });
   const link1Id = link1Response.data.data.id;
 
@@ -3286,14 +3483,14 @@ async function testGetOutboundLinks() {
     type_id: linkType2Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
-    properties: { relationship: 'likes' }
+    properties: { relationship: 'likes' },
   });
   const link2Id = link2Response.data.data.id;
 
   // Create an inbound link (should NOT appear in outbound results)
   const inboundEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Inbound Source' }
+    properties: { name: 'Inbound Source' },
   });
   const inboundEntityId = inboundEntity.data.data.id;
 
@@ -3301,7 +3498,7 @@ async function testGetOutboundLinks() {
     type_id: linkType1Id,
     source_entity_id: inboundEntityId,
     target_entity_id: sourceEntityId,
-    properties: { relationship: 'follows' }
+    properties: { relationship: 'follows' },
   });
 
   // Test: Get all outbound links
@@ -3318,18 +3515,42 @@ async function testGetOutboundLinks() {
   assert(outboundLink1, 'Should include first outbound link');
   assertEquals(outboundLink1.type_id, linkType1Id, 'Should have correct link type');
   assertEquals(outboundLink1.source_entity_id, sourceEntityId, 'Should have correct source entity');
-  assertEquals(outboundLink1.target_entity_id, targetEntity1Id, 'Should have correct target entity');
-  assertEquals(outboundLink1.properties.relationship, 'knows', 'Should have correct link properties');
+  assertEquals(
+    outboundLink1.target_entity_id,
+    targetEntity1Id,
+    'Should have correct target entity'
+  );
+  assertEquals(
+    outboundLink1.properties.relationship,
+    'knows',
+    'Should have correct link properties'
+  );
   assert(outboundLink1.target_entity, 'Should include target entity information');
-  assertEquals(outboundLink1.target_entity.id, targetEntity1Id, 'Target entity should have correct ID');
-  assertEquals(outboundLink1.target_entity.properties.name, 'Target Entity 1', 'Target entity should have correct properties');
+  assertEquals(
+    outboundLink1.target_entity.id,
+    targetEntity1Id,
+    'Target entity should have correct ID'
+  );
+  assertEquals(
+    outboundLink1.target_entity.properties.name,
+    'Target Entity 1',
+    'Target entity should have correct properties'
+  );
 
   // Verify second link
   const outboundLink2 = response.data.data.find(l => l.id === link2Id);
   assert(outboundLink2, 'Should include second outbound link');
   assertEquals(outboundLink2.type_id, linkType2Id, 'Should have correct link type');
-  assertEquals(outboundLink2.target_entity_id, targetEntity2Id, 'Should have correct target entity');
-  assertEquals(outboundLink2.properties.relationship, 'likes', 'Should have correct link properties');
+  assertEquals(
+    outboundLink2.target_entity_id,
+    targetEntity2Id,
+    'Should have correct target entity'
+  );
+  assertEquals(
+    outboundLink2.properties.relationship,
+    'likes',
+    'Should have correct link properties'
+  );
 }
 
 async function testGetOutboundLinksFilterByType() {
@@ -3338,38 +3559,38 @@ async function testGetOutboundLinksFilterByType() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestLinkType1',
-    category: 'link'
+    category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestLinkType2',
-    category: 'link'
+    category: 'link',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
   const sourceEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source' }
+    properties: { name: 'Source' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
   const targetEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target 1' }
+    properties: { name: 'Target 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
   const targetEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target 2' }
+    properties: { name: 'Target 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
@@ -3378,29 +3599,39 @@ async function testGetOutboundLinksFilterByType() {
     type_id: linkType1Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
-    properties: { type: 'type1' }
+    properties: { type: 'type1' },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
-    properties: { type: 'type2' }
+    properties: { type: 'type2' },
   });
 
   // Test: Get outbound links filtered by type
-  const response = await makeRequest('GET', `/api/entities/${sourceEntityId}/outbound?type_id=${linkType1Id}`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${sourceEntityId}/outbound?type_id=${linkType1Id}`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 link of the specified type');
   assertEquals(response.data.data[0].type_id, linkType1Id, 'Should have correct link type');
-  assertEquals(response.data.data[0].target_entity_id, targetEntity1Id, 'Should have correct target entity');
+  assertEquals(
+    response.data.data[0].target_entity_id,
+    targetEntity1Id,
+    'Should have correct target entity'
+  );
 }
 
 async function testGetOutboundLinksEntityNotFound() {
   logTest('Graph Navigation - Get Outbound Links for Non-existent Entity Returns 404');
 
-  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/outbound');
+  const response = await makeRequest(
+    'GET',
+    '/api/entities/00000000-0000-0000-0000-000000000000/outbound'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -3412,32 +3643,32 @@ async function testGetOutboundLinksExcludesDeleted() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedOutboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedOutboundTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const sourceEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source' }
+    properties: { name: 'Source' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
   const targetEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target 1' }
+    properties: { name: 'Target 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
   const targetEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target 2' }
+    properties: { name: 'Target 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
@@ -3446,7 +3677,7 @@ async function testGetOutboundLinksExcludesDeleted() {
     type_id: linkTypeId,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
-    properties: { status: 'active' }
+    properties: { status: 'active' },
   });
   const link1Id = link1Response.data.data.id;
 
@@ -3454,7 +3685,7 @@ async function testGetOutboundLinksExcludesDeleted() {
     type_id: linkTypeId,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
-    properties: { status: 'active' }
+    properties: { status: 'active' },
   });
 
   // Delete the first link
@@ -3465,13 +3696,24 @@ async function testGetOutboundLinksExcludesDeleted() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 non-deleted link');
-  assertEquals(response.data.data[0].target_entity_id, targetEntity2Id, 'Should only include non-deleted link');
+  assertEquals(
+    response.data.data[0].target_entity_id,
+    targetEntity2Id,
+    'Should only include non-deleted link'
+  );
 
   // Test: Get outbound links including deleted
-  const responseWithDeleted = await makeRequest('GET', `/api/entities/${sourceEntityId}/outbound?include_deleted=true`);
+  const responseWithDeleted = await makeRequest(
+    'GET',
+    `/api/entities/${sourceEntityId}/outbound?include_deleted=true`
+  );
 
   assertEquals(responseWithDeleted.status, 200, 'Status code should be 200');
-  assertEquals(responseWithDeleted.data.data.length, 2, 'Should have 2 links when including deleted');
+  assertEquals(
+    responseWithDeleted.data.data.length,
+    2,
+    'Should have 2 links when including deleted'
+  );
 }
 
 async function testGetInboundLinks() {
@@ -3480,40 +3722,40 @@ async function testGetInboundLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'InboundTestLinkType1',
     category: 'link',
-    description: 'First link type for inbound tests'
+    description: 'First link type for inbound tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'InboundTestLinkType2',
     category: 'link',
-    description: 'Second link type for inbound tests'
+    description: 'Second link type for inbound tests',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create three entities: target and two sources
   const targetEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target Entity' }
+    properties: { name: 'Target Entity' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
   const sourceEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source Entity 1' }
+    properties: { name: 'Source Entity 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
   const sourceEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source Entity 2' }
+    properties: { name: 'Source Entity 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
@@ -3522,7 +3764,7 @@ async function testGetInboundLinks() {
     type_id: linkType1Id,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
-    properties: { relationship: 'follows' }
+    properties: { relationship: 'follows' },
   });
   const link1Id = link1Response.data.data.id;
 
@@ -3530,14 +3772,14 @@ async function testGetInboundLinks() {
     type_id: linkType2Id,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
-    properties: { relationship: 'subscribes' }
+    properties: { relationship: 'subscribes' },
   });
   const link2Id = link2Response.data.data.id;
 
   // Create an outbound link (should NOT appear in inbound results)
   const outboundEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Outbound Target' }
+    properties: { name: 'Outbound Target' },
   });
   const outboundEntityId = outboundEntity.data.data.id;
 
@@ -3545,7 +3787,7 @@ async function testGetInboundLinks() {
     type_id: linkType1Id,
     source_entity_id: targetEntityId,
     target_entity_id: outboundEntityId,
-    properties: { relationship: 'mentions' }
+    properties: { relationship: 'mentions' },
   });
 
   // Test: Get all inbound links
@@ -3563,17 +3805,33 @@ async function testGetInboundLinks() {
   assertEquals(inboundLink1.type_id, linkType1Id, 'Should have correct link type');
   assertEquals(inboundLink1.source_entity_id, sourceEntity1Id, 'Should have correct source entity');
   assertEquals(inboundLink1.target_entity_id, targetEntityId, 'Should have correct target entity');
-  assertEquals(inboundLink1.properties.relationship, 'follows', 'Should have correct link properties');
+  assertEquals(
+    inboundLink1.properties.relationship,
+    'follows',
+    'Should have correct link properties'
+  );
   assert(inboundLink1.source_entity, 'Should include source entity information');
-  assertEquals(inboundLink1.source_entity.id, sourceEntity1Id, 'Source entity should have correct ID');
-  assertEquals(inboundLink1.source_entity.properties.name, 'Source Entity 1', 'Source entity should have correct properties');
+  assertEquals(
+    inboundLink1.source_entity.id,
+    sourceEntity1Id,
+    'Source entity should have correct ID'
+  );
+  assertEquals(
+    inboundLink1.source_entity.properties.name,
+    'Source Entity 1',
+    'Source entity should have correct properties'
+  );
 
   // Verify second link
   const inboundLink2 = response.data.data.find(l => l.id === link2Id);
   assert(inboundLink2, 'Should include second inbound link');
   assertEquals(inboundLink2.type_id, linkType2Id, 'Should have correct link type');
   assertEquals(inboundLink2.source_entity_id, sourceEntity2Id, 'Should have correct source entity');
-  assertEquals(inboundLink2.properties.relationship, 'subscribes', 'Should have correct link properties');
+  assertEquals(
+    inboundLink2.properties.relationship,
+    'subscribes',
+    'Should have correct link properties'
+  );
 }
 
 async function testGetInboundLinksFilterByType() {
@@ -3582,38 +3840,38 @@ async function testGetInboundLinksFilterByType() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilteredInboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'FilteredInboundTestLinkType1',
-    category: 'link'
+    category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'FilteredInboundTestLinkType2',
-    category: 'link'
+    category: 'link',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
   const targetEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target' }
+    properties: { name: 'Target' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
   const sourceEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source 1' }
+    properties: { name: 'Source 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
   const sourceEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source 2' }
+    properties: { name: 'Source 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
@@ -3622,29 +3880,39 @@ async function testGetInboundLinksFilterByType() {
     type_id: linkType1Id,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
-    properties: { type: 'type1' }
+    properties: { type: 'type1' },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
-    properties: { type: 'type2' }
+    properties: { type: 'type2' },
   });
 
   // Test: Get inbound links filtered by type
-  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound?type_id=${linkType1Id}`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${targetEntityId}/inbound?type_id=${linkType1Id}`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 link of the specified type');
   assertEquals(response.data.data[0].type_id, linkType1Id, 'Should have correct link type');
-  assertEquals(response.data.data[0].source_entity_id, sourceEntity1Id, 'Should have correct source entity');
+  assertEquals(
+    response.data.data[0].source_entity_id,
+    sourceEntity1Id,
+    'Should have correct source entity'
+  );
 }
 
 async function testGetInboundLinksEntityNotFound() {
   logTest('Graph Navigation - Get Inbound Links for Non-existent Entity Returns 404');
 
-  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/inbound');
+  const response = await makeRequest(
+    'GET',
+    '/api/entities/00000000-0000-0000-0000-000000000000/inbound'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -3656,32 +3924,32 @@ async function testGetInboundLinksExcludesDeleted() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedInboundTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DeletedInboundTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const targetEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target' }
+    properties: { name: 'Target' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
   const sourceEntity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source 1' }
+    properties: { name: 'Source 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
   const sourceEntity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source 2' }
+    properties: { name: 'Source 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
@@ -3690,7 +3958,7 @@ async function testGetInboundLinksExcludesDeleted() {
     type_id: linkTypeId,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
-    properties: { status: 'active' }
+    properties: { status: 'active' },
   });
   const link1Id = link1Response.data.data.id;
 
@@ -3698,7 +3966,7 @@ async function testGetInboundLinksExcludesDeleted() {
     type_id: linkTypeId,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
-    properties: { status: 'active' }
+    properties: { status: 'active' },
   });
 
   // Delete the first link
@@ -3709,13 +3977,24 @@ async function testGetInboundLinksExcludesDeleted() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 non-deleted link');
-  assertEquals(response.data.data[0].source_entity_id, sourceEntity2Id, 'Should only include non-deleted link');
+  assertEquals(
+    response.data.data[0].source_entity_id,
+    sourceEntity2Id,
+    'Should only include non-deleted link'
+  );
 
   // Test: Get inbound links including deleted
-  const responseWithDeleted = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound?include_deleted=true`);
+  const responseWithDeleted = await makeRequest(
+    'GET',
+    `/api/entities/${targetEntityId}/inbound?include_deleted=true`
+  );
 
   assertEquals(responseWithDeleted.status, 200, 'Status code should be 200');
-  assertEquals(responseWithDeleted.data.data.length, 2, 'Should have 2 links when including deleted');
+  assertEquals(
+    responseWithDeleted.data.data.length,
+    2,
+    'Should have 2 links when including deleted'
+  );
 }
 
 async function testGetNeighbors() {
@@ -3724,52 +4003,52 @@ async function testGetNeighbors() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NeighborsTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'NeighborsTestLinkType1',
     category: 'link',
-    description: 'First link type for neighbors tests'
+    description: 'First link type for neighbors tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'NeighborsTestLinkType2',
     category: 'link',
-    description: 'Second link type for neighbors tests'
+    description: 'Second link type for neighbors tests',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create five entities: center, two inbound sources, and two outbound targets
   const centerEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Center Entity' }
+    properties: { name: 'Center Entity' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
   const inboundSource1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Inbound Source 1' }
+    properties: { name: 'Inbound Source 1' },
   });
   const inboundSource1Id = inboundSource1.data.data.id;
 
   const inboundSource2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Inbound Source 2' }
+    properties: { name: 'Inbound Source 2' },
   });
   const inboundSource2Id = inboundSource2.data.data.id;
 
   const outboundTarget1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Outbound Target 1' }
+    properties: { name: 'Outbound Target 1' },
   });
   const outboundTarget1Id = outboundTarget1.data.data.id;
 
   const outboundTarget2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Outbound Target 2' }
+    properties: { name: 'Outbound Target 2' },
   });
   const outboundTarget2Id = outboundTarget2.data.data.id;
 
@@ -3778,14 +4057,14 @@ async function testGetNeighbors() {
     type_id: linkType1Id,
     source_entity_id: inboundSource1Id,
     target_entity_id: centerEntityId,
-    properties: { relationship: 'follows' }
+    properties: { relationship: 'follows' },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: inboundSource2Id,
     target_entity_id: centerEntityId,
-    properties: { relationship: 'subscribes' }
+    properties: { relationship: 'subscribes' },
   });
 
   // Create outbound links (FROM center entity)
@@ -3793,14 +4072,14 @@ async function testGetNeighbors() {
     type_id: linkType1Id,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTarget1Id,
-    properties: { relationship: 'likes' }
+    properties: { relationship: 'likes' },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTarget2Id,
-    properties: { relationship: 'mentions' }
+    properties: { relationship: 'mentions' },
   });
 
   // Test: Get all neighbors
@@ -3844,32 +4123,32 @@ async function testGetNeighborsFilterByDirection() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DirectionFilterTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DirectionFilterTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const centerEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Center' }
+    properties: { name: 'Center' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
   const inboundSource = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Inbound Source' }
+    properties: { name: 'Inbound Source' },
   });
   const inboundSourceId = inboundSource.data.data.id;
 
   const outboundTarget = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Outbound Target' }
+    properties: { name: 'Outbound Target' },
   });
   const outboundTargetId = outboundTarget.data.data.id;
 
@@ -3878,24 +4157,30 @@ async function testGetNeighborsFilterByDirection() {
     type_id: linkTypeId,
     source_entity_id: inboundSourceId,
     target_entity_id: centerEntityId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTargetId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Get only inbound neighbors
-  const inboundResponse = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?direction=inbound`);
+  const inboundResponse = await makeRequest(
+    'GET',
+    `/api/entities/${centerEntityId}/neighbors?direction=inbound`
+  );
   assertEquals(inboundResponse.status, 200, 'Status code should be 200');
   assertEquals(inboundResponse.data.data.length, 1, 'Should have 1 inbound neighbor');
   assertEquals(inboundResponse.data.data[0].id, inboundSourceId, 'Should be inbound source');
 
   // Test: Get only outbound neighbors
-  const outboundResponse = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?direction=outbound`);
+  const outboundResponse = await makeRequest(
+    'GET',
+    `/api/entities/${centerEntityId}/neighbors?direction=outbound`
+  );
   assertEquals(outboundResponse.status, 200, 'Status code should be 200');
   assertEquals(outboundResponse.data.data.length, 1, 'Should have 1 outbound neighbor');
   assertEquals(outboundResponse.data.data[0].id, outboundTargetId, 'Should be outbound target');
@@ -3907,38 +4192,38 @@ async function testGetNeighborsFilterByLinkType() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestLinkType1',
-    category: 'link'
+    category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestLinkType2',
-    category: 'link'
+    category: 'link',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
   const centerEntity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Center' }
+    properties: { name: 'Center' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
   const neighbor1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Neighbor 1' }
+    properties: { name: 'Neighbor 1' },
   });
   const neighbor1Id = neighbor1.data.data.id;
 
   const neighbor2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Neighbor 2' }
+    properties: { name: 'Neighbor 2' },
   });
   const neighbor2Id = neighbor2.data.data.id;
 
@@ -3947,28 +4232,38 @@ async function testGetNeighborsFilterByLinkType() {
     type_id: linkType1Id,
     source_entity_id: centerEntityId,
     target_entity_id: neighbor1Id,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: centerEntityId,
     target_entity_id: neighbor2Id,
-    properties: {}
+    properties: {},
   });
 
   // Test: Get neighbors filtered by link type
-  const response = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors?type_id=${linkType1Id}`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${centerEntityId}/neighbors?type_id=${linkType1Id}`
+  );
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 neighbor with specified link type');
   assertEquals(response.data.data[0].id, neighbor1Id, 'Should be the correct neighbor');
-  assertEquals(response.data.data[0].connections[0].link_type_id, linkType1Id, 'Should have correct link type');
+  assertEquals(
+    response.data.data[0].connections[0].link_type_id,
+    linkType1Id,
+    'Should have correct link type'
+  );
 }
 
 async function testGetNeighborsEntityNotFound() {
   logTest('Graph Navigation - Get Neighbors for Non-existent Entity Returns 404');
 
-  const response = await makeRequest('GET', '/api/entities/00000000-0000-0000-0000-000000000000/neighbors');
+  const response = await makeRequest(
+    'GET',
+    '/api/entities/00000000-0000-0000-0000-000000000000/neighbors'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -3980,38 +4275,38 @@ async function testShortestPath() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ShortestPathTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ShortestPathTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a linear path: A -> B -> C -> D
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   const entityD = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity D' }
+    properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
@@ -4020,21 +4315,21 @@ async function testShortestPath() {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: { step: 1 }
+    properties: { step: 1 },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
-    properties: { step: 2 }
+    properties: { step: 2 },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityDId,
-    properties: { step: 3 }
+    properties: { step: 3 },
   });
 
   // Test: Find shortest path from A to D
@@ -4059,14 +4354,14 @@ async function testShortestPathSameEntity() {
   // Create type
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'SameEntityTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create a single entity
   const entity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Same Entity' }
+    properties: { name: 'Same Entity' },
   });
   const entityId = entity.data.data.id;
 
@@ -4086,20 +4381,20 @@ async function testShortestPathNoPath() {
   // Create type
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NoPathTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create two disconnected entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Isolated Entity 1' }
+    properties: { name: 'Isolated Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Isolated Entity 2' }
+    properties: { name: 'Isolated Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -4117,38 +4412,38 @@ async function testShortestPathWithLinkTypeFilter() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterPathTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'FilterPathTestLinkType1',
-    category: 'link'
+    category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'FilterPathTestLinkType2',
-    category: 'link'
+    category: 'link',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities: A -> B -> C (using type1), and A -> C (using type2)
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
@@ -4157,28 +4452,35 @@ async function testShortestPathWithLinkTypeFilter() {
     type_id: linkType1Id,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: entityAId,
     target_entity_id: entityCId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Find path using only linkType1 (should go A->B->C)
-  const response = await makeRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityCId}&type_id=${linkType1Id}`);
+  const response = await makeRequest(
+    'GET',
+    `/api/graph/path?from=${entityAId}&to=${entityCId}&type_id=${linkType1Id}`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assertEquals(response.data.data.path.length, 3, 'Path should have 3 entities (A, B, C) when filtered');
+  assertEquals(
+    response.data.data.path.length,
+    3,
+    'Path should have 3 entities (A, B, C) when filtered'
+  );
   assertEquals(response.data.data.length, 2, 'Path length should be 2 hops');
 }
 
@@ -4188,13 +4490,13 @@ async function testShortestPathInvalidSourceEntity() {
   // Create type and valid entity
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidSourceTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const entity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Valid Entity' }
+    properties: { name: 'Valid Entity' },
   });
   const entityId = entity.data.data.id;
 
@@ -4213,13 +4515,13 @@ async function testShortestPathInvalidTargetEntity() {
   // Create type and valid entity
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'InvalidTargetTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const entity = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Valid Entity' }
+    properties: { name: 'Valid Entity' },
   });
   const entityId = entity.data.data.id;
 
@@ -4238,44 +4540,44 @@ async function testMultiHopTraversal() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'TraverseTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'TraverseTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a tree structure: A -> B, A -> C, B -> D, B -> E
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   const entityD = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity D' }
+    properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
   const entityE = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity E' }
+    properties: { name: 'Entity E' },
   });
   const entityEId = entityE.data.data.id;
 
@@ -4284,35 +4586,35 @@ async function testMultiHopTraversal() {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityCId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityDId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityEId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Traverse from A with depth 2 (should find B, C, D, E)
   const response = await makeRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityAId,
     max_depth: 2,
-    direction: 'outbound'
+    direction: 'outbound',
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -4337,38 +4639,38 @@ async function testMultiHopTraversalWithDepthLimit() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DepthLimitTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'DepthLimitTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a chain: A -> B -> C -> D
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   const entityD = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity D' }
+    properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
@@ -4377,28 +4679,28 @@ async function testMultiHopTraversalWithDepthLimit() {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityDId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Traverse from A with depth 1 (should only find A, B)
   const response = await makeRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityAId,
     max_depth: 1,
-    direction: 'outbound'
+    direction: 'outbound',
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -4417,32 +4719,32 @@ async function testMultiHopTraversalBidirectional() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BothDirectionsTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BothDirectionsTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create: A -> B <- C
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
@@ -4451,21 +4753,21 @@ async function testMultiHopTraversalBidirectional() {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Traverse from B in both directions (should find A and C)
   const response = await makeRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityBId,
     max_depth: 1,
-    direction: 'both'
+    direction: 'both',
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -4483,44 +4785,44 @@ async function testMultiHopTraversalWithTypeFilters() {
   // Create types
   const entityType1Response = await makeRequest('POST', '/api/types', {
     name: 'FilterTestEntityType1',
-    category: 'entity'
+    category: 'entity',
   });
   const entityType1Id = entityType1Response.data.data.id;
 
   const entityType2Response = await makeRequest('POST', '/api/types', {
     name: 'FilterTestEntityType2',
-    category: 'entity'
+    category: 'entity',
   });
   const entityType2Id = entityType2Response.data.data.id;
 
   const linkType1Response = await makeRequest('POST', '/api/types', {
     name: 'FilterTestLinkType1',
-    category: 'link'
+    category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
   const linkType2Response = await makeRequest('POST', '/api/types', {
     name: 'FilterTestLinkType2',
-    category: 'link'
+    category: 'link',
   });
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities: A (type1) -> B (type1) -> C (type2)
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityType1Id,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
   const entityB = await makeRequest('POST', '/api/entities', {
     type_id: entityType1Id,
-    properties: { name: 'Entity B' }
+    properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
   const entityC = await makeRequest('POST', '/api/entities', {
     type_id: entityType2Id,
-    properties: { name: 'Entity C' }
+    properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
@@ -4529,14 +4831,14 @@ async function testMultiHopTraversalWithTypeFilters() {
     type_id: linkType1Id,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
-    properties: {}
+    properties: {},
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
-    properties: {}
+    properties: {},
   });
 
   // Test: Traverse from A, filter by entity type 1 only
@@ -4544,7 +4846,7 @@ async function testMultiHopTraversalWithTypeFilters() {
     start_entity_id: entityAId,
     max_depth: 2,
     direction: 'outbound',
-    entity_type_ids: [entityType1Id]
+    entity_type_ids: [entityType1Id],
   });
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -4565,7 +4867,7 @@ async function testMultiHopTraversalInvalidStartEntity() {
   const response = await makeRequest('POST', '/api/graph/traverse', {
     start_entity_id: invalidId,
     max_depth: 2,
-    direction: 'outbound'
+    direction: 'outbound',
   });
 
   assertEquals(response.status, 404, 'Status code should be 404');
@@ -4578,26 +4880,26 @@ async function testGetNeighborsBidirectionalConnection() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BidirectionalTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BidirectionalTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create two entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -4606,14 +4908,14 @@ async function testGetNeighborsBidirectionalConnection() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { direction: 'forward' }
+    properties: { direction: 'forward' },
   });
 
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2Id,
     target_entity_id: entity1Id,
-    properties: { direction: 'backward' }
+    properties: { direction: 'backward' },
   });
 
   // Test: Get neighbors of entity 1
@@ -4679,7 +4981,10 @@ async function testEntitiesPaginationCursor() {
 
   // Use cursor to get next page
   const cursor = page1.data.metadata.cursor;
-  const page2 = await makeRequest('GET', `/api/entities?limit=2&cursor=${encodeURIComponent(cursor)}`);
+  const page2 = await makeRequest(
+    'GET',
+    `/api/entities?limit=2&cursor=${encodeURIComponent(cursor)}`
+  );
 
   assertEquals(page2.status, 200, 'Page 2 status should be 200');
   assertEquals(page2.data.data.length, 2, 'Page 2 should have 2 items');
@@ -4799,7 +5104,10 @@ async function testTypesPaginationCursor() {
   if (page1.data.metadata.cursor) {
     // Use cursor to get next page
     const cursor = page1.data.metadata.cursor;
-    const page2 = await makeRequest('GET', `/api/types?limit=2&cursor=${encodeURIComponent(cursor)}`);
+    const page2 = await makeRequest(
+      'GET',
+      `/api/types?limit=2&cursor=${encodeURIComponent(cursor)}`
+    );
 
     assertEquals(page2.status, 200, 'Page 2 status should be 200');
 
@@ -4863,13 +5171,13 @@ async function testFilterEntitiesByJsonPropertyString() {
   // Create entities with different string properties
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Alice', role: 'Engineer' }
+    properties: { name: 'Alice', role: 'Engineer' },
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Bob', role: 'Manager' }
+    properties: { name: 'Bob', role: 'Manager' },
   });
   assert(entity2.ok, 'Should create second entity');
 
@@ -4892,13 +5200,13 @@ async function testFilterEntitiesByJsonPropertyNumber() {
   // Create entities with numeric properties
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Charlie', age: 25 }
+    properties: { name: 'Charlie', age: 25 },
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Diana', age: 30 }
+    properties: { name: 'Diana', age: 30 },
   });
   assert(entity2.ok, 'Should create second entity');
 
@@ -4921,13 +5229,13 @@ async function testFilterEntitiesByJsonPropertyBoolean() {
   // Create entities with boolean properties
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Eve', active: true }
+    properties: { name: 'Eve', active: true },
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Frank', active: false }
+    properties: { name: 'Frank', active: false },
   });
   assert(entity2.ok, 'Should create second entity');
 
@@ -4952,11 +5260,11 @@ async function testFilterLinksByJsonPropertyString() {
   // Create entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'George' }
+    properties: { name: 'George' },
   });
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Hannah' }
+    properties: { name: 'Hannah' },
   });
 
   // Create links with different properties
@@ -4964,29 +5272,34 @@ async function testFilterLinksByJsonPropertyString() {
     type_id: knowsType.id,
     source_entity_id: entity1.data.id,
     target_entity_id: entity2.data.id,
-    properties: { relationship: 'colleague', since: 2020 }
+    properties: { relationship: 'colleague', since: 2020 },
   });
   assert(link1.ok, 'Should create first link');
 
   // Create another pair to have multiple links
   const entity3 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Ian' }
+    properties: { name: 'Ian' },
   });
   const link2 = await makeRequest('POST', '/api/links', {
     type_id: knowsType.id,
     source_entity_id: entity1.data.id,
     target_entity_id: entity3.data.id,
-    properties: { relationship: 'friend', since: 2015 }
+    properties: { relationship: 'friend', since: 2015 },
   });
   assert(link2.ok, 'Should create second link');
 
   // Filter by relationship property
   const filterResponse = await makeRequest('GET', '/api/links?property_relationship=colleague');
   assertEquals(filterResponse.status, 200, 'Should return 200');
-  assert(filterResponse.data.items.length >= 1, 'Should find at least one link with relationship=colleague');
+  assert(
+    filterResponse.data.items.length >= 1,
+    'Should find at least one link with relationship=colleague'
+  );
 
-  const colleagueLink = filterResponse.data.items.find(l => l.properties.relationship === 'colleague');
+  const colleagueLink = filterResponse.data.items.find(
+    l => l.properties.relationship === 'colleague'
+  );
   assert(colleagueLink, 'Should find colleague link in filtered results');
   assertEquals(colleagueLink.properties.since, 2020, 'Should have correct since year');
 }
@@ -5000,26 +5313,32 @@ async function testFilterEntitiesByMultipleProperties() {
   // Create entities with multiple properties
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Jack', department: 'Engineering', level: 3 }
+    properties: { name: 'Jack', department: 'Engineering', level: 3 },
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Karen', department: 'Engineering', level: 5 }
+    properties: { name: 'Karen', department: 'Engineering', level: 5 },
   });
   assert(entity2.ok, 'Should create second entity');
 
   const entity3 = await makeRequest('POST', '/api/entities', {
     type_id: personType.id,
-    properties: { name: 'Laura', department: 'Marketing', level: 3 }
+    properties: { name: 'Laura', department: 'Marketing', level: 3 },
   });
   assert(entity3.ok, 'Should create third entity');
 
   // Filter by multiple properties (department AND level)
-  const filterResponse = await makeRequest('GET', '/api/entities?property_department=Engineering&property_level=3');
+  const filterResponse = await makeRequest(
+    'GET',
+    '/api/entities?property_department=Engineering&property_level=3'
+  );
   assertEquals(filterResponse.status, 200, 'Should return 200');
-  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity matching both filters');
+  assert(
+    filterResponse.data.items.length >= 1,
+    'Should find at least one entity matching both filters'
+  );
 
   const jackEntity = filterResponse.data.items.find(e => e.properties.name === 'Jack');
   assert(jackEntity, 'Should find Jack in filtered results');
@@ -5045,11 +5364,11 @@ async function testSearchEntitiesByType() {
   // Create test types
   const personType = await makeRequest('POST', '/api/types', {
     name: 'SearchPersonType',
-    category: 'entity'
+    category: 'entity',
   });
   const companyType = await makeRequest('POST', '/api/types', {
     name: 'SearchCompanyType',
-    category: 'entity'
+    category: 'entity',
   });
 
   const personTypeId = personType.data.data.id;
@@ -5058,25 +5377,28 @@ async function testSearchEntitiesByType() {
   // Create test entities
   await makeRequest('POST', '/api/entities', {
     type_id: personTypeId,
-    properties: { name: 'Alice' }
+    properties: { name: 'Alice' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: personTypeId,
-    properties: { name: 'Bob' }
+    properties: { name: 'Bob' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: companyTypeId,
-    properties: { name: 'Acme Corp' }
+    properties: { name: 'Acme Corp' },
   });
 
   // Search for person entities
   const searchResponse = await makeRequest('POST', '/api/search/entities', {
-    type_id: personTypeId
+    type_id: personTypeId,
   });
 
   assertEquals(searchResponse.status, 200, 'Should return 200');
   assert(searchResponse.data.data.length >= 2, 'Should find at least 2 person entities');
-  assert(searchResponse.data.data.every(e => e.type_id === personTypeId), 'All results should be person type');
+  assert(
+    searchResponse.data.data.every(e => e.type_id === personTypeId),
+    'All results should be person type'
+  );
 }
 
 async function testSearchEntitiesByProperty() {
@@ -5085,43 +5407,49 @@ async function testSearchEntitiesByProperty() {
   // Create test type
   const employeeType = await makeRequest('POST', '/api/types', {
     name: 'SearchEmployeeType',
-    category: 'entity'
+    category: 'entity',
   });
   const employeeTypeId = employeeType.data.data.id;
 
   // Create test entities
   await makeRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
-    properties: { name: 'Charlie', department: 'Engineering', salary: 100000 }
+    properties: { name: 'Charlie', department: 'Engineering', salary: 100000 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
-    properties: { name: 'Diana', department: 'Marketing', salary: 90000 }
+    properties: { name: 'Diana', department: 'Marketing', salary: 90000 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
-    properties: { name: 'Eve', department: 'Engineering', salary: 95000 }
+    properties: { name: 'Eve', department: 'Engineering', salary: 95000 },
   });
 
   // Search by string property
   const searchByDept = await makeRequest('POST', '/api/search/entities', {
     type_id: employeeTypeId,
-    properties: { department: 'Engineering' }
+    properties: { department: 'Engineering' },
   });
 
   assertEquals(searchByDept.status, 200, 'Should return 200');
   assert(searchByDept.data.data.length >= 2, 'Should find at least 2 engineering employees');
-  assert(searchByDept.data.data.every(e => e.properties.department === 'Engineering'), 'All results should be Engineering');
+  assert(
+    searchByDept.data.data.every(e => e.properties.department === 'Engineering'),
+    'All results should be Engineering'
+  );
 
   // Search by number property
   const searchBySalary = await makeRequest('POST', '/api/search/entities', {
     type_id: employeeTypeId,
-    properties: { salary: 100000 }
+    properties: { salary: 100000 },
   });
 
   assertEquals(searchBySalary.status, 200, 'Should return 200');
   assert(searchBySalary.data.data.length >= 1, 'Should find at least 1 employee with $100k salary');
-  assert(searchBySalary.data.data.every(e => e.properties.salary === 100000), 'All results should have $100k salary');
+  assert(
+    searchBySalary.data.data.every(e => e.properties.salary === 100000),
+    'All results should have $100k salary'
+  );
 }
 
 async function testSearchEntitiesByMultipleProperties() {
@@ -5130,22 +5458,22 @@ async function testSearchEntitiesByMultipleProperties() {
   // Create test type
   const productType = await makeRequest('POST', '/api/types', {
     name: 'SearchProductType',
-    category: 'entity'
+    category: 'entity',
   });
   const productTypeId = productType.data.data.id;
 
   // Create test entities
   await makeRequest('POST', '/api/entities', {
     type_id: productTypeId,
-    properties: { name: 'Laptop', category: 'Electronics', inStock: true, price: 1200 }
+    properties: { name: 'Laptop', category: 'Electronics', inStock: true, price: 1200 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: productTypeId,
-    properties: { name: 'Mouse', category: 'Electronics', inStock: false, price: 25 }
+    properties: { name: 'Mouse', category: 'Electronics', inStock: false, price: 25 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: productTypeId,
-    properties: { name: 'Keyboard', category: 'Electronics', inStock: true, price: 80 }
+    properties: { name: 'Keyboard', category: 'Electronics', inStock: true, price: 80 },
   });
 
   // Search by multiple properties
@@ -5153,14 +5481,20 @@ async function testSearchEntitiesByMultipleProperties() {
     type_id: productTypeId,
     properties: {
       category: 'Electronics',
-      inStock: true
-    }
+      inStock: true,
+    },
   });
 
   assertEquals(searchResponse.status, 200, 'Should return 200');
   assert(searchResponse.data.data.length >= 2, 'Should find at least 2 in-stock electronics');
-  assert(searchResponse.data.data.every(e => e.properties.category === 'Electronics'), 'All results should be Electronics');
-  assert(searchResponse.data.data.every(e => e.properties.inStock === true), 'All results should be in stock');
+  assert(
+    searchResponse.data.data.every(e => e.properties.category === 'Electronics'),
+    'All results should be Electronics'
+  );
+  assert(
+    searchResponse.data.data.every(e => e.properties.inStock === true),
+    'All results should be in stock'
+  );
 }
 
 async function testSearchEntitiesPagination() {
@@ -5169,7 +5503,7 @@ async function testSearchEntitiesPagination() {
   // Create test type
   const itemType = await makeRequest('POST', '/api/types', {
     name: 'SearchItemType',
-    category: 'entity'
+    category: 'entity',
   });
   const itemTypeId = itemType.data.data.id;
 
@@ -5177,14 +5511,14 @@ async function testSearchEntitiesPagination() {
   for (let i = 0; i < 25; i++) {
     await makeRequest('POST', '/api/entities', {
       type_id: itemTypeId,
-      properties: { name: `Item ${i}` }
+      properties: { name: `Item ${i}` },
     });
   }
 
   // First page with limit
   const page1 = await makeRequest('POST', '/api/search/entities', {
     type_id: itemTypeId,
-    limit: 10
+    limit: 10,
   });
 
   assertEquals(page1.status, 200, 'Should return 200');
@@ -5196,7 +5530,7 @@ async function testSearchEntitiesPagination() {
   const page2 = await makeRequest('POST', '/api/search/entities', {
     type_id: itemTypeId,
     limit: 10,
-    cursor: page1.data.metadata.cursor
+    cursor: page1.data.metadata.cursor,
   });
 
   assertEquals(page2.status, 200, 'Should return 200');
@@ -5214,11 +5548,11 @@ async function testSearchLinksBasic() {
   // Create test types
   const userType = await makeRequest('POST', '/api/types', {
     name: 'SearchUserType',
-    category: 'entity'
+    category: 'entity',
   });
   const friendshipType = await makeRequest('POST', '/api/types', {
     name: 'SearchFriendshipType',
-    category: 'link'
+    category: 'link',
   });
 
   const userTypeId = userType.data.data.id;
@@ -5227,11 +5561,11 @@ async function testSearchLinksBasic() {
   // Create test entities
   const user1 = await makeRequest('POST', '/api/entities', {
     type_id: userTypeId,
-    properties: { name: 'Frank' }
+    properties: { name: 'Frank' },
   });
   const user2 = await makeRequest('POST', '/api/entities', {
     type_id: userTypeId,
-    properties: { name: 'Grace' }
+    properties: { name: 'Grace' },
   });
 
   const user1Id = user1.data.data.id;
@@ -5242,17 +5576,20 @@ async function testSearchLinksBasic() {
     type_id: friendshipTypeId,
     source_entity_id: user1Id,
     target_entity_id: user2Id,
-    properties: { since: 2020 }
+    properties: { since: 2020 },
   });
 
   // Search for links by type
   const searchResponse = await makeRequest('POST', '/api/search/links', {
-    type_id: friendshipTypeId
+    type_id: friendshipTypeId,
   });
 
   assertEquals(searchResponse.status, 200, 'Should return 200');
   assert(searchResponse.data.data.length >= 1, 'Should find at least 1 friendship link');
-  assert(searchResponse.data.data.every(l => l.type_id === friendshipTypeId), 'All results should be friendship type');
+  assert(
+    searchResponse.data.data.every(l => l.type_id === friendshipTypeId),
+    'All results should be friendship type'
+  );
 }
 
 async function testSearchLinksBySourceEntity() {
@@ -5261,15 +5598,15 @@ async function testSearchLinksBySourceEntity() {
   // Create test types
   const authorType = await makeRequest('POST', '/api/types', {
     name: 'SearchAuthorType',
-    category: 'entity'
+    category: 'entity',
   });
   const bookType = await makeRequest('POST', '/api/types', {
     name: 'SearchBookType',
-    category: 'entity'
+    category: 'entity',
   });
   const wroteType = await makeRequest('POST', '/api/types', {
     name: 'SearchWroteType',
-    category: 'link'
+    category: 'link',
   });
 
   const authorTypeId = authorType.data.data.id;
@@ -5279,19 +5616,19 @@ async function testSearchLinksBySourceEntity() {
   // Create test entities
   const author1 = await makeRequest('POST', '/api/entities', {
     type_id: authorTypeId,
-    properties: { name: 'Author One' }
+    properties: { name: 'Author One' },
   });
   const author2 = await makeRequest('POST', '/api/entities', {
     type_id: authorTypeId,
-    properties: { name: 'Author Two' }
+    properties: { name: 'Author Two' },
   });
   const book1 = await makeRequest('POST', '/api/entities', {
     type_id: bookTypeId,
-    properties: { title: 'Book A' }
+    properties: { title: 'Book A' },
   });
   const book2 = await makeRequest('POST', '/api/entities', {
     type_id: bookTypeId,
-    properties: { title: 'Book B' }
+    properties: { title: 'Book B' },
   });
 
   const author1Id = author1.data.data.id;
@@ -5304,30 +5641,33 @@ async function testSearchLinksBySourceEntity() {
     type_id: wroteTypeId,
     source_entity_id: author1Id,
     target_entity_id: book1Id,
-    properties: {}
+    properties: {},
   });
   await makeRequest('POST', '/api/links', {
     type_id: wroteTypeId,
     source_entity_id: author1Id,
     target_entity_id: book2Id,
-    properties: {}
+    properties: {},
   });
   // author2 wrote book2
   await makeRequest('POST', '/api/links', {
     type_id: wroteTypeId,
     source_entity_id: author2Id,
     target_entity_id: book2Id,
-    properties: {}
+    properties: {},
   });
 
   // Search for links from author1
   const searchResponse = await makeRequest('POST', '/api/search/links', {
-    source_entity_id: author1Id
+    source_entity_id: author1Id,
   });
 
   assertEquals(searchResponse.status, 200, 'Should return 200');
   assert(searchResponse.data.data.length >= 2, 'Should find at least 2 links from author1');
-  assert(searchResponse.data.data.every(l => l.source_entity_id === author1Id), 'All results should have author1 as source');
+  assert(
+    searchResponse.data.data.every(l => l.source_entity_id === author1Id),
+    'All results should have author1 as source'
+  );
 }
 
 async function testSearchLinksWithEntityInfo() {
@@ -5336,11 +5676,11 @@ async function testSearchLinksWithEntityInfo() {
   // Create test types
   const cityType = await makeRequest('POST', '/api/types', {
     name: 'SearchCityType',
-    category: 'entity'
+    category: 'entity',
   });
   const roadType = await makeRequest('POST', '/api/types', {
     name: 'SearchRoadType',
-    category: 'link'
+    category: 'link',
   });
 
   const cityTypeId = cityType.data.data.id;
@@ -5349,11 +5689,11 @@ async function testSearchLinksWithEntityInfo() {
   // Create test entities
   const city1 = await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'New York' }
+    properties: { name: 'New York' },
   });
   const city2 = await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'Boston' }
+    properties: { name: 'Boston' },
   });
 
   const city1Id = city1.data.data.id;
@@ -5364,12 +5704,12 @@ async function testSearchLinksWithEntityInfo() {
     type_id: roadTypeId,
     source_entity_id: city1Id,
     target_entity_id: city2Id,
-    properties: { distance: 215 }
+    properties: { distance: 215 },
   });
 
   // Search for links
   const searchResponse = await makeRequest('POST', '/api/search/links', {
-    type_id: roadTypeId
+    type_id: roadTypeId,
   });
 
   assertEquals(searchResponse.status, 200, 'Should return 200');
@@ -5389,26 +5729,26 @@ async function testTypeAheadSuggestions() {
   // Create test type
   const cityType = await makeRequest('POST', '/api/types', {
     name: 'SuggestCityType',
-    category: 'entity'
+    category: 'entity',
   });
   const cityTypeId = cityType.data.data.id;
 
   // Create test entities with names for matching
   await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'San Francisco' }
+    properties: { name: 'San Francisco' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'San Diego' }
+    properties: { name: 'San Diego' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'Santa Clara' }
+    properties: { name: 'Santa Clara' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: cityTypeId,
-    properties: { name: 'Los Angeles' }
+    properties: { name: 'Los Angeles' },
   });
 
   // Test partial match for "San"
@@ -5420,8 +5760,8 @@ async function testTypeAheadSuggestions() {
   assert(data.data.length >= 3, 'Should find at least 3 cities starting with/containing "San"');
 
   // Verify all results contain "San"
-  const allContainSan = data.data.every(item =>
-    item.matched_value && item.matched_value.includes('San')
+  const allContainSan = data.data.every(
+    item => item.matched_value && item.matched_value.includes('San')
   );
   assert(allContainSan, 'All suggestions should contain "San" in the matched value');
 }
@@ -5432,32 +5772,34 @@ async function testTypeAheadSuggestionsWithTypeFilter() {
   // Create two different types
   const carType = await makeRequest('POST', '/api/types', {
     name: 'SuggestCarType',
-    category: 'entity'
+    category: 'entity',
   });
   const carTypeId = carType.data.data.id;
 
   const bikeType = await makeRequest('POST', '/api/types', {
     name: 'SuggestBikeType',
-    category: 'entity'
+    category: 'entity',
   });
   const bikeTypeId = bikeType.data.data.id;
 
   // Create entities of different types with similar names
   await makeRequest('POST', '/api/entities', {
     type_id: carTypeId,
-    properties: { name: 'Honda Civic' }
+    properties: { name: 'Honda Civic' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: carTypeId,
-    properties: { name: 'Honda Accord' }
+    properties: { name: 'Honda Accord' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: bikeTypeId,
-    properties: { name: 'Honda CB500' }
+    properties: { name: 'Honda CB500' },
   });
 
   // Search only for cars with "Honda"
-  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`);
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`
+  );
   const data = await response.json();
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5474,7 +5816,7 @@ async function testTypeAheadSuggestionsLimit() {
   // Create test type
   const colorType = await makeRequest('POST', '/api/types', {
     name: 'SuggestColorType',
-    category: 'entity'
+    category: 'entity',
   });
   const colorTypeId = colorType.data.data.id;
 
@@ -5483,12 +5825,14 @@ async function testTypeAheadSuggestionsLimit() {
   for (const color of colors) {
     await makeRequest('POST', '/api/entities', {
       type_id: colorTypeId,
-      properties: { name: color }
+      properties: { name: color },
     });
   }
 
   // Request with limit of 3
-  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=R&property_path=name&limit=3`);
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/search/suggest?query=R&property_path=name&limit=3`
+  );
   const data = await response.json();
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5501,7 +5845,7 @@ async function testTypeAheadSuggestionsCustomProperty() {
   // Create test type
   const bookType = await makeRequest('POST', '/api/types', {
     name: 'SuggestBookType',
-    category: 'entity'
+    category: 'entity',
   });
   const bookTypeId = bookType.data.data.id;
 
@@ -5510,34 +5854,36 @@ async function testTypeAheadSuggestionsCustomProperty() {
     type_id: bookTypeId,
     properties: {
       title: 'The Great Gatsby',
-      author: 'F. Scott Fitzgerald'
-    }
+      author: 'F. Scott Fitzgerald',
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: {
       title: '1984',
-      author: 'George Orwell'
-    }
+      author: 'George Orwell',
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: {
       title: 'Animal Farm',
-      author: 'George Orwell'
-    }
+      author: 'George Orwell',
+    },
   });
 
   // Search by author property instead of name
-  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=George&property_path=author`);
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/search/suggest?query=George&property_path=author`
+  );
   const data = await response.json();
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(data.data.length >= 2, 'Should find at least 2 books by George');
 
   // Verify matched_value contains the searched property
-  const allMatchGeorge = data.data.every(item =>
-    item.matched_value && item.matched_value.includes('George')
+  const allMatchGeorge = data.data.every(
+    item => item.matched_value && item.matched_value.includes('George')
   );
   assert(allMatchGeorge, 'All suggestions should have "George" in author field');
   assertEquals(data.data[0].property_path, 'author', 'Should indicate matched property path');
@@ -5554,20 +5900,20 @@ async function testListUsers() {
   await makeRequest('POST', '/api/auth/register', {
     email: 'user1@example.com',
     password: 'password123',
-    display_name: 'User One'
+    display_name: 'User One',
   });
 
   const user2Response = await makeRequest('POST', '/api/auth/register', {
     email: 'user2@example.com',
     password: 'password123',
-    display_name: 'User Two'
+    display_name: 'User Two',
   });
 
   const token = user2Response.data.data.access_token;
 
   // List users
   const response = await fetch(`${DEV_SERVER_URL}/api/users`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -5590,13 +5936,13 @@ async function testListUsersWithFilters() {
   // Register a user to get a token
   const userResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'filtertest@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   const token = userResponse.data.data.access_token;
 
   // Test filtering by provider
   const response = await fetch(`${DEV_SERVER_URL}/api/users?provider=local&limit=5`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -5615,14 +5961,14 @@ async function testGetUserDetails() {
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'details@example.com',
     password: 'password123',
-    display_name: 'Details User'
+    display_name: 'Details User',
   });
   const token = registerResponse.data.data.access_token;
   const userId = registerResponse.data.data.user.id;
 
   // Get user details
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -5640,14 +5986,14 @@ async function testGetUserDetailsNotFound() {
   // Register a user to get a token
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'notfound@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   const token = registerResponse.data.data.access_token;
 
   // Try to get non-existent user
   const fakeUserId = '00000000-0000-0000-0000-000000000000';
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${fakeUserId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   assertEquals(response.status, 404, 'Should return 404');
@@ -5660,7 +6006,7 @@ async function testUpdateUserProfile() {
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'update@example.com',
     password: 'password123',
-    display_name: 'Original Name'
+    display_name: 'Original Name',
   });
   const token = registerResponse.data.data.access_token;
   const userId = registerResponse.data.data.user.id;
@@ -5669,12 +6015,12 @@ async function testUpdateUserProfile() {
   const updateResponse = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      display_name: 'Updated Name'
-    })
+      display_name: 'Updated Name',
+    }),
   });
   const updateData = await updateResponse.json();
 
@@ -5689,11 +6035,11 @@ async function testUpdateUserProfileForbidden() {
   // Register two users
   const user1Response = await makeRequest('POST', '/api/auth/register', {
     email: 'user1forbidden@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   const user2Response = await makeRequest('POST', '/api/auth/register', {
     email: 'user2forbidden@example.com',
-    password: 'password123'
+    password: 'password123',
   });
 
   const user1Token = user1Response.data.data.access_token;
@@ -5703,12 +6049,12 @@ async function testUpdateUserProfileForbidden() {
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${user2Id}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${user1Token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${user1Token}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      display_name: 'Hacked Name'
-    })
+      display_name: 'Hacked Name',
+    }),
   });
 
   assertEquals(response.status, 403, 'Should return 403 Forbidden');
@@ -5720,11 +6066,11 @@ async function testUpdateUserEmailDuplicate() {
   // Register two users
   const user1Response = await makeRequest('POST', '/api/auth/register', {
     email: 'user1dup@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   await makeRequest('POST', '/api/auth/register', {
     email: 'user2dup@example.com',
-    password: 'password123'
+    password: 'password123',
   });
 
   const token = user1Response.data.data.access_token;
@@ -5734,12 +6080,12 @@ async function testUpdateUserEmailDuplicate() {
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      email: 'user2dup@example.com'
-    })
+      email: 'user2dup@example.com',
+    }),
   });
 
   assertEquals(response.status, 409, 'Should return 409 Conflict');
@@ -5751,7 +6097,7 @@ async function testGetUserActivity() {
   // Register a user
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'activity@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   const token = registerResponse.data.data.access_token;
   const userId = registerResponse.data.data.user.id;
@@ -5759,7 +6105,7 @@ async function testGetUserActivity() {
   // Create some test data
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'ActivityTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -5767,30 +6113,30 @@ async function testGetUserActivity() {
   await fetch(`${DEV_SERVER_URL}/api/entities`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       type_id: typeId,
-      properties: { name: 'Test Entity 1' }
-    })
+      properties: { name: 'Test Entity 1' },
+    }),
   });
 
   await fetch(`${DEV_SERVER_URL}/api/entities`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       type_id: typeId,
-      properties: { name: 'Test Entity 2' }
-    })
+      properties: { name: 'Test Entity 2' },
+    }),
   });
 
   // Get user activity
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${userId}/activity`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -5813,14 +6159,14 @@ async function testGetUserActivityNotFound() {
   // Register a user to get a token
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: 'activitynotfound@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   const token = registerResponse.data.data.access_token;
 
   // Try to get activity for non-existent user
   const fakeUserId = '00000000-0000-0000-0000-000000000000';
   const response = await fetch(`${DEV_SERVER_URL}/api/users/${fakeUserId}/activity`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   assertEquals(response.status, 404, 'Should return 404');
@@ -5836,26 +6182,24 @@ async function testPropertyFilterEquals() {
   // Create a type and entities with numeric age property
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestPerson',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create test entities
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Alice', age: 25 }
+    properties: { name: 'Alice', age: 25 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Bob', age: 30 }
+    properties: { name: 'Bob', age: 30 },
   });
 
   // Search with eq operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'age', operator: 'eq', value: 25 }
-    ]
+    property_filters: [{ path: 'age', operator: 'eq', value: 25 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5869,29 +6213,27 @@ async function testPropertyFilterGreaterThan() {
   // Create a type and entities
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestProduct',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Product A', price: 10 }
+    properties: { name: 'Product A', price: 10 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Product B', price: 20 }
+    properties: { name: 'Product B', price: 20 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Product C', price: 30 }
+    properties: { name: 'Product C', price: 30 },
   });
 
   // Search with gt operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'price', operator: 'gt', value: 15 }
-    ]
+    property_filters: [{ path: 'price', operator: 'gt', value: 15 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5908,9 +6250,7 @@ async function testPropertyFilterLessThanOrEqual() {
   // Search with lte operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'price', operator: 'lte', value: 20 }
-    ]
+    property_filters: [{ path: 'price', operator: 'lte', value: 20 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5923,29 +6263,27 @@ async function testPropertyFilterLike() {
   // Create a type and entities
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestEmail',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { email: 'alice@example.com' }
+    properties: { email: 'alice@example.com' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { email: 'bob@test.com' }
+    properties: { email: 'bob@test.com' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { email: 'charlie@example.com' }
+    properties: { email: 'charlie@example.com' },
   });
 
   // Search with like operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'email', operator: 'like', value: '%@example.com' }
-    ]
+    property_filters: [{ path: 'email', operator: 'like', value: '%@example.com' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5962,9 +6300,7 @@ async function testPropertyFilterStartsWith() {
   // Search with starts_with operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'email', operator: 'starts_with', value: 'alice' }
-    ]
+    property_filters: [{ path: 'email', operator: 'starts_with', value: 'alice' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -5981,13 +6317,14 @@ async function testPropertyFilterContains() {
   // Search with contains operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'email', operator: 'contains', value: 'EXAMPLE' }
-    ]
+    property_filters: [{ path: 'email', operator: 'contains', value: 'EXAMPLE' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(response.data.data.length === 2, 'Should return 2 entities containing EXAMPLE (case-insensitive)');
+  assert(
+    response.data.data.length === 2,
+    'Should return 2 entities containing EXAMPLE (case-insensitive)'
+  );
 }
 
 async function testPropertyFilterIn() {
@@ -5996,33 +6333,34 @@ async function testPropertyFilterIn() {
   // Create a type and entities
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestStatus',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { status: 'active' }
+    properties: { status: 'active' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { status: 'pending' }
+    properties: { status: 'pending' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { status: 'inactive' }
+    properties: { status: 'inactive' },
   });
 
   // Search with in operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'status', operator: 'in', value: ['active', 'pending'] }
-    ]
+    property_filters: [{ path: 'status', operator: 'in', value: ['active', 'pending'] }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(response.data.data.length === 2, 'Should return 2 entities with status in [active, pending]');
+  assert(
+    response.data.data.length === 2,
+    'Should return 2 entities with status in [active, pending]'
+  );
 }
 
 async function testPropertyFilterExists() {
@@ -6031,25 +6369,23 @@ async function testPropertyFilterExists() {
   // Create a type and entities
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestOptional',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Entity 1', optional_field: 'value' }
+    properties: { name: 'Entity 1', optional_field: 'value' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
 
   // Search with exists operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'optional_field', operator: 'exists' }
-    ]
+    property_filters: [{ path: 'optional_field', operator: 'exists' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6066,9 +6402,7 @@ async function testPropertyFilterNotExists() {
   // Search with not_exists operator
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'optional_field', operator: 'not_exists' }
-    ]
+    property_filters: [{ path: 'optional_field', operator: 'not_exists' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6085,7 +6419,7 @@ async function testPropertyFilterMultipleConditions() {
   // Create another entity
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Charlie', age: 25 }
+    properties: { name: 'Charlie', age: 25 },
   });
 
   // Search with multiple filters (AND logic)
@@ -6093,8 +6427,8 @@ async function testPropertyFilterMultipleConditions() {
     type_id: typeId,
     property_filters: [
       { path: 'age', operator: 'eq', value: 25 },
-      { path: 'name', operator: 'eq', value: 'Alice' }
-    ]
+      { path: 'name', operator: 'eq', value: 'Alice' },
+    ],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6108,24 +6442,24 @@ async function testPropertyFilterOnLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestLinkEntity',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'PropertyFilterTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
 
   // Create links with weight property
@@ -6133,21 +6467,19 @@ async function testPropertyFilterOnLinks() {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
-    properties: { weight: 5 }
+    properties: { weight: 5 },
   });
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2.data.data.id,
     target_entity_id: entity1.data.data.id,
-    properties: { weight: 10 }
+    properties: { weight: 10 },
   });
 
   // Search links with filter
   const response = await makeRequest('POST', '/api/search/links', {
     type_id: linkTypeId,
-    property_filters: [
-      { path: 'weight', operator: 'gte', value: 7 }
-    ]
+    property_filters: [{ path: 'weight', operator: 'gte', value: 7 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6160,9 +6492,7 @@ async function testPropertyFilterInvalidPath() {
 
   // Try to use invalid path with special characters
   const response = await makeRequest('POST', '/api/search/entities', {
-    property_filters: [
-      { path: 'name; DROP TABLE entities; --', operator: 'eq', value: 'test' }
-    ]
+    property_filters: [{ path: 'name; DROP TABLE entities; --', operator: 'eq', value: 'test' }],
   });
 
   assertEquals(response.status, 400, 'Should return 400 for invalid path');
@@ -6179,7 +6509,7 @@ async function testNestedPropertyPathDotNotation() {
   // Create a type for nested property tests
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestAddress',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6188,30 +6518,28 @@ async function testNestedPropertyPathDotNotation() {
     type_id: typeId,
     properties: {
       name: 'Alice',
-      address: { city: 'New York', country: 'USA', zip: '10001' }
-    }
+      address: { city: 'New York', country: 'USA', zip: '10001' },
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Bob',
-      address: { city: 'Los Angeles', country: 'USA', zip: '90001' }
-    }
+      address: { city: 'Los Angeles', country: 'USA', zip: '90001' },
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Charlie',
-      address: { city: 'London', country: 'UK', zip: 'SW1A 1AA' }
-    }
+      address: { city: 'London', country: 'UK', zip: 'SW1A 1AA' },
+    },
   });
 
   // Search using nested path with dot notation
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'address.city', operator: 'eq', value: 'New York' }
-    ]
+    property_filters: [{ path: 'address.city', operator: 'eq', value: 'New York' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6225,7 +6553,7 @@ async function testNestedPropertyPathDeepNesting() {
   // Create a type for deep nested tests
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestUser',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6237,11 +6565,11 @@ async function testNestedPropertyPathDeepNesting() {
         profile: {
           settings: {
             theme: 'dark',
-            notifications: true
-          }
-        }
-      }
-    }
+            notifications: true,
+          },
+        },
+      },
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
@@ -6250,19 +6578,17 @@ async function testNestedPropertyPathDeepNesting() {
         profile: {
           settings: {
             theme: 'light',
-            notifications: false
-          }
-        }
-      }
-    }
+            notifications: false,
+          },
+        },
+      },
+    },
   });
 
   // Search using deeply nested path
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'user.profile.settings.theme', operator: 'eq', value: 'dark' }
-    ]
+    property_filters: [{ path: 'user.profile.settings.theme', operator: 'eq', value: 'dark' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6275,7 +6601,7 @@ async function testNestedPropertyPathArrayIndexBracket() {
   // Create a type for array tests
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestTags',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6284,23 +6610,21 @@ async function testNestedPropertyPathArrayIndexBracket() {
     type_id: typeId,
     properties: {
       name: 'Entity A',
-      tags: ['featured', 'new', 'popular']
-    }
+      tags: ['featured', 'new', 'popular'],
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Entity B',
-      tags: ['sale', 'clearance', 'limited']
-    }
+      tags: ['sale', 'clearance', 'limited'],
+    },
   });
 
   // Search using array index with bracket notation
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'tags[0]', operator: 'eq', value: 'featured' }
-    ]
+    property_filters: [{ path: 'tags[0]', operator: 'eq', value: 'featured' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6318,9 +6642,7 @@ async function testNestedPropertyPathArrayIndexDot() {
   // Search using array index with dot notation
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'tags.1', operator: 'eq', value: 'clearance' }
-    ]
+    property_filters: [{ path: 'tags.1', operator: 'eq', value: 'clearance' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6334,7 +6656,7 @@ async function testNestedPropertyPathMixedNotation() {
   // Create a type for complex nested tests
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestOrder',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6345,9 +6667,9 @@ async function testNestedPropertyPathMixedNotation() {
       order_id: 'ORD-001',
       items: [
         { product: 'Widget A', price: 10.99, quantity: 2 },
-        { product: 'Widget B', price: 24.99, quantity: 1 }
-      ]
-    }
+        { product: 'Widget B', price: 24.99, quantity: 1 },
+      ],
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
@@ -6355,17 +6677,15 @@ async function testNestedPropertyPathMixedNotation() {
       order_id: 'ORD-002',
       items: [
         { product: 'Gadget X', price: 99.99, quantity: 1 },
-        { product: 'Widget A', price: 10.99, quantity: 5 }
-      ]
-    }
+        { product: 'Widget A', price: 10.99, quantity: 5 },
+      ],
+    },
   });
 
   // Search using mixed notation: array index + nested property
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'items[0].product', operator: 'eq', value: 'Widget A' }
-    ]
+    property_filters: [{ path: 'items[0].product', operator: 'eq', value: 'Widget A' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6383,14 +6703,15 @@ async function testNestedPropertyPathNumericComparison() {
   // Search for orders where first item price > 50
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'items[0].price', operator: 'gt', value: 50 }
-    ]
+    property_filters: [{ path: 'items[0].price', operator: 'gt', value: 50 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data.length === 1, 'Should return 1 entity');
-  assert(response.data.data[0].properties.order_id === 'ORD-002', 'Should return ORD-002 (first item price 99.99)');
+  assert(
+    response.data.data[0].properties.order_id === 'ORD-002',
+    'Should return ORD-002 (first item price 99.99)'
+  );
 }
 
 async function testNestedPropertyPathExists() {
@@ -6399,7 +6720,7 @@ async function testNestedPropertyPathExists() {
   // Create a type for nested exists tests
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestProfile',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6408,35 +6729,36 @@ async function testNestedPropertyPathExists() {
     type_id: typeId,
     properties: {
       name: 'Complete Profile',
-      profile: { bio: 'A software developer', website: 'https://example.com' }
-    }
+      profile: { bio: 'A software developer', website: 'https://example.com' },
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Partial Profile',
-      profile: { bio: 'Another developer' }
-    }
+      profile: { bio: 'Another developer' },
+    },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'No Profile',
-      email: 'noprofile@test.com'
-    }
+      email: 'noprofile@test.com',
+    },
   });
 
   // Search for entities with profile.website existing
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'profile.website', operator: 'exists' }
-    ]
+    property_filters: [{ path: 'profile.website', operator: 'exists' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data.length === 1, 'Should return 1 entity');
-  assert(response.data.data[0].properties.name === 'Complete Profile', 'Should return Complete Profile');
+  assert(
+    response.data.data[0].properties.name === 'Complete Profile',
+    'Should return Complete Profile'
+  );
 }
 
 async function testNestedPropertyPathNotExists() {
@@ -6449,9 +6771,7 @@ async function testNestedPropertyPathNotExists() {
   // Search for entities where profile.website does NOT exist
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'profile.website', operator: 'not_exists' }
-    ]
+    property_filters: [{ path: 'profile.website', operator: 'not_exists' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6468,9 +6788,7 @@ async function testNestedPropertyPathPatternMatching() {
   // Search using contains on nested property
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'address.country', operator: 'eq', value: 'USA' }
-    ]
+    property_filters: [{ path: 'address.country', operator: 'eq', value: 'USA' }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6482,9 +6800,7 @@ async function testNestedPropertyPathInvalidNestedBrackets() {
 
   // Try to use nested brackets which should be invalid
   const response = await makeRequest('POST', '/api/search/entities', {
-    property_filters: [
-      { path: 'data[[0]]', operator: 'eq', value: 'test' }
-    ]
+    property_filters: [{ path: 'data[[0]]', operator: 'eq', value: 'test' }],
   });
 
   assertEquals(response.status, 400, 'Should return 400 for nested brackets');
@@ -6496,9 +6812,7 @@ async function testNestedPropertyPathInvalidEmptyBrackets() {
 
   // Try to use empty brackets which should be invalid
   const response = await makeRequest('POST', '/api/search/entities', {
-    property_filters: [
-      { path: 'data[]', operator: 'eq', value: 'test' }
-    ]
+    property_filters: [{ path: 'data[]', operator: 'eq', value: 'test' }],
   });
 
   assertEquals(response.status, 400, 'Should return 400 for empty brackets');
@@ -6511,24 +6825,24 @@ async function testNestedPropertyPathOnLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestLinkEntity',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'NestedPathTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
 
   // Create links with nested properties
@@ -6538,8 +6852,8 @@ async function testNestedPropertyPathOnLinks() {
     target_entity_id: entity2.data.data.id,
     properties: {
       relationship: 'colleague',
-      metadata: { strength: 5, since: '2020-01-01' }
-    }
+      metadata: { strength: 5, since: '2020-01-01' },
+    },
   });
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
@@ -6547,21 +6861,22 @@ async function testNestedPropertyPathOnLinks() {
     target_entity_id: entity1.data.data.id,
     properties: {
       relationship: 'friend',
-      metadata: { strength: 10, since: '2015-06-15' }
-    }
+      metadata: { strength: 10, since: '2015-06-15' },
+    },
   });
 
   // Search links with nested path filter
   const response = await makeRequest('POST', '/api/search/links', {
     type_id: linkTypeId,
-    property_filters: [
-      { path: 'metadata.strength', operator: 'gte', value: 7 }
-    ]
+    property_filters: [{ path: 'metadata.strength', operator: 'gte', value: 7 }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data.length === 1, 'Should return 1 link with metadata.strength >= 7');
-  assert(response.data.data[0].properties.relationship === 'friend', 'Should return friend relationship');
+  assert(
+    response.data.data[0].properties.relationship === 'friend',
+    'Should return friend relationship'
+  );
 }
 
 // ============================================================================
@@ -6574,28 +6889,28 @@ async function testFilterExpressionSimple() {
   // Use existing entity type for testing
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterExprTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create test entities
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Alice', status: 'active', age: 25 }
+    properties: { name: 'Alice', status: 'active', age: 25 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Bob', status: 'active', age: 30 }
+    properties: { name: 'Bob', status: 'active', age: 30 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Charlie', status: 'inactive', age: 35 }
+    properties: { name: 'Charlie', status: 'inactive', age: 35 },
   });
 
   // Test simple filter expression (just a property filter)
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' }
+    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6615,9 +6930,9 @@ async function testFilterExpressionAndGroup() {
     filter_expression: {
       and: [
         { path: 'status', operator: 'eq', value: 'active' },
-        { path: 'age', operator: 'gte', value: 30 }
-      ]
-    }
+        { path: 'age', operator: 'gte', value: 30 },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6637,9 +6952,9 @@ async function testFilterExpressionOrGroup() {
     filter_expression: {
       or: [
         { path: 'name', operator: 'eq', value: 'Alice' },
-        { path: 'name', operator: 'eq', value: 'Charlie' }
-      ]
-    }
+        { path: 'name', operator: 'eq', value: 'Charlie' },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6663,11 +6978,11 @@ async function testFilterExpressionNestedAndOrGroups() {
         {
           or: [
             { path: 'name', operator: 'eq', value: 'Alice' },
-            { path: 'name', operator: 'eq', value: 'Bob' }
-          ]
-        }
-      ]
-    }
+            { path: 'name', operator: 'eq', value: 'Bob' },
+          ],
+        },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6690,12 +7005,12 @@ async function testFilterExpressionComplexConditions() {
         {
           and: [
             { path: 'status', operator: 'eq', value: 'active' },
-            { path: 'age', operator: 'lt', value: 30 }
-          ]
+            { path: 'age', operator: 'lt', value: 30 },
+          ],
         },
-        { path: 'status', operator: 'eq', value: 'inactive' }
-      ]
-    }
+        { path: 'status', operator: 'eq', value: 'inactive' },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6710,17 +7025,17 @@ async function testFilterExpressionWithExistsOperator() {
   // Create entities with optional fields
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterExprExistsType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'WithEmail', email: 'test@example.com' }
+    properties: { name: 'WithEmail', email: 'test@example.com' },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'WithoutEmail' }
+    properties: { name: 'WithoutEmail' },
   });
 
   // Test: email exists OR name = 'WithoutEmail'
@@ -6729,9 +7044,9 @@ async function testFilterExpressionWithExistsOperator() {
     filter_expression: {
       or: [
         { path: 'email', operator: 'exists' },
-        { path: 'name', operator: 'eq', value: 'WithoutEmail' }
-      ]
-    }
+        { path: 'name', operator: 'eq', value: 'WithoutEmail' },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6744,24 +7059,24 @@ async function testFilterExpressionOnLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterExprLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'FilterExprLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 1' }
+    properties: { name: 'Entity 1' },
   });
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity 2' }
+    properties: { name: 'Entity 2' },
   });
 
   // Create links with different properties
@@ -6769,13 +7084,13 @@ async function testFilterExpressionOnLinks() {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
-    properties: { type: 'friend', strength: 10 }
+    properties: { type: 'friend', strength: 10 },
   });
   await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2.data.data.id,
     target_entity_id: entity1.data.data.id,
-    properties: { type: 'colleague', strength: 5 }
+    properties: { type: 'colleague', strength: 5 },
   });
 
   // Test: type = 'friend' OR strength >= 8
@@ -6784,9 +7099,9 @@ async function testFilterExpressionOnLinks() {
     filter_expression: {
       or: [
         { path: 'type', operator: 'eq', value: 'friend' },
-        { path: 'strength', operator: 'gte', value: 8 }
-      ]
-    }
+        { path: 'strength', operator: 'gte', value: 8 },
+      ],
+    },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -6804,22 +7119,24 @@ async function testFilterExpressionPrecedenceOverPropertyFilters() {
   // filter_expression should take precedence
   const response = await makeRequest('POST', '/api/search/entities', {
     type_id: typeId,
-    property_filters: [
-      { path: 'name', operator: 'eq', value: 'Charlie' }
-    ],
-    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' }
+    property_filters: [{ path: 'name', operator: 'eq', value: 'Charlie' }],
+    filter_expression: { path: 'name', operator: 'eq', value: 'Alice' },
   });
 
   assertEquals(response.status, 200, 'Should return 200');
   assertEquals(response.data.data.length, 1, 'Should return 1 entity');
-  assertEquals(response.data.data[0].properties.name, 'Alice', 'Should return Alice (filter_expression takes precedence)');
+  assertEquals(
+    response.data.data[0].properties.name,
+    'Alice',
+    'Should return Alice (filter_expression takes precedence)'
+  );
 }
 
 async function testFilterExpressionInvalidPath() {
   logTest('Filter Expression - Invalid Path Error');
 
   const response = await makeRequest('POST', '/api/search/entities', {
-    filter_expression: { path: 'data[[invalid]]', operator: 'eq', value: 'test' }
+    filter_expression: { path: 'data[[invalid]]', operator: 'eq', value: 'test' },
   });
 
   assertEquals(response.status, 400, 'Should return 400 for invalid path');
@@ -6836,7 +7153,7 @@ async function testBulkCreateEntities() {
   // Create an entity type for testing
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'BulkTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
@@ -6846,7 +7163,7 @@ async function testBulkCreateEntities() {
       { type_id: typeId, properties: { name: 'Bulk Entity 1' }, client_id: 'client-1' },
       { type_id: typeId, properties: { name: 'Bulk Entity 2' }, client_id: 'client-2' },
       { type_id: typeId, properties: { name: 'Bulk Entity 3' }, client_id: 'client-3' },
-    ]
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
@@ -6873,7 +7190,7 @@ async function testBulkCreateEntitiesValidationError() {
   // Create an entity type for testing
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'BulkTestValidEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const validTypeId = typeResponse.data.data.id;
 
@@ -6882,7 +7199,7 @@ async function testBulkCreateEntitiesValidationError() {
       { type_id: validTypeId, properties: { name: 'Valid Entity' } },
       { type_id: invalidTypeId, properties: { name: 'Invalid Entity' } },
       { type_id: validTypeId, properties: { name: 'Another Valid Entity' } },
-    ]
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 (partial success)');
@@ -6893,7 +7210,11 @@ async function testBulkCreateEntitiesValidationError() {
   // Check specific results
   assert(response.data.data.results[0].success, 'First entity should succeed');
   assert(!response.data.data.results[1].success, 'Second entity should fail');
-  assertEquals(response.data.data.results[1].code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error code');
+  assertEquals(
+    response.data.data.results[1].code,
+    'TYPE_NOT_FOUND',
+    'Should have TYPE_NOT_FOUND error code'
+  );
   assert(response.data.data.results[2].success, 'Third entity should succeed');
 }
 
@@ -6901,7 +7222,7 @@ async function testBulkCreateEntitiesEmptyArray() {
   logTest('Bulk Operations - Create Entities with Empty Array');
 
   const response = await makeRequest('POST', '/api/bulk/entities', {
-    entities: []
+    entities: [],
   });
 
   assertEquals(response.status, 400, 'Should return 400 for empty array');
@@ -6913,41 +7234,53 @@ async function testBulkCreateLinks() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BulkLinkTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'BulkLinkTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Source 1' }
+    properties: { name: 'Link Source 1' },
   });
   const entity1Id = entity1Response.data.data.id;
 
   const entity2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Target 1' }
+    properties: { name: 'Link Target 1' },
   });
   const entity2Id = entity2Response.data.data.id;
 
   const entity3Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Target 2' }
+    properties: { name: 'Link Target 2' },
   });
   const entity3Id = entity3Response.data.data.id;
 
   // Bulk create links
   const response = await makeRequest('POST', '/api/bulk/links', {
     links: [
-      { type_id: linkTypeId, source_entity_id: entity1Id, target_entity_id: entity2Id, properties: { weight: 1 }, client_id: 'link-1' },
-      { type_id: linkTypeId, source_entity_id: entity1Id, target_entity_id: entity3Id, properties: { weight: 2 }, client_id: 'link-2' },
-    ]
+      {
+        type_id: linkTypeId,
+        source_entity_id: entity1Id,
+        target_entity_id: entity2Id,
+        properties: { weight: 1 },
+        client_id: 'link-1',
+      },
+      {
+        type_id: linkTypeId,
+        source_entity_id: entity1Id,
+        target_entity_id: entity3Id,
+        properties: { weight: 2 },
+        client_id: 'link-2',
+      },
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
@@ -6972,7 +7305,7 @@ async function testBulkCreateLinksInvalidEntity() {
 
   const validEntityResponse = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Valid Entity for Link' }
+    properties: { name: 'Valid Entity for Link' },
   });
   const validEntityId = validEntityResponse.data.data.id;
 
@@ -6980,13 +7313,22 @@ async function testBulkCreateLinksInvalidEntity() {
 
   const response = await makeRequest('POST', '/api/bulk/links', {
     links: [
-      { type_id: linkTypeId, source_entity_id: validEntityId, target_entity_id: invalidEntityId, properties: {} },
-    ]
+      {
+        type_id: linkTypeId,
+        source_entity_id: validEntityId,
+        target_entity_id: invalidEntityId,
+        properties: {},
+      },
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 (partial success)');
   assertEquals(response.data.data.summary.failed, 1, 'Summary should show 1 failed');
-  assertEquals(response.data.data.results[0].code, 'TARGET_ENTITY_NOT_FOUND', 'Should have TARGET_ENTITY_NOT_FOUND error code');
+  assertEquals(
+    response.data.data.results[0].code,
+    'TARGET_ENTITY_NOT_FOUND',
+    'Should have TARGET_ENTITY_NOT_FOUND error code'
+  );
 }
 
 async function testBulkUpdateEntities() {
@@ -6999,13 +7341,13 @@ async function testBulkUpdateEntities() {
   // Create entities to update
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Update Test 1', value: 10 }
+    properties: { name: 'Update Test 1', value: 10 },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Update Test 2', value: 20 }
+    properties: { name: 'Update Test 2', value: 20 },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -7014,7 +7356,7 @@ async function testBulkUpdateEntities() {
     entities: [
       { id: entity1Id, properties: { name: 'Updated 1', value: 100 } },
       { id: entity2Id, properties: { name: 'Updated 2', value: 200 } },
-    ]
+    ],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -7028,7 +7370,11 @@ async function testBulkUpdateEntities() {
 
   // Verify updates
   const verifyEntity1 = await makeRequest('GET', `/api/entities/${entity1Id}`);
-  assertEquals(verifyEntity1.data.data.properties.name, 'Updated 1', 'Entity 1 name should be updated');
+  assertEquals(
+    verifyEntity1.data.data.properties.name,
+    'Updated 1',
+    'Entity 1 name should be updated'
+  );
   assertEquals(verifyEntity1.data.data.properties.value, 100, 'Entity 1 value should be updated');
 }
 
@@ -7040,7 +7386,7 @@ async function testBulkUpdateEntitiesNotFound() {
 
   const validEntity = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Valid for Bulk Update' }
+    properties: { name: 'Valid for Bulk Update' },
   });
   const validEntityId = validEntity.data.data.id;
 
@@ -7050,7 +7396,7 @@ async function testBulkUpdateEntitiesNotFound() {
     entities: [
       { id: validEntityId, properties: { name: 'Updated Valid' } },
       { id: invalidEntityId, properties: { name: 'Should Fail' } },
-    ]
+    ],
   });
 
   assertEquals(response.status, 200, 'Should return 200 (partial success)');
@@ -7068,7 +7414,7 @@ async function testBulkUpdateDeletedEntity() {
   // Create and delete an entity
   const entity = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Will Be Deleted' }
+    properties: { name: 'Will Be Deleted' },
   });
   const entityId = entity.data.data.id;
 
@@ -7076,14 +7422,16 @@ async function testBulkUpdateDeletedEntity() {
 
   // Try to bulk update the deleted entity
   const response = await makeRequest('PUT', '/api/bulk/entities', {
-    entities: [
-      { id: entityId, properties: { name: 'Should Fail' } },
-    ]
+    entities: [{ id: entityId, properties: { name: 'Should Fail' } }],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
   assertEquals(response.data.data.summary.failed, 1, 'Should show 1 failed');
-  assertEquals(response.data.data.results[0].code, 'ENTITY_DELETED', 'Should have ENTITY_DELETED error code');
+  assertEquals(
+    response.data.data.results[0].code,
+    'ENTITY_DELETED',
+    'Should have ENTITY_DELETED error code'
+  );
 }
 
 async function testBulkUpdateLinks() {
@@ -7099,13 +7447,13 @@ async function testBulkUpdateLinks() {
   // Create entities
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Update Source' }
+    properties: { name: 'Link Update Source' },
   });
   const entity1Id = entity1.data.data.id;
 
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Update Target' }
+    properties: { name: 'Link Update Target' },
   });
   const entity2Id = entity2.data.data.id;
 
@@ -7114,7 +7462,7 @@ async function testBulkUpdateLinks() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { weight: 1 }
+    properties: { weight: 1 },
   });
   const link1Id = link1.data.data.id;
 
@@ -7122,7 +7470,7 @@ async function testBulkUpdateLinks() {
     type_id: linkTypeId,
     source_entity_id: entity2Id,
     target_entity_id: entity1Id,
-    properties: { weight: 2 }
+    properties: { weight: 2 },
   });
   const link2Id = link2.data.data.id;
 
@@ -7131,7 +7479,7 @@ async function testBulkUpdateLinks() {
     links: [
       { id: link1Id, properties: { weight: 100, label: 'Updated' } },
       { id: link2Id, properties: { weight: 200, label: 'Also Updated' } },
-    ]
+    ],
   });
 
   assertEquals(response.status, 200, 'Should return 200');
@@ -7160,18 +7508,18 @@ async function testBulkUpdateLinksNotFound() {
 
   const entity1 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Valid Link Source' }
+    properties: { name: 'Valid Link Source' },
   });
   const entity2 = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Valid Link Target' }
+    properties: { name: 'Valid Link Target' },
   });
 
   const validLink = await makeRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
-    properties: { weight: 5 }
+    properties: { weight: 5 },
   });
   const validLinkId = validLink.data.data.id;
 
@@ -7181,7 +7529,7 @@ async function testBulkUpdateLinksNotFound() {
     links: [
       { id: validLinkId, properties: { weight: 50 } },
       { id: invalidLinkId, properties: { weight: 999 } },
-    ]
+    ],
   });
 
   assertEquals(response.status, 200, 'Should return 200 (partial success)');
@@ -7203,7 +7551,7 @@ async function testBulkOperationsMaxLimit() {
   }
 
   const response = await makeRequest('POST', '/api/bulk/entities', {
-    entities: entities
+    entities: entities,
   });
 
   assertEquals(response.status, 400, 'Should return 400 for exceeding max limit');
@@ -7219,18 +7567,18 @@ async function testExportEntities() {
   // Create an entity type for testing
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'ExportTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create some entities
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Export Entity 1', value: 100 }
+    properties: { name: 'Export Entity 1', value: 100 },
   });
   await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Export Entity 2', value: 200 }
+    properties: { name: 'Export Entity 2', value: 200 },
   });
 
   // Export
@@ -7257,13 +7605,13 @@ async function testExportWithTypeFilter() {
   // Create another type and entity
   const otherTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ExportTestOtherType',
-    category: 'entity'
+    category: 'entity',
   });
   const otherTypeId = otherTypeResponse.data.data.id;
 
   await makeRequest('POST', '/api/entities', {
     type_id: otherTypeId,
-    properties: { name: 'Other Type Entity' }
+    properties: { name: 'Other Type Entity' },
   });
 
   // Export only the first type
@@ -7286,20 +7634,20 @@ async function testExportWithLinks() {
   // Create a link type
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ExportTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source Entity' }
+    properties: { name: 'Source Entity' },
   });
   const entity1Id = entity1Response.data.data.id;
 
   const entity2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target Entity' }
+    properties: { name: 'Target Entity' },
   });
   const entity2Id = entity2Response.data.data.id;
 
@@ -7308,7 +7656,7 @@ async function testExportWithLinks() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { relationship: 'connected' }
+    properties: { relationship: 'connected' },
   });
 
   // Export (filtering by entity type to get our linked entities)
@@ -7320,8 +7668,14 @@ async function testExportWithLinks() {
   // Verify the link references valid entity IDs from the export
   const exportedEntityIds = new Set(response.data.data.entities.map(e => e.id));
   for (const link of response.data.data.links) {
-    assert(exportedEntityIds.has(link.source_entity_id), 'Link source should be in exported entities');
-    assert(exportedEntityIds.has(link.target_entity_id), 'Link target should be in exported entities');
+    assert(
+      exportedEntityIds.has(link.source_entity_id),
+      'Link source should be in exported entities'
+    );
+    assert(
+      exportedEntityIds.has(link.target_entity_id),
+      'Link target should be in exported entities'
+    );
   }
 }
 
@@ -7335,7 +7689,7 @@ async function testExportIncludeDeleted() {
   // Create and delete an entity
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'To Be Deleted' }
+    properties: { name: 'To Be Deleted' },
   });
   const entityId = entityResponse.data.data.id;
 
@@ -7348,7 +7702,9 @@ async function testExportIncludeDeleted() {
 
   // Export with deleted
   const response2 = await makeRequest('GET', '/api/export?include_deleted=true');
-  const hasDeletedEntity2 = response2.data.data.entities.some(e => e.id === entityId && e.is_deleted === 1);
+  const hasDeletedEntity2 = response2.data.data.entities.some(
+    e => e.id === entityId && e.is_deleted === 1
+  );
   assert(hasDeletedEntity2, 'Should include deleted entity when include_deleted=true');
 }
 
@@ -7362,17 +7718,29 @@ async function testImportEntities() {
   // Import entities
   const response = await makeRequest('POST', '/api/export', {
     entities: [
-      { client_id: 'import-1', type_id: typeId, properties: { name: 'Imported Entity 1', imported: true } },
-      { client_id: 'import-2', type_id: typeId, properties: { name: 'Imported Entity 2', imported: true } },
+      {
+        client_id: 'import-1',
+        type_id: typeId,
+        properties: { name: 'Imported Entity 1', imported: true },
+      },
+      {
+        client_id: 'import-2',
+        type_id: typeId,
+        properties: { name: 'Imported Entity 2', imported: true },
+      },
     ],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
   assert(response.data.data, 'Should return data');
   assert(response.data.data.entity_results, 'Should have entity_results');
   assertEquals(response.data.data.entity_results.length, 2, 'Should have 2 entity results');
-  assertEquals(response.data.data.summary.entities.successful, 2, 'Should have 2 successful entities');
+  assertEquals(
+    response.data.data.summary.entities.successful,
+    2,
+    'Should have 2 successful entities'
+  );
   assertEquals(response.data.data.summary.entities.failed, 0, 'Should have 0 failed entities');
 
   // Verify ID mapping
@@ -7386,14 +7754,25 @@ async function testImportEntitiesWithTypeName() {
   // Import entities using type name instead of type_id
   const response = await makeRequest('POST', '/api/export', {
     entities: [
-      { client_id: 'import-by-name-1', type_name: 'ExportTestEntityType', properties: { name: 'Imported By Name' } },
+      {
+        client_id: 'import-by-name-1',
+        type_name: 'ExportTestEntityType',
+        properties: { name: 'Imported By Name' },
+      },
     ],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
-  assertEquals(response.data.data.summary.entities.successful, 1, 'Should have 1 successful entity');
-  assert(response.data.data.id_mapping.entities['import-by-name-1'], 'Should have mapping for import-by-name-1');
+  assertEquals(
+    response.data.data.summary.entities.successful,
+    1,
+    'Should have 1 successful entity'
+  );
+  assert(
+    response.data.data.id_mapping.entities['import-by-name-1'],
+    'Should have mapping for import-by-name-1'
+  );
 }
 
 async function testImportEntitiesInvalidType() {
@@ -7401,14 +7780,22 @@ async function testImportEntitiesInvalidType() {
 
   const response = await makeRequest('POST', '/api/export', {
     entities: [
-      { client_id: 'invalid-type', type_name: 'NonExistentType', properties: { name: 'Should Fail' } },
+      {
+        client_id: 'invalid-type',
+        type_name: 'NonExistentType',
+        properties: { name: 'Should Fail' },
+      },
     ],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 201, 'Should return 201 (partial success supported)');
   assertEquals(response.data.data.summary.entities.failed, 1, 'Should have 1 failed entity');
-  assertEquals(response.data.data.entity_results[0].code, 'TYPE_NOT_FOUND', 'Should have TYPE_NOT_FOUND error');
+  assertEquals(
+    response.data.data.entity_results[0].code,
+    'TYPE_NOT_FOUND',
+    'Should have TYPE_NOT_FOUND error'
+  );
 }
 
 async function testImportEntitiesWithLinks() {
@@ -7433,13 +7820,17 @@ async function testImportEntitiesWithLinks() {
         type_id: linkTypeId,
         source_entity_client_id: 'entity-a',
         target_entity_client_id: 'entity-b',
-        properties: { weight: 10 }
+        properties: { weight: 10 },
       },
-    ]
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
-  assertEquals(response.data.data.summary.entities.successful, 2, 'Should have 2 successful entities');
+  assertEquals(
+    response.data.data.summary.entities.successful,
+    2,
+    'Should have 2 successful entities'
+  );
   assertEquals(response.data.data.summary.links.successful, 1, 'Should have 1 successful link');
 
   // Verify the link was created correctly
@@ -7449,8 +7840,16 @@ async function testImportEntitiesWithLinks() {
 
   // Fetch the link and verify
   const linkResponse = await makeRequest('GET', `/api/links/${linkId}`);
-  assertEquals(linkResponse.data.data.source_entity_id, entityAId, 'Link source should match entity-a');
-  assertEquals(linkResponse.data.data.target_entity_id, entityBId, 'Link target should match entity-b');
+  assertEquals(
+    linkResponse.data.data.source_entity_id,
+    entityAId,
+    'Link source should match entity-a'
+  );
+  assertEquals(
+    linkResponse.data.data.target_entity_id,
+    entityBId,
+    'Link target should match entity-b'
+  );
 }
 
 async function testImportLinkInvalidSourceEntity() {
@@ -7468,14 +7867,18 @@ async function testImportLinkInvalidSourceEntity() {
         type_id: linkTypeId,
         source_entity_client_id: 'non-existent',
         target_entity_id: '00000000-0000-0000-0000-000000000001',
-        properties: {}
+        properties: {},
       },
-    ]
+    ],
   });
 
   assertEquals(response.status, 201, 'Should return 201 (partial success supported)');
   assertEquals(response.data.data.summary.links.failed, 1, 'Should have 1 failed link');
-  assertEquals(response.data.data.link_results[0].code, 'SOURCE_ENTITY_NOT_FOUND', 'Should have SOURCE_ENTITY_NOT_FOUND error');
+  assertEquals(
+    response.data.data.link_results[0].code,
+    'SOURCE_ENTITY_NOT_FOUND',
+    'Should have SOURCE_ENTITY_NOT_FOUND error'
+  );
 }
 
 async function testImportWithNewTypes() {
@@ -7488,19 +7891,31 @@ async function testImportWithNewTypes() {
       { name: 'ImportedNewLinkType', category: 'link', description: 'A new link type' },
     ],
     entities: [
-      { client_id: 'new-type-entity', type_name: 'ImportedNewEntityType', properties: { created: 'via import' } },
+      {
+        client_id: 'new-type-entity',
+        type_name: 'ImportedNewEntityType',
+        properties: { created: 'via import' },
+      },
     ],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
   assertEquals(response.data.data.summary.types.successful, 2, 'Should have 2 successful types');
-  assertEquals(response.data.data.summary.entities.successful, 1, 'Should have 1 successful entity');
+  assertEquals(
+    response.data.data.summary.entities.successful,
+    1,
+    'Should have 1 successful entity'
+  );
 
   // Verify the type was created
   const typeResponse = await makeRequest('GET', '/api/types?name=ImportedNewEntityType');
   assertEquals(typeResponse.data.data.length, 1, 'Should find the newly created type');
-  assertEquals(typeResponse.data.data[0].description, 'A new entity type', 'Type description should match');
+  assertEquals(
+    typeResponse.data.data[0].description,
+    'A new entity type',
+    'Type description should match'
+  );
 }
 
 async function testImportExistingType() {
@@ -7509,15 +7924,22 @@ async function testImportExistingType() {
   // Try to import a type that already exists
   const response = await makeRequest('POST', '/api/export', {
     types: [
-      { name: 'ExportTestEntityType', category: 'entity' },  // This already exists
+      { name: 'ExportTestEntityType', category: 'entity' }, // This already exists
     ],
     entities: [],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
-  assertEquals(response.data.data.summary.types.successful, 1, 'Should reuse existing type successfully');
-  assert(response.data.data.id_mapping.types['ExportTestEntityType'], 'Should have mapping for existing type name');
+  assertEquals(
+    response.data.data.summary.types.successful,
+    1,
+    'Should reuse existing type successfully'
+  );
+  assert(
+    response.data.data.id_mapping.types['ExportTestEntityType'],
+    'Should have mapping for existing type name'
+  );
 }
 
 async function testImportEmptyRequest() {
@@ -7525,7 +7947,7 @@ async function testImportEmptyRequest() {
 
   const response = await makeRequest('POST', '/api/export', {
     entities: [],
-    links: []
+    links: [],
   });
 
   assertEquals(response.status, 400, 'Should return 400 for empty import');
@@ -7544,13 +7966,13 @@ async function testExportImportRoundTrip() {
   // Create test entities
   const e1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'RoundTrip Entity 1', score: 85 }
+    properties: { name: 'RoundTrip Entity 1', score: 85 },
   });
   const e1Id = e1Response.data.data.id;
 
   const e2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'RoundTrip Entity 2', score: 90 }
+    properties: { name: 'RoundTrip Entity 2', score: 90 },
   });
   const e2Id = e2Response.data.data.id;
 
@@ -7559,7 +7981,7 @@ async function testExportImportRoundTrip() {
     type_id: linkTypeId,
     source_entity_id: e1Id,
     target_entity_id: e2Id,
-    properties: { strength: 'strong' }
+    properties: { strength: 'strong' },
   });
 
   // Export
@@ -7575,23 +7997,31 @@ async function testExportImportRoundTrip() {
     .map((e, i) => ({
       client_id: `reimport-${i}`,
       type_id: e.type_id,
-      properties: e.properties
+      properties: e.properties,
     }));
 
   // Re-import (creates new entities with same properties)
   const importResponse = await makeRequest('POST', '/api/export', {
     entities: importEntities,
-    links: []
+    links: [],
   });
 
   assertEquals(importResponse.status, 201, 'Import should succeed');
-  assertEquals(importResponse.data.data.summary.entities.successful, importEntities.length, 'All entities should be imported');
+  assertEquals(
+    importResponse.data.data.summary.entities.successful,
+    importEntities.length,
+    'All entities should be imported'
+  );
 
   // Verify the imported entities have the same properties
   const importedEntityId = importResponse.data.data.id_mapping.entities['reimport-0'];
   const verifyResponse = await makeRequest('GET', `/api/entities/${importedEntityId}`);
   assertEquals(verifyResponse.status, 200, 'Should find imported entity');
-  assertEquals(verifyResponse.data.data.properties.name, importEntities[0].properties.name, 'Properties should match');
+  assertEquals(
+    verifyResponse.data.data.properties.name,
+    importEntities[0].properties.name,
+    'Properties should match'
+  );
 }
 
 // ============================================================================
@@ -7611,10 +8041,10 @@ async function testSchemaValidationCreateEntitySuccess() {
       properties: {
         name: { type: 'string', minLength: 1 },
         price: { type: 'number', minimum: 0 },
-        inStock: { type: 'boolean' }
+        inStock: { type: 'boolean' },
       },
-      required: ['name', 'price']
-    })
+      required: ['name', 'price'],
+    }),
   });
 
   assertEquals(typeResponse.status, 201, 'Type creation should succeed');
@@ -7626,8 +8056,8 @@ async function testSchemaValidationCreateEntitySuccess() {
     properties: {
       name: 'Test Product',
       price: 29.99,
-      inStock: true
-    }
+      inStock: true,
+    },
   });
 
   assertEquals(entityResponse.status, 201, 'Entity creation should succeed with valid properties');
@@ -7647,14 +8077,21 @@ async function testSchemaValidationCreateEntityMissingRequired() {
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
-      name: 'Incomplete Product'
+      name: 'Incomplete Product',
       // missing 'price' which is required
-    }
+    },
   });
 
   assertEquals(entityResponse.status, 400, 'Should fail with 400');
-  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
-  assert(entityResponse.data.error.includes('price'), 'Error should mention missing price property');
+  assertEquals(
+    entityResponse.data.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
+  assert(
+    entityResponse.data.error.includes('price'),
+    'Error should mention missing price property'
+  );
 }
 
 async function testSchemaValidationCreateEntityWrongType() {
@@ -7669,12 +8106,16 @@ async function testSchemaValidationCreateEntityWrongType() {
     type_id: typeId,
     properties: {
       name: 'Bad Product',
-      price: 'not a number'
-    }
+      price: 'not a number',
+    },
   });
 
   assertEquals(entityResponse.status, 400, 'Should fail with 400');
-  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assertEquals(
+    entityResponse.data.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
   assert(entityResponse.data.error.includes('type'), 'Error should mention type mismatch');
 }
 
@@ -7690,13 +8131,20 @@ async function testSchemaValidationCreateEntityMinimumViolation() {
     type_id: typeId,
     properties: {
       name: 'Negative Price Product',
-      price: -5.00
-    }
+      price: -5.0,
+    },
   });
 
   assertEquals(entityResponse.status, 400, 'Should fail with 400');
-  assertEquals(entityResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
-  assert(entityResponse.data.error.includes('minimum') || entityResponse.data.error.includes('>='), 'Error should mention minimum constraint');
+  assertEquals(
+    entityResponse.data.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
+  assert(
+    entityResponse.data.error.includes('minimum') || entityResponse.data.error.includes('>='),
+    'Error should mention minimum constraint'
+  );
 }
 
 async function testSchemaValidationUpdateEntity() {
@@ -7711,8 +8159,8 @@ async function testSchemaValidationUpdateEntity() {
     type_id: typeId,
     properties: {
       name: 'Update Test Product',
-      price: 49.99
-    }
+      price: 49.99,
+    },
   });
   assertEquals(createResponse.status, 201, 'Entity creation should succeed');
   const entityId = createResponse.data.data.id;
@@ -7721,12 +8169,16 @@ async function testSchemaValidationUpdateEntity() {
   const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
     properties: {
       name: '', // empty string, violates minLength: 1
-      price: 29.99
-    }
+      price: 29.99,
+    },
   });
 
   assertEquals(updateResponse.status, 400, 'Update should fail with 400');
-  assertEquals(updateResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assertEquals(
+    updateResponse.data.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
 }
 
 async function testSchemaValidationCreateLinkSuccess() {
@@ -7741,10 +8193,10 @@ async function testSchemaValidationCreateLinkSuccess() {
       type: 'object',
       properties: {
         strength: { type: 'string', enum: ['weak', 'medium', 'strong'] },
-        createdDate: { type: 'string', format: 'date' }
+        createdDate: { type: 'string', format: 'date' },
       },
-      required: ['strength']
-    })
+      required: ['strength'],
+    }),
   });
 
   assertEquals(linkTypeResponse.status, 201, 'Link type creation should succeed');
@@ -7757,13 +8209,13 @@ async function testSchemaValidationCreateLinkSuccess() {
   // Create two entities
   const e1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Source', price: 10 }
+    properties: { name: 'Link Source', price: 10 },
   });
   const e1Id = e1Response.data.data.id;
 
   const e2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Link Target', price: 20 }
+    properties: { name: 'Link Target', price: 20 },
   });
   const e2Id = e2Response.data.data.id;
 
@@ -7774,8 +8226,8 @@ async function testSchemaValidationCreateLinkSuccess() {
     target_entity_id: e2Id,
     properties: {
       strength: 'strong',
-      createdDate: '2025-01-01'
-    }
+      createdDate: '2025-01-01',
+    },
   });
 
   assertEquals(linkResponse.status, 201, 'Link creation should succeed');
@@ -7796,13 +8248,13 @@ async function testSchemaValidationCreateLinkInvalidEnum() {
   // Create two entities
   const e1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Enum Test Source', price: 10 }
+    properties: { name: 'Enum Test Source', price: 10 },
   });
   const e1Id = e1Response.data.data.id;
 
   const e2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Enum Test Target', price: 20 }
+    properties: { name: 'Enum Test Target', price: 20 },
   });
   const e2Id = e2Response.data.data.id;
 
@@ -7812,13 +8264,20 @@ async function testSchemaValidationCreateLinkInvalidEnum() {
     source_entity_id: e1Id,
     target_entity_id: e2Id,
     properties: {
-      strength: 'invalid-value' // not in ['weak', 'medium', 'strong']
-    }
+      strength: 'invalid-value', // not in ['weak', 'medium', 'strong']
+    },
   });
 
   assertEquals(linkResponse.status, 400, 'Should fail with 400');
-  assertEquals(linkResponse.data.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
-  assert(linkResponse.data.error.includes('one of') || linkResponse.data.error.includes('enum'), 'Error should mention allowed values');
+  assertEquals(
+    linkResponse.data.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
+  assert(
+    linkResponse.data.error.includes('one of') || linkResponse.data.error.includes('enum'),
+    'Error should mention allowed values'
+  );
 }
 
 async function testSchemaValidationNoSchemaType() {
@@ -7828,7 +8287,7 @@ async function testSchemaValidationNoSchemaType() {
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'FlexibleProduct',
     category: 'entity',
-    description: 'A product without schema validation'
+    description: 'A product without schema validation',
     // No json_schema
   });
 
@@ -7841,12 +8300,16 @@ async function testSchemaValidationNoSchemaType() {
     properties: {
       anything: 'goes',
       nested: { deep: { data: 123 } },
-      array: [1, 2, 3]
-    }
+      array: [1, 2, 3],
+    },
   });
 
   assertEquals(entityResponse.status, 201, 'Entity creation should succeed with any properties');
-  assertEquals(entityResponse.data.data.properties.anything, 'goes', 'Arbitrary properties should be saved');
+  assertEquals(
+    entityResponse.data.data.properties.anything,
+    'goes',
+    'Arbitrary properties should be saved'
+  );
 }
 
 async function testSchemaValidationBulkCreateEntitiesWithSchema() {
@@ -7861,20 +8324,20 @@ async function testSchemaValidationBulkCreateEntitiesWithSchema() {
     entities: [
       {
         type_id: typeId,
-        properties: { name: 'Valid Bulk Product 1', price: 15.00 },
-        client_id: 'bulk-valid-1'
+        properties: { name: 'Valid Bulk Product 1', price: 15.0 },
+        client_id: 'bulk-valid-1',
       },
       {
         type_id: typeId,
-        properties: { name: 'Invalid - No Price' },  // missing required 'price'
-        client_id: 'bulk-invalid-1'
+        properties: { name: 'Invalid - No Price' }, // missing required 'price'
+        client_id: 'bulk-invalid-1',
       },
       {
         type_id: typeId,
-        properties: { name: 'Valid Bulk Product 2', price: 25.00 },
-        client_id: 'bulk-valid-2'
-      }
-    ]
+        properties: { name: 'Valid Bulk Product 2', price: 25.0 },
+        client_id: 'bulk-valid-2',
+      },
+    ],
   });
 
   assertEquals(bulkResponse.status, 201, 'Bulk operation should complete');
@@ -7884,7 +8347,11 @@ async function testSchemaValidationBulkCreateEntitiesWithSchema() {
   // Check the failed one has correct error code
   const failedResult = bulkResponse.data.data.results.find(r => r.client_id === 'bulk-invalid-1');
   assertEquals(failedResult.success, false, 'Invalid entity should fail');
-  assertEquals(failedResult.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assertEquals(
+    failedResult.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
 }
 
 async function testSchemaValidationImportWithSchema() {
@@ -7901,15 +8368,15 @@ async function testSchemaValidationImportWithSchema() {
       {
         client_id: 'import-valid-1',
         type_id: typeId,
-        properties: { name: 'Imported Product', price: 99.99 }
+        properties: { name: 'Imported Product', price: 99.99 },
       },
       {
         client_id: 'import-invalid-1',
         type_id: typeId,
-        properties: { name: 'Invalid Import', price: -10 }  // violates minimum
-      }
+        properties: { name: 'Invalid Import', price: -10 }, // violates minimum
+      },
     ],
-    links: []
+    links: [],
   });
 
   assertEquals(importResponse.status, 201, 'Import should complete');
@@ -7917,9 +8384,15 @@ async function testSchemaValidationImportWithSchema() {
   assertEquals(importResponse.data.data.summary.entities.failed, 1, 'Should have 1 failed');
 
   // Check the failed one has correct error code
-  const failedResult = importResponse.data.data.entity_results.find(r => r.client_id === 'import-invalid-1');
+  const failedResult = importResponse.data.data.entity_results.find(
+    r => r.client_id === 'import-invalid-1'
+  );
   assertEquals(failedResult.success, false, 'Invalid entity should fail');
-  assertEquals(failedResult.code, 'SCHEMA_VALIDATION_FAILED', 'Should have SCHEMA_VALIDATION_FAILED code');
+  assertEquals(
+    failedResult.code,
+    'SCHEMA_VALIDATION_FAILED',
+    'Should have SCHEMA_VALIDATION_FAILED code'
+  );
 }
 
 // ============================================================================
@@ -7958,10 +8431,12 @@ async function testRateLimitExceeded() {
   // Using auth endpoint which has 20 requests/minute limit
   const requests = [];
   for (let i = 0; i < 25; i++) {
-    requests.push(makeRequest('POST', '/api/auth/login', {
-      email: 'ratelimit-test-' + i + '@example.com',
-      password: 'wrongpassword'
-    }));
+    requests.push(
+      makeRequest('POST', '/api/auth/login', {
+        email: 'ratelimit-test-' + i + '@example.com',
+        password: 'wrongpassword',
+      })
+    );
   }
 
   const responses = await Promise.all(requests);
@@ -7977,11 +8452,18 @@ async function testRateLimitExceeded() {
   if (rateLimitedResponses.length > 0) {
     const limitedResponse = rateLimitedResponses[0];
     assertEquals(limitedResponse.status, 429, 'Rate limited response should be 429');
-    assertEquals(limitedResponse.data.code, 'RATE_LIMIT_EXCEEDED', 'Should have RATE_LIMIT_EXCEEDED code');
+    assertEquals(
+      limitedResponse.data.code,
+      'RATE_LIMIT_EXCEEDED',
+      'Should have RATE_LIMIT_EXCEEDED code'
+    );
     assert(limitedResponse.data.error, 'Should have error message');
     assert(limitedResponse.headers.get('Retry-After'), 'Should have Retry-After header');
     assert(limitedResponse.data.details, 'Should have details object');
-    assert(limitedResponse.data.details.retryAfter !== undefined, 'Details should include retryAfter');
+    assert(
+      limitedResponse.data.details.retryAfter !== undefined,
+      'Details should include retryAfter'
+    );
     logSuccess('Rate limit exceeded response format is correct');
   } else {
     // If no rate limiting occurred, the limit might not have been reached
@@ -8008,7 +8490,10 @@ async function testRateLimitPerCategory() {
   logInfo(`Read limit: ${readLimit}, Search limit: ${searchLimit}, Bulk limit: ${bulkLimit}`);
 
   // Read endpoints should have higher or equal limits compared to bulk
-  assert(readLimit >= bulkLimit, 'Read endpoints should have higher or equal limits compared to bulk');
+  assert(
+    readLimit >= bulkLimit,
+    'Read endpoints should have higher or equal limits compared to bulk'
+  );
   assert(readLimit > 0, 'Read limit should be positive');
   assert(searchLimit > 0, 'Search limit should be positive');
   assert(bulkLimit > 0, 'Bulk limit should be positive');
@@ -8030,7 +8515,7 @@ async function testAuditLogQueryEndpoint() {
 
   // Query audit logs
   const response = await fetch(`${DEV_SERVER_URL}/api/audit`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -8051,9 +8536,12 @@ async function testAuditLogQueryWithFilters() {
   const token = registerResponse.data.data.access_token;
 
   // Query with filters
-  const response = await fetch(`${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=create&limit=10`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
+  const response = await fetch(
+    `${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=create&limit=10`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
   const data = await response.json();
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -8074,20 +8562,20 @@ async function testAuditLogResourceHistory() {
   // Create a type first
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'AuditHistoryTestType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Audit Test Entity' }
+    properties: { name: 'Audit Test Entity' },
   });
   const entityId = entityResponse.data.data.id;
 
   // Get audit history for the entity
   const response = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -8113,7 +8601,7 @@ async function testAuditLogUserActions() {
 
   // Get audit logs for the user
   const response = await fetch(`${DEV_SERVER_URL}/api/audit/user/${userId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await response.json();
 
@@ -8136,7 +8624,7 @@ async function testAuditLogInvalidResourceType() {
 
   // Query with invalid resource type
   const response = await fetch(`${DEV_SERVER_URL}/api/audit/resource/invalid/test-id`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   assertEquals(response.status, 400, 'Status code should be 400');
@@ -8155,20 +8643,20 @@ async function testAuditLogEntityCreateLogged() {
   // Create a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'AuditCreateLogType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Logged Entity' }
+    properties: { name: 'Logged Entity' },
   });
   const entityId = entityResponse.data.data.id;
 
   // Check that the create was logged
   const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const auditData = await auditResponse.json();
 
@@ -8192,26 +8680,26 @@ async function testAuditLogEntityUpdateLogged() {
   // Create a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'AuditUpdateLogType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Original Name' }
+    properties: { name: 'Original Name' },
   });
   const entityId = entityResponse.data.data.id;
 
   // Update the entity
   const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated Name' }
+    properties: { name: 'Updated Name' },
   });
   const newEntityId = updateResponse.data.data.id;
 
   // Check that the update was logged
   const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${newEntityId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   const auditData = await auditResponse.json();
 
@@ -8234,14 +8722,14 @@ async function testAuditLogEntityDeleteLogged() {
   // Create a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'AuditDeleteLogType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const entityResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'To Be Deleted' }
+    properties: { name: 'To Be Deleted' },
   });
   const entityId = entityResponse.data.data.id;
 
@@ -8249,12 +8737,17 @@ async function testAuditLogEntityDeleteLogged() {
   await makeRequest('DELETE', `/api/entities/${entityId}`);
 
   // Check audit logs for delete operation
-  const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=delete&limit=10`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
+  const auditResponse = await fetch(
+    `${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=delete&limit=10`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
   const auditData = await auditResponse.json();
 
-  const deleteEntries = auditData.data.filter(e => e.operation === 'delete' && e.resource_type === 'entity');
+  const deleteEntries = auditData.data.filter(
+    e => e.operation === 'delete' && e.resource_type === 'entity'
+  );
   assert(deleteEntries.length >= 1, 'Should have at least 1 delete operation logged');
 }
 
@@ -8378,7 +8871,11 @@ async function testDocsRootEndpointIncludesDocsLink() {
   assert(response.data.endpoints.documentation, 'Should have documentation endpoint');
   assertEquals(response.data.endpoints.documentation, '/docs', 'Documentation should be at /docs');
   assert(response.data.endpoints.openapi, 'Should have openapi endpoint');
-  assertEquals(response.data.endpoints.openapi, '/docs/openapi.json', 'OpenAPI should be at /docs/openapi.json');
+  assertEquals(
+    response.data.endpoints.openapi,
+    '/docs/openapi.json',
+    'OpenAPI should be at /docs/openapi.json'
+  );
 }
 
 async function testDocsVersionEndpointIncludesDocsLink() {
@@ -8390,7 +8887,11 @@ async function testDocsVersionEndpointIncludesDocsLink() {
   assert(response.data.api.documentation, 'Should have documentation link');
   assertEquals(response.data.api.documentation, '/docs', 'Documentation should be at /docs');
   assert(response.data.api.openapi, 'Should have openapi link');
-  assertEquals(response.data.api.openapi, '/docs/openapi.json', 'OpenAPI should be at /docs/openapi.json');
+  assertEquals(
+    response.data.api.openapi,
+    '/docs/openapi.json',
+    'OpenAPI should be at /docs/openapi.json'
+  );
 }
 
 // ============================================================================
@@ -8483,14 +8984,17 @@ async function testCorsHeadersOnPreflight() {
   const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
     method: 'OPTIONS',
     headers: {
-      'Origin': 'http://localhost:3000',
+      Origin: 'http://localhost:3000',
       'Access-Control-Request-Method': 'POST',
       'Access-Control-Request-Headers': 'Content-Type, Authorization',
     },
   });
 
   // Preflight should return 204 or 200
-  assert(response.ok || response.status === 204, `Preflight should succeed (got: ${response.status})`);
+  assert(
+    response.ok || response.status === 204,
+    `Preflight should succeed (got: ${response.status})`
+  );
 
   // Check Access-Control headers
   const allowOrigin = response.headers.get('Access-Control-Allow-Origin');
@@ -8510,7 +9014,7 @@ async function testCorsHeadersOnActualRequest() {
   const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
     method: 'GET',
     headers: {
-      'Origin': 'http://localhost:3000',
+      Origin: 'http://localhost:3000',
     },
   });
 
@@ -8530,7 +9034,7 @@ async function testCorsExposedHeaders() {
   const response = await fetch(`${DEV_SERVER_URL}/api/types`, {
     method: 'GET',
     headers: {
-      'Origin': 'http://localhost:3000',
+      Origin: 'http://localhost:3000',
     },
   });
 
@@ -8542,8 +9046,10 @@ async function testCorsExposedHeaders() {
 
   // Rate limit headers should be exposed
   logInfo(`Exposed headers: ${exposeHeaders}`);
-  assert(exposeHeaders.includes('X-Request-ID') || exposeHeaders.includes('x-request-id'),
-    'Should expose X-Request-ID header');
+  assert(
+    exposeHeaders.includes('X-Request-ID') || exposeHeaders.includes('x-request-id'),
+    'Should expose X-Request-ID header'
+  );
 }
 
 async function testSecurityHeadersOnAllEndpoints() {
@@ -8562,12 +9068,16 @@ async function testSecurityHeadersOnAllEndpoints() {
     });
 
     const xContentType = response.headers.get('X-Content-Type-Options');
-    assert(xContentType === 'nosniff',
-      `${endpoint.method} ${endpoint.path}: Should have X-Content-Type-Options: nosniff`);
+    assert(
+      xContentType === 'nosniff',
+      `${endpoint.method} ${endpoint.path}: Should have X-Content-Type-Options: nosniff`
+    );
 
     const xFrameOptions = response.headers.get('X-Frame-Options');
-    assert(xFrameOptions === 'DENY' || xFrameOptions === 'SAMEORIGIN',
-      `${endpoint.method} ${endpoint.path}: Should have X-Frame-Options header`);
+    assert(
+      xFrameOptions === 'DENY' || xFrameOptions === 'SAMEORIGIN',
+      `${endpoint.method} ${endpoint.path}: Should have X-Frame-Options header`
+    );
   }
 }
 
@@ -8606,10 +9116,7 @@ async function testSanitizationEntityProperties() {
     entity.properties.name.includes('&lt;script&gt;'),
     'Script tags should be escaped in name'
   );
-  assert(
-    !entity.properties.name.includes('<script>'),
-    'Raw script tags should not be present'
-  );
+  assert(!entity.properties.name.includes('<script>'), 'Raw script tags should not be present');
 
   // Check that img tags with event handlers are escaped
   assert(
@@ -8686,20 +9193,11 @@ async function testSanitizationTypeName() {
   const type = createResponse.data.data;
 
   // Check that name is sanitized
-  assert(
-    type.name.includes('&lt;script&gt;'),
-    'Script tags should be escaped in type name'
-  );
-  assert(
-    !type.name.includes('<script>'),
-    'Raw script tags should not be present in type name'
-  );
+  assert(type.name.includes('&lt;script&gt;'), 'Script tags should be escaped in type name');
+  assert(!type.name.includes('<script>'), 'Raw script tags should not be present in type name');
 
   // Check that description is sanitized
-  assert(
-    type.description.includes('&lt;b&gt;'),
-    'HTML tags should be escaped in description'
-  );
+  assert(type.description.includes('&lt;b&gt;'), 'HTML tags should be escaped in description');
 
   logInfo(`Sanitized type name: ${type.name}`);
 
@@ -8815,14 +9313,8 @@ async function testSanitizationSpecialCharactersPreserved() {
     entity.properties.equation.includes('&lt;') && entity.properties.equation.includes('&gt;'),
     'Less than and greater than should be escaped'
   );
-  assert(
-    entity.properties.quote.includes('&quot;'),
-    'Quotes should be escaped'
-  );
-  assert(
-    entity.properties.ampersand.includes('&amp;'),
-    'Ampersands should be escaped'
-  );
+  assert(entity.properties.quote.includes('&quot;'), 'Quotes should be escaped');
+  assert(entity.properties.ampersand.includes('&amp;'), 'Ampersands should be escaped');
 
   logInfo('Special characters properly escaped');
 }
@@ -8853,7 +9345,7 @@ async function testSanitizationImport() {
 
   // Verify the imported entity is sanitized
   const entityResult = importResponse.data.data.entity_results.find(
-    (r) => r.client_id === 'xss-import-1'
+    r => r.client_id === 'xss-import-1'
   );
 
   if (entityResult && entityResult.success) {
@@ -8878,7 +9370,7 @@ async function testCachingTypeGet() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheTestType',
     category: 'entity',
-    description: 'Type for cache testing'
+    description: 'Type for cache testing',
   });
 
   const typeId = createResponse.data.data.id;
@@ -8886,7 +9378,11 @@ async function testCachingTypeGet() {
   // First request (cache miss)
   const response1 = await makeRequest('GET', `/api/types/${typeId}`);
   assertEquals(response1.status, 200, 'First request should succeed');
-  assertEquals(response1.data.data.name, 'CacheTestType', 'First request should return correct name');
+  assertEquals(
+    response1.data.data.name,
+    'CacheTestType',
+    'First request should return correct name'
+  );
 
   // Second request (should be served from cache)
   const response2 = await makeRequest('GET', `/api/types/${typeId}`);
@@ -8902,7 +9398,7 @@ async function testCachingTypeInvalidationOnUpdate() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheInvalidateType',
     category: 'entity',
-    description: 'Original description'
+    description: 'Original description',
   });
 
   const typeId = createResponse.data.data.id;
@@ -8910,18 +9406,26 @@ async function testCachingTypeInvalidationOnUpdate() {
   // First GET to populate cache
   const response1 = await makeRequest('GET', `/api/types/${typeId}`);
   assertEquals(response1.status, 200, 'First GET should succeed');
-  assertEquals(response1.data.data.description, 'Original description', 'Should have original description');
+  assertEquals(
+    response1.data.data.description,
+    'Original description',
+    'Should have original description'
+  );
 
   // Update the type
   const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
-    description: 'Updated description'
+    description: 'Updated description',
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
 
   // GET again - should see updated data (cache should be invalidated)
   const response2 = await makeRequest('GET', `/api/types/${typeId}`);
   assertEquals(response2.status, 200, 'Second GET should succeed');
-  assertEquals(response2.data.data.description, 'Updated description', 'Should see updated description after cache invalidation');
+  assertEquals(
+    response2.data.data.description,
+    'Updated description',
+    'Should see updated description after cache invalidation'
+  );
 }
 
 async function testCachingTypeInvalidationOnDelete() {
@@ -8930,7 +9434,7 @@ async function testCachingTypeInvalidationOnDelete() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheDeleteType',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
@@ -8954,14 +9458,14 @@ async function testCachingEntityGet() {
   // First ensure we have a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'CacheTestEntity' }
+    properties: { name: 'CacheTestEntity' },
   });
 
   const entityId = createResponse.data.data.id;
@@ -8969,13 +9473,21 @@ async function testCachingEntityGet() {
   // First request (cache miss)
   const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(response1.status, 200, 'First request should succeed');
-  assertEquals(response1.data.data.properties.name, 'CacheTestEntity', 'First request should return correct name');
+  assertEquals(
+    response1.data.data.properties.name,
+    'CacheTestEntity',
+    'First request should return correct name'
+  );
 
   // Second request (should be served from cache)
   const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(response2.status, 200, 'Second request should succeed');
   assertEquals(response2.data.data.id, entityId, 'Second request should return same entity ID');
-  assertEquals(response2.data.data.properties.name, 'CacheTestEntity', 'Second request should return same name');
+  assertEquals(
+    response2.data.data.properties.name,
+    'CacheTestEntity',
+    'Second request should return same name'
+  );
 }
 
 async function testCachingEntityInvalidationOnUpdate() {
@@ -8984,14 +9496,14 @@ async function testCachingEntityInvalidationOnUpdate() {
   // First ensure we have a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheEntityUpdateType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'Original', status: 'active' }
+    properties: { name: 'Original', status: 'active' },
   });
 
   const entityId = createResponse.data.data.id;
@@ -9003,14 +9515,18 @@ async function testCachingEntityInvalidationOnUpdate() {
 
   // Update the entity
   const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated', status: 'inactive' }
+    properties: { name: 'Updated', status: 'inactive' },
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
 
   // GET again - should see updated data (cache should be invalidated)
   const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(response2.status, 200, 'Second GET should succeed');
-  assertEquals(response2.data.data.properties.name, 'Updated', 'Should see updated name after cache invalidation');
+  assertEquals(
+    response2.data.data.properties.name,
+    'Updated',
+    'Should see updated name after cache invalidation'
+  );
   assertEquals(response2.data.data.properties.status, 'inactive', 'Should see updated status');
 }
 
@@ -9020,14 +9536,14 @@ async function testCachingEntityInvalidationOnDelete() {
   // First ensure we have a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheEntityDeleteType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'ToBeDeleted' }
+    properties: { name: 'ToBeDeleted' },
   });
 
   const entityId = createResponse.data.data.id;
@@ -9044,7 +9560,11 @@ async function testCachingEntityInvalidationOnDelete() {
   // GET again - should show deleted status (cache should be invalidated)
   const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(response2.status, 200, 'Second GET should succeed');
-  assertEquals(response2.data.data.is_deleted, true, 'Should show as deleted after cache invalidation');
+  assertEquals(
+    response2.data.data.is_deleted,
+    true,
+    'Should show as deleted after cache invalidation'
+  );
 }
 
 async function testCachingEntityInvalidationOnRestore() {
@@ -9053,14 +9573,14 @@ async function testCachingEntityInvalidationOnRestore() {
   // First ensure we have a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheEntityRestoreType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create and delete an entity
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'ToBeRestored' }
+    properties: { name: 'ToBeRestored' },
   });
 
   const entityId = createResponse.data.data.id;
@@ -9080,7 +9600,11 @@ async function testCachingEntityInvalidationOnRestore() {
   // GET again - should show restored status (cache should be invalidated)
   const response2 = await makeRequest('GET', `/api/entities/${entityId}`);
   assertEquals(response2.status, 200, 'Second GET should succeed');
-  assertEquals(response2.data.data.is_deleted, false, 'Should show as not deleted after restore and cache invalidation');
+  assertEquals(
+    response2.data.data.is_deleted,
+    false,
+    'Should show as not deleted after restore and cache invalidation'
+  );
 }
 
 async function testCachingLinkGet() {
@@ -9089,26 +9613,26 @@ async function testCachingLinkGet() {
   // First ensure we have types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source' }
+    properties: { name: 'Source' },
   });
   const entity1Id = entity1Response.data.data.id;
 
   const entity2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target' }
+    properties: { name: 'Target' },
   });
   const entity2Id = entity2Response.data.data.id;
 
@@ -9117,7 +9641,7 @@ async function testCachingLinkGet() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { relationship: 'connected' }
+    properties: { relationship: 'connected' },
   });
 
   const linkId = createResponse.data.data.id;
@@ -9125,13 +9649,21 @@ async function testCachingLinkGet() {
   // First request (cache miss)
   const response1 = await makeRequest('GET', `/api/links/${linkId}`);
   assertEquals(response1.status, 200, 'First request should succeed');
-  assertEquals(response1.data.data.properties.relationship, 'connected', 'First request should return correct property');
+  assertEquals(
+    response1.data.data.properties.relationship,
+    'connected',
+    'First request should return correct property'
+  );
 
   // Second request (should be served from cache)
   const response2 = await makeRequest('GET', `/api/links/${linkId}`);
   assertEquals(response2.status, 200, 'Second request should succeed');
   assertEquals(response2.data.data.id, linkId, 'Second request should return same link ID');
-  assertEquals(response2.data.data.properties.relationship, 'connected', 'Second request should return same property');
+  assertEquals(
+    response2.data.data.properties.relationship,
+    'connected',
+    'Second request should return same property'
+  );
 }
 
 async function testCachingLinkInvalidationOnUpdate() {
@@ -9140,26 +9672,26 @@ async function testCachingLinkInvalidationOnUpdate() {
   // First ensure we have types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheLinkUpdateEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'CacheLinkUpdateType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
   const entity1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source' }
+    properties: { name: 'Source' },
   });
   const entity1Id = entity1Response.data.data.id;
 
   const entity2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target' }
+    properties: { name: 'Target' },
   });
   const entity2Id = entity2Response.data.data.id;
 
@@ -9168,7 +9700,7 @@ async function testCachingLinkInvalidationOnUpdate() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { weight: 1 }
+    properties: { weight: 1 },
   });
 
   const linkId = createResponse.data.data.id;
@@ -9180,14 +9712,18 @@ async function testCachingLinkInvalidationOnUpdate() {
 
   // Update the link
   const updateResponse = await makeRequest('PUT', `/api/links/${linkId}`, {
-    properties: { weight: 5 }
+    properties: { weight: 5 },
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
 
   // GET again - should see updated data (cache should be invalidated)
   const response2 = await makeRequest('GET', `/api/links/${linkId}`);
   assertEquals(response2.status, 200, 'Second GET should succeed');
-  assertEquals(response2.data.data.properties.weight, 5, 'Should see updated weight after cache invalidation');
+  assertEquals(
+    response2.data.data.properties.weight,
+    5,
+    'Should see updated weight after cache invalidation'
+  );
 }
 
 // ============================================================================
@@ -9201,7 +9737,7 @@ async function testETagHeaderOnTypeGet() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagTestType',
     category: 'entity',
-    description: 'Type for ETag testing'
+    description: 'Type for ETag testing',
   });
 
   const typeId = createResponse.data.data.id;
@@ -9223,14 +9759,14 @@ async function testETagHeaderOnEntityGet() {
   // First ensure we have a type
   const typeResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
   const createResponse = await makeRequest('POST', '/api/entities', {
     type_id: typeId,
-    properties: { name: 'ETagTest Entity' }
+    properties: { name: 'ETagTest Entity' },
   });
 
   const entityId = createResponse.data.data.id;
@@ -9250,25 +9786,25 @@ async function testETagHeaderOnLinkGet() {
   // Create types and entities
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagLinkEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   const entity1Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Source' }
+    properties: { name: 'Source' },
   });
   const entity1Id = entity1Response.data.data.id;
 
   const entity2Response = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Target' }
+    properties: { name: 'Target' },
   });
   const entity2Id = entity2Response.data.data.id;
 
@@ -9277,7 +9813,7 @@ async function testETagHeaderOnLinkGet() {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
-    properties: { relationship: 'connected' }
+    properties: { relationship: 'connected' },
   });
 
   const linkId = createResponse.data.data.id;
@@ -9298,7 +9834,7 @@ async function testETagConditionalRequestNotModified() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETag304TestType',
     category: 'entity',
-    description: 'Type for 304 testing'
+    description: 'Type for 304 testing',
   });
 
   const typeId = createResponse.data.data.id;
@@ -9312,10 +9848,14 @@ async function testETagConditionalRequestNotModified() {
 
   // Second GET with If-None-Match header
   const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
-    'If-None-Match': etag
+    'If-None-Match': etag,
   });
 
-  assertEquals(response2.status, 304, 'Second GET with matching ETag should return 304 Not Modified');
+  assertEquals(
+    response2.status,
+    304,
+    'Second GET with matching ETag should return 304 Not Modified'
+  );
   assertEquals(response2.data, null, 'Body should be empty for 304 response');
 }
 
@@ -9326,7 +9866,7 @@ async function testETagConditionalRequestModified() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagModifiedTestType',
     category: 'entity',
-    description: 'Original description'
+    description: 'Original description',
   });
 
   const typeId = createResponse.data.data.id;
@@ -9340,18 +9880,22 @@ async function testETagConditionalRequestModified() {
 
   // Update the type
   const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
-    description: 'Updated description'
+    description: 'Updated description',
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
 
   // Third GET with old If-None-Match - should return 200 with new data
   const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
-    'If-None-Match': etag1
+    'If-None-Match': etag1,
   });
 
   assertEquals(response2.status, 200, 'GET after update should return 200 (content changed)');
   assert(response2.data.data, 'Should return full response body');
-  assertEquals(response2.data.data.description, 'Updated description', 'Should return updated data');
+  assertEquals(
+    response2.data.data.description,
+    'Updated description',
+    'Should return updated data'
+  );
 
   // The new ETag should be different
   const etag2 = response2.headers.get('ETag');
@@ -9366,7 +9910,7 @@ async function testETagConsistentAcrossRequests() {
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagConsistentType',
     category: 'entity',
-    description: 'Consistency test'
+    description: 'Consistency test',
   });
 
   const typeId = createResponse.data.data.id;
@@ -9413,7 +9957,7 @@ async function testETagSkippedForAuthEndpoints() {
   const registerResponse = await makeRequest('POST', '/api/auth/register', {
     email: `etag-auth-test-${Date.now()}@example.com`,
     password: 'securePassword123',
-    display_name: 'ETag Test User'
+    display_name: 'ETag Test User',
   });
   assertEquals(registerResponse.status, 201, 'Registration should succeed');
 
@@ -9421,7 +9965,7 @@ async function testETagSkippedForAuthEndpoints() {
 
   // GET /api/auth/me should not have ETag (auth endpoints are skipped)
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', {
-    'Authorization': `Bearer ${token}`
+    Authorization: `Bearer ${token}`,
   });
   assertEquals(meResponse.status, 200, 'GET /api/auth/me should succeed');
 
@@ -9435,7 +9979,7 @@ async function testETagWithMultipleETags() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagMultipleType',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
@@ -9449,7 +9993,7 @@ async function testETagWithMultipleETags() {
 
   // Send multiple ETags in If-None-Match (one valid, one invalid)
   const response2 = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
-    'If-None-Match': `"invalid-etag", ${etag}, "another-invalid"`
+    'If-None-Match': `"invalid-etag", ${etag}, "another-invalid"`,
   });
 
   assertEquals(response2.status, 304, 'Should return 304 when one of the ETags matches');
@@ -9461,14 +10005,14 @@ async function testETagWithStarWildcard() {
   // Create a type
   const createResponse = await makeRequest('POST', '/api/types', {
     name: 'ETagWildcardType',
-    category: 'entity'
+    category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
 
   // GET with * wildcard in If-None-Match (should always return 304 for existing resources)
   const response = await makeRequestWithHeaders('GET', `/api/types/${typeId}`, {
-    'If-None-Match': '*'
+    'If-None-Match': '*',
   });
 
   assertEquals(response.status, 304, 'Should return 304 for * wildcard on existing resource');
@@ -9489,10 +10033,15 @@ async function testGeneratedColumnsEndpoint() {
 
   // Should have the default generated columns
   const columns = response.data.data;
-  assert(columns.length >= 5, 'Should have at least 5 generated columns (3 for entities, 2 for links)');
+  assert(
+    columns.length >= 5,
+    'Should have at least 5 generated columns (3 for entities, 2 for links)'
+  );
 
   // Check entity columns
-  const entityNameColumn = columns.find((c) => c.column_name === 'prop_name' && c.table_name === 'entities');
+  const entityNameColumn = columns.find(
+    c => c.column_name === 'prop_name' && c.table_name === 'entities'
+  );
   assert(entityNameColumn, 'Should have prop_name column for entities');
   assertEquals(entityNameColumn.json_path, '$.name', 'prop_name should map to $.name');
   assertEquals(entityNameColumn.data_type, 'TEXT', 'prop_name should be TEXT type');
@@ -9503,12 +10052,18 @@ async function testGeneratedColumnsFilterByTable() {
   logTest('Generated Columns - Filter by Table Name');
 
   // Test filtering by entities table
-  const entitiesResponse = await makeRequest('GET', '/api/schema/generated-columns?table_name=entities');
+  const entitiesResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns?table_name=entities'
+  );
 
   assertEquals(entitiesResponse.status, 200, 'Status code should be 200');
   const entityColumns = entitiesResponse.data.data;
   assert(Array.isArray(entityColumns), 'Data should be an array');
-  assert(entityColumns.every((c) => c.table_name === 'entities'), 'All columns should be for entities table');
+  assert(
+    entityColumns.every(c => c.table_name === 'entities'),
+    'All columns should be for entities table'
+  );
   assert(entityColumns.length >= 3, 'Should have at least 3 entity columns');
 
   // Test filtering by links table
@@ -9517,7 +10072,10 @@ async function testGeneratedColumnsFilterByTable() {
   assertEquals(linksResponse.status, 200, 'Status code should be 200');
   const linkColumns = linksResponse.data.data;
   assert(Array.isArray(linkColumns), 'Data should be an array');
-  assert(linkColumns.every((c) => c.table_name === 'links'), 'All columns should be for links table');
+  assert(
+    linkColumns.every(c => c.table_name === 'links'),
+    'All columns should be for links table'
+  );
   assert(linkColumns.length >= 2, 'Should have at least 2 link columns');
 }
 
@@ -9535,14 +10093,14 @@ async function testGeneratedColumnsOptimizationInfo() {
   // Check entities optimization info
   const entities = response.data.data.entities;
   assert(Array.isArray(entities), 'Entities should be an array');
-  const nameColumn = entities.find((c) => c.json_path === '$.name');
+  const nameColumn = entities.find(c => c.json_path === '$.name');
   assert(nameColumn, 'Should have name column in entities');
   assertEquals(nameColumn.column_name, 'prop_name', 'Column name should be prop_name');
 
   // Check links optimization info
   const links = response.data.data.links;
   assert(Array.isArray(links), 'Links should be an array');
-  const roleColumn = links.find((c) => c.json_path === '$.role');
+  const roleColumn = links.find(c => c.json_path === '$.role');
   assert(roleColumn, 'Should have role column in links');
   assertEquals(roleColumn.column_name, 'prop_role', 'Column name should be prop_role');
 }
@@ -9551,7 +10109,10 @@ async function testGeneratedColumnsAnalyze() {
   logTest('Generated Columns - Analyze Query Path');
 
   // Test analyzing a path with a generated column
-  const optimizedResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities&path=name');
+  const optimizedResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns/analyze?table=entities&path=name'
+  );
 
   assertEquals(optimizedResponse.status, 200, 'Status code should be 200');
   const optimizedData = optimizedResponse.data.data;
@@ -9563,7 +10124,10 @@ async function testGeneratedColumnsAnalyze() {
   assertEquals(optimizedData.dataType, 'TEXT', 'Data type should be TEXT');
 
   // Test analyzing a path without a generated column
-  const nonOptimizedResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities&path=description');
+  const nonOptimizedResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns/analyze?table=entities&path=description'
+  );
 
   assertEquals(nonOptimizedResponse.status, 200, 'Status code should be 200');
   const nonOptimizedData = nonOptimizedResponse.data.data;
@@ -9571,22 +10135,34 @@ async function testGeneratedColumnsAnalyze() {
   assertEquals(nonOptimizedData.json_path, 'description', 'JSON path should be description');
   assert(nonOptimizedData.hasGeneratedColumn === false, 'Should not have generated column');
   assert(nonOptimizedData.hasIndex === false, 'Should not have index');
-  assert(nonOptimizedData.recommendation.includes('json_extract'), 'Recommendation should mention json_extract');
+  assert(
+    nonOptimizedData.recommendation.includes('json_extract'),
+    'Recommendation should mention json_extract'
+  );
 }
 
 async function testGeneratedColumnsAnalyzeMissingParams() {
   logTest('Generated Columns - Analyze Missing Parameters');
 
   // Test missing table parameter
-  const missingTableResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?path=name');
+  const missingTableResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns/analyze?path=name'
+  );
   assertEquals(missingTableResponse.status, 400, 'Should return 400 for missing table');
 
   // Test missing path parameter
-  const missingPathResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=entities');
+  const missingPathResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns/analyze?table=entities'
+  );
   assertEquals(missingPathResponse.status, 400, 'Should return 400 for missing path');
 
   // Test invalid table name
-  const invalidTableResponse = await makeRequest('GET', '/api/schema/generated-columns/analyze?table=invalid&path=name');
+  const invalidTableResponse = await makeRequest(
+    'GET',
+    '/api/schema/generated-columns/analyze?table=invalid&path=name'
+  );
   assertEquals(invalidTableResponse.status, 400, 'Should return 400 for invalid table');
 }
 
@@ -9603,7 +10179,7 @@ async function testGeneratedColumnsMappings() {
   // Check entities mappings
   const entityMappings = response.data.data.entities;
   assert(Array.isArray(entityMappings), 'Entities mappings should be an array');
-  const nameMapping = entityMappings.find((m) => m.json_path === '$.name');
+  const nameMapping = entityMappings.find(m => m.json_path === '$.name');
   assert(nameMapping, 'Should have name mapping');
   assertEquals(nameMapping.column_name, 'prop_name', 'Should map to prop_name');
   assertEquals(nameMapping.data_type, 'TEXT', 'Should be TEXT type');
@@ -9611,7 +10187,7 @@ async function testGeneratedColumnsMappings() {
   // Check links mappings
   const linkMappings = response.data.data.links;
   assert(Array.isArray(linkMappings), 'Links mappings should be an array');
-  const roleMapping = linkMappings.find((m) => m.json_path === '$.role');
+  const roleMapping = linkMappings.find(m => m.json_path === '$.role');
   assert(roleMapping, 'Should have role mapping');
   assertEquals(roleMapping.column_name, 'prop_role', 'Should map to prop_role');
 }
@@ -9637,9 +10213,7 @@ async function testGeneratedColumnsQueryPerformance() {
 
   // Search using the name property (should use indexed generated column)
   const searchResponse = await makeRequest('POST', '/api/search/entities', {
-    property_filters: [
-      { path: 'name', operator: 'starts_with', value: 'GenColTest' },
-    ],
+    property_filters: [{ path: 'name', operator: 'starts_with', value: 'GenColTest' }],
     limit: 20,
   });
 
@@ -9648,9 +10222,7 @@ async function testGeneratedColumnsQueryPerformance() {
 
   // Search using the status property (should use indexed generated column)
   const statusSearchResponse = await makeRequest('POST', '/api/search/entities', {
-    property_filters: [
-      { path: 'status', operator: 'eq', value: 'active' },
-    ],
+    property_filters: [{ path: 'status', operator: 'eq', value: 'active' }],
     limit: 20,
   });
 
@@ -9677,7 +10249,10 @@ async function testFieldSelectionEntityGet() {
   const entityId = createResponse.data.data.id;
 
   // Get entity with field selection
-  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,type_id,properties`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${entityId}?fields=id,type_id,properties`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data.id, 'Response should include id');
@@ -9719,7 +10294,10 @@ async function testFieldSelectionEntityInvalidField() {
   const entityId = createResponse.data.data.id;
 
   // Try to get entity with invalid field
-  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,invalid_field,another_bad_field`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${entityId}?fields=id,invalid_field,another_bad_field`
+  );
 
   assertEquals(response.status, 400, 'Status code should be 400');
   assert(response.data.error, 'Response should include error');
@@ -9802,7 +10380,10 @@ async function testFieldSelectionLinkGet() {
   const linkId = linkResponse.data.data.id;
 
   // Get link with field selection
-  const response = await makeRequest('GET', `/api/links/${linkId}?fields=id,type_id,source_entity_id,target_entity_id`);
+  const response = await makeRequest(
+    'GET',
+    `/api/links/${linkId}?fields=id,type_id,source_entity_id,target_entity_id`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data.id, 'Response should include id');
@@ -9872,7 +10453,10 @@ async function testFieldSelectionWithWhitespace() {
   const entityId = createResponse.data.data.id;
 
   // Get entity with whitespace in fields
-  const response = await makeRequest('GET', `/api/entities/${entityId}?fields=id,%20type_id%20,%20properties`);
+  const response = await makeRequest(
+    'GET',
+    `/api/entities/${entityId}?fields=id,%20type_id%20,%20properties`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data.id, 'Response should include id');
@@ -10012,7 +10596,10 @@ async function testQueryPlanTemplateDetails() {
 async function testQueryPlanTemplateNotFound() {
   logTest('Query Plan - Template not found returns error');
 
-  const response = await makeRequest('GET', '/api/schema/query-plan/templates/nonexistent_template');
+  const response = await makeRequest(
+    'GET',
+    '/api/schema/query-plan/templates/nonexistent_template'
+  );
 
   assertEquals(response.status, 400, 'Status code should be 400');
   assert(!response.data.success, 'Response should indicate failure');
@@ -10032,10 +10619,22 @@ async function testQueryPlanAnalyzeWithTemplate() {
   assertEquals(response.data.data.template, 'entity_by_type', 'Should return template name');
   assert(Array.isArray(response.data.data.plan), 'Should return plan array');
   assert(response.data.data.analysis, 'Should return analysis');
-  assert(typeof response.data.data.analysis.uses_index === 'boolean', 'Analysis should have uses_index');
-  assert(typeof response.data.data.analysis.has_table_scan === 'boolean', 'Analysis should have has_table_scan');
-  assert(Array.isArray(response.data.data.analysis.indexes_used), 'Analysis should have indexes_used array');
-  assert(Array.isArray(response.data.data.analysis.tables_accessed), 'Analysis should have tables_accessed array');
+  assert(
+    typeof response.data.data.analysis.uses_index === 'boolean',
+    'Analysis should have uses_index'
+  );
+  assert(
+    typeof response.data.data.analysis.has_table_scan === 'boolean',
+    'Analysis should have has_table_scan'
+  );
+  assert(
+    Array.isArray(response.data.data.analysis.indexes_used),
+    'Analysis should have indexes_used array'
+  );
+  assert(
+    Array.isArray(response.data.data.analysis.tables_accessed),
+    'Analysis should have tables_accessed array'
+  );
   assert(Array.isArray(response.data.data.recommendations), 'Should return recommendations array');
 
   logInfo(`Query uses indexes: ${response.data.data.analysis.uses_index}`);
@@ -10055,7 +10654,10 @@ async function testQueryPlanAnalyzeWithCustomSQL() {
   assert(!response.data.data.template, 'Should not have template name for custom SQL');
   assert(Array.isArray(response.data.data.plan), 'Should return plan array');
   assert(response.data.data.analysis, 'Should return analysis');
-  assert(response.data.data.analysis.tables_accessed.includes('entities'), 'Should access entities table');
+  assert(
+    response.data.data.analysis.tables_accessed.includes('entities'),
+    'Should access entities table'
+  );
 }
 
 async function testQueryPlanRejectsNonSelectSQL() {
@@ -10176,7 +10778,11 @@ async function testQueryPerformanceTrackingMiddlewareActive() {
     properties: { name: 'Query Performance Test Entity' },
   });
 
-  assertEquals(createResponse.status, 201, 'Entity creation should succeed with tracking middleware');
+  assertEquals(
+    createResponse.status,
+    201,
+    'Entity creation should succeed with tracking middleware'
+  );
   assert(createResponse.data.data.id, 'Created entity should have an ID');
 
   // Get the entity (triggers read query)
@@ -10198,7 +10804,11 @@ async function testQueryPerformanceTrackingHealthCheck() {
   assertEquals(response.status, 200, 'Health endpoint should return 200');
   assert(response.data.analytics, 'Health check should report analytics status');
   // In local dev, analytics is simulated but should be 'available'
-  assertEquals(response.data.analytics, 'available', 'Analytics should be available for query tracking');
+  assertEquals(
+    response.data.analytics,
+    'available',
+    'Analytics should be available for query tracking'
+  );
 
   logInfo('Analytics Engine is available for query performance tracking');
 }
@@ -10242,13 +10852,22 @@ async function testQueryPerformanceTrackingGraphOperations() {
   assertEquals(linkResponse.status, 201, 'Link should be created');
 
   // Test graph traversal operations (these trigger graph category queries)
-  const neighborsResponse = await makeRequest('GET', `/api/entities/${entity1Response.data.data.id}/neighbors`);
+  const neighborsResponse = await makeRequest(
+    'GET',
+    `/api/entities/${entity1Response.data.data.id}/neighbors`
+  );
   assertEquals(neighborsResponse.status, 200, 'Neighbors query should succeed with tracking');
 
-  const outboundResponse = await makeRequest('GET', `/api/entities/${entity1Response.data.data.id}/outbound`);
+  const outboundResponse = await makeRequest(
+    'GET',
+    `/api/entities/${entity1Response.data.data.id}/outbound`
+  );
   assertEquals(outboundResponse.status, 200, 'Outbound links query should succeed with tracking');
 
-  const inboundResponse = await makeRequest('GET', `/api/entities/${entity2Response.data.data.id}/inbound`);
+  const inboundResponse = await makeRequest(
+    'GET',
+    `/api/entities/${entity2Response.data.data.id}/inbound`
+  );
   assertEquals(inboundResponse.status, 200, 'Inbound links query should succeed with tracking');
 
   logInfo('Graph traversal operations work correctly with query performance tracking');
@@ -10765,7 +11384,6 @@ async function main() {
     });
 
     await Promise.race([runTests(), timeoutPromise]);
-
   } catch (error) {
     log(`\n❌ Test suite error: ${error.message}`, colors.red);
   } finally {

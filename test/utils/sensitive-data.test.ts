@@ -162,7 +162,8 @@ describe('Sensitive Data Protection', () => {
     });
 
     it('should redact JWT-like strings', () => {
-      const jwtToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+      const jwtToken =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
       const data = {
         message: 'Here is your token',
         rawToken: jwtToken,
@@ -175,7 +176,8 @@ describe('Sensitive Data Protection', () => {
     });
 
     it('should redact Bearer token prefix', () => {
-      const data = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      const data =
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
 
       const redacted = redactSensitiveData(data);
 
@@ -236,7 +238,7 @@ describe('Sensitive Data Protection', () => {
       const headers = {
         'Content-Type': 'application/json',
         Authorization: 'Bearer secret-token',
-        'Accept': 'application/json',
+        Accept: 'application/json',
       };
 
       const redacted = redactHeaders(headers);
@@ -248,7 +250,7 @@ describe('Sensitive Data Protection', () => {
 
     it('should redact cookie headers', () => {
       const headers = {
-        'Cookie': 'session=abc123; user=john',
+        Cookie: 'session=abc123; user=john',
         'Set-Cookie': 'session=xyz789',
       };
 
@@ -326,7 +328,7 @@ describe('Sensitive Data Protection', () => {
       const result = validateEnvironment(env, DEFAULT_ENV_VALIDATION);
 
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('at least 16 characters'))).toBe(true);
+      expect(result.errors.some(e => e.includes('at least 16 characters'))).toBe(true);
     });
 
     it('should fail with dev secret in production', () => {
@@ -338,7 +340,7 @@ describe('Sensitive Data Protection', () => {
       const result = validateEnvironment(env, DEFAULT_ENV_VALIDATION);
 
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('development/test'))).toBe(true);
+      expect(result.errors.some(e => e.includes('development/test'))).toBe(true);
     });
 
     it('should fail with short secret in production', () => {
@@ -350,7 +352,7 @@ describe('Sensitive Data Protection', () => {
       const result = validateEnvironment(env, DEFAULT_ENV_VALIDATION);
 
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('at least 32 characters'))).toBe(true);
+      expect(result.errors.some(e => e.includes('at least 32 characters'))).toBe(true);
     });
 
     it('should add warning for development mode', () => {
@@ -361,7 +363,7 @@ describe('Sensitive Data Protection', () => {
 
       const result = validateEnvironment(env, DEFAULT_ENV_VALIDATION);
 
-      expect(result.warnings.some((w) => w.includes('development mode'))).toBe(true);
+      expect(result.warnings.some(w => w.includes('development mode'))).toBe(true);
     });
 
     it('should use custom validation config', () => {
@@ -380,7 +382,9 @@ describe('Sensitive Data Protection', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Missing required environment variable: ANOTHER_VAR');
-      expect(result.errors.some((e) => e.includes('CUSTOM_VAR') && e.includes('10 characters'))).toBe(true);
+      expect(result.errors.some(e => e.includes('CUSTOM_VAR') && e.includes('10 characters'))).toBe(
+        true
+      );
     });
   });
 

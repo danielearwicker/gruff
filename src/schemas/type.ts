@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
+import {
+  uuidSchema,
+  timestampSchema,
+  jsonPropertiesSchema,
+  paginationQuerySchema,
+} from './common.js';
 import { escapeHtml } from '../utils/sanitize.js';
 
 // Type category enum
@@ -7,7 +12,10 @@ export const typeCategorySchema = z.enum(['entity', 'link']);
 
 // Sanitized string schema for user-provided text fields
 const sanitizedStringSchema = (maxLength: number) =>
-  z.string().max(maxLength).transform((val) => escapeHtml(val));
+  z
+    .string()
+    .max(maxLength)
+    .transform(val => escapeHtml(val));
 
 // Type database model schema
 export const typeSchema = z.object({
@@ -22,7 +30,11 @@ export const typeSchema = z.object({
 
 // Type creation schema (with sanitization for XSS prevention)
 export const createTypeSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255, 'Name must be at most 255 characters').transform((val) => escapeHtml(val)),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(255, 'Name must be at most 255 characters')
+    .transform(val => escapeHtml(val)),
   category: typeCategorySchema,
   description: sanitizedStringSchema(1000).optional(),
   json_schema: jsonPropertiesSchema.optional(), // Will be stringified before storing
@@ -30,7 +42,12 @@ export const createTypeSchema = z.object({
 
 // Type update schema (with sanitization for XSS prevention)
 export const updateTypeSchema = z.object({
-  name: z.string().min(1).max(255).transform((val) => escapeHtml(val)).optional(),
+  name: z
+    .string()
+    .min(1)
+    .max(255)
+    .transform(val => escapeHtml(val))
+    .optional(),
   description: sanitizedStringSchema(1000).nullable().optional(),
   json_schema: jsonPropertiesSchema.nullable().optional(),
 });

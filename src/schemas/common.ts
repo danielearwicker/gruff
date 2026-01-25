@@ -20,7 +20,7 @@ export const jsonPropertiesSchema = z.record(z.string(), z.unknown());
  */
 export const sanitizedJsonPropertiesSchema = z
   .record(z.string(), z.unknown())
-  .transform((props) => sanitizeProperties(props));
+  .transform(props => sanitizeProperties(props));
 
 /**
  * JSON properties schema with dangerous content detection
@@ -28,7 +28,7 @@ export const sanitizedJsonPropertiesSchema = z
  */
 export const jsonPropertiesWithValidationSchema = z
   .record(z.string(), z.unknown())
-  .transform((props) => {
+  .transform(props => {
     const result = validateAndSanitize(props);
     return {
       properties: result.sanitized as Record<string, unknown>,
@@ -43,14 +43,14 @@ export const paginationQuerySchema = z.object({
     .string()
     .optional()
     .default('20')
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().min(1).max(100)),
   cursor: z.string().optional(),
   include_deleted: z
     .string()
     .optional()
     .default('false')
-    .transform((val) => val === 'true')
+    .transform(val => val === 'true')
     .pipe(z.boolean()),
   // Field selection: comma-separated list of fields to include in response
   // Example: fields=id,type_id,properties

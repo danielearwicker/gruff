@@ -330,7 +330,12 @@ export function validateJsonSchema(
   }
 
   // Object validations
-  if (actualType === 'object' && data !== null && typeof data === 'object' && !Array.isArray(data)) {
+  if (
+    actualType === 'object' &&
+    data !== null &&
+    typeof data === 'object' &&
+    !Array.isArray(data)
+  ) {
     const obj = data as Record<string, unknown>;
 
     // Required properties
@@ -421,8 +426,10 @@ function deepEqual(a: unknown, b: unknown): boolean {
   const keysB = Object.keys(b as object);
   if (keysA.length !== keysB.length) return false;
 
-  return keysA.every(key =>
-    key in (b as object) && deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+  return keysA.every(
+    key =>
+      key in (b as object) &&
+      deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
   );
 }
 
@@ -521,7 +528,8 @@ function validateFormat(value: string, format: string, path: string): Validation
       break;
     }
     case 'uuid': {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(value)) {
         return {
           path,
@@ -546,7 +554,8 @@ function validateFormat(value: string, format: string, path: string): Validation
     }
     case 'ipv6': {
       // Simplified IPv6 validation
-      const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^([0-9a-fA-F]{1,4}:){1,7}:$|^::(ffff:)?([0-9]{1,3}\.){3}[0-9]{1,3}$/i;
+      const ipv6Regex =
+        /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^([0-9a-fA-F]{1,4}:){1,7}:$|^::(ffff:)?([0-9]{1,3}\.){3}[0-9]{1,3}$/i;
       if (!ipv6Regex.test(value)) {
         return {
           path,
@@ -601,11 +610,13 @@ export function validatePropertiesAgainstSchema(
   if (!schema) {
     return {
       valid: false,
-      errors: [{
-        path: '',
-        message: 'Type has invalid JSON schema',
-        keyword: 'schema',
-      }],
+      errors: [
+        {
+          path: '',
+          message: 'Type has invalid JSON schema',
+          keyword: 'schema',
+        },
+      ],
     };
   }
 
@@ -620,7 +631,5 @@ export function formatValidationErrors(errors: ValidationError[]): string {
     return '';
   }
 
-  return errors
-    .map(err => err.path ? `${err.path}: ${err.message}` : err.message)
-    .join('; ');
+  return errors.map(err => (err.path ? `${err.path}: ${err.message}` : err.message)).join('; ');
 }

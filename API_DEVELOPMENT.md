@@ -124,16 +124,14 @@ type Bindings = {
 const myResource = new Hono<{ Bindings: Bindings }>();
 
 // GET /api/myresource - List resources
-myResource.get('/', validateQuery(myResourceQuerySchema), async (c) => {
+myResource.get('/', validateQuery(myResourceQuerySchema), async c => {
   const logger = getLogger(c);
   const query = c.get('validated_query') as any;
   const db = c.env.DB;
 
   try {
     // Database query logic here
-    const results = await db.prepare('SELECT * FROM my_table LIMIT ?')
-      .bind(query.limit)
-      .all();
+    const results = await db.prepare('SELECT * FROM my_table LIMIT ?').bind(query.limit).all();
 
     return c.json(response.success(results.results));
   } catch (error) {
@@ -143,15 +141,13 @@ myResource.get('/', validateQuery(myResourceQuerySchema), async (c) => {
 });
 
 // GET /api/myresource/:id - Get single resource
-myResource.get('/:id', async (c) => {
+myResource.get('/:id', async c => {
   const logger = getLogger(c);
   const { id } = c.req.param();
   const db = c.env.DB;
 
   try {
-    const result = await db.prepare('SELECT * FROM my_table WHERE id = ?')
-      .bind(id)
-      .first();
+    const result = await db.prepare('SELECT * FROM my_table WHERE id = ?').bind(id).first();
 
     if (!result) {
       return c.json(response.notFound('Resource'), 404);
@@ -165,7 +161,7 @@ myResource.get('/:id', async (c) => {
 });
 
 // POST /api/myresource - Create resource
-myResource.post('/', validateJson(myResourceSchema), async (c) => {
+myResource.post('/', validateJson(myResourceSchema), async c => {
   const logger = getLogger(c);
   const data = c.get('validated_json') as any;
   const db = c.env.DB;
@@ -174,13 +170,12 @@ myResource.post('/', validateJson(myResourceSchema), async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   try {
-    await db.prepare('INSERT INTO my_table (id, name, created_at) VALUES (?, ?, ?)')
+    await db
+      .prepare('INSERT INTO my_table (id, name, created_at) VALUES (?, ?, ?)')
       .bind(id, data.name, now)
       .run();
 
-    const created = await db.prepare('SELECT * FROM my_table WHERE id = ?')
-      .bind(id)
-      .first();
+    const created = await db.prepare('SELECT * FROM my_table WHERE id = ?').bind(id).first();
 
     logger.info('Resource created', { id });
     return c.json(response.created(created), 201);
@@ -214,7 +209,7 @@ To require authentication, use the auth middleware:
 import { requireAuth } from '../middleware/auth.js';
 
 // Apply to specific routes
-myResource.post('/', requireAuth(), validateJson(myResourceSchema), async (c) => {
+myResource.post('/', requireAuth(), validateJson(myResourceSchema), async c => {
   // Access authenticated user
   const user = c.get('user');
   // user.user_id, user.email, etc.
@@ -233,7 +228,12 @@ All input validation uses Zod schemas defined in `src/schemas/`.
 ```typescript
 // src/schemas/myresource.ts
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, paginationQuerySchema, sanitizedJsonPropertiesSchema } from './common.js';
+import {
+  uuidSchema,
+  timestampSchema,
+  paginationQuerySchema,
+  sanitizedJsonPropertiesSchema,
+} from './common.js';
 
 // Create schema (request body)
 export const createMyResourceSchema = z.object({
@@ -254,7 +254,7 @@ export const myResourceQuerySchema = paginationQuerySchema.extend({
   name: z.string().optional(),
   created_after: z
     .string()
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
 });
@@ -295,9 +295,9 @@ const query = c.get('validated_query') as MyResourceQuery;
 
 ```typescript
 import {
-  uuidSchema,           // z.string().uuid()
-  timestampSchema,      // z.number().int().positive()
-  sqliteBooleanSchema,  // z.union([z.literal(0), z.literal(1)])
+  uuidSchema, // z.string().uuid()
+  timestampSchema, // z.number().int().positive()
+  sqliteBooleanSchema, // z.union([z.literal(0), z.literal(1)])
   jsonPropertiesSchema, // z.record(z.string(), z.unknown())
   sanitizedJsonPropertiesSchema, // Auto-sanitizes for XSS
   paginationQuerySchema, // limit, cursor, include_deleted, fields
@@ -424,14 +424,24 @@ Entities and links use immutable versioning:
 ```typescript
 // Creating a new version
 const newId = crypto.randomUUID();
-await db.prepare(`
+await db
+  .prepare(
+    `
   UPDATE entities SET is_latest = 0 WHERE id = ?
-`).bind(currentId).run();
+`
+  )
+  .bind(currentId)
+  .run();
 
-await db.prepare(`
+await db
+  .prepare(
+    `
   INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_latest)
   VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-`).bind(newId, typeId, JSON.stringify(properties), newVersion, currentId, now, userId).run();
+`
+  )
+  .bind(newId, typeId, JSON.stringify(properties), newVersion, currentId, now, userId)
+  .run();
 ```
 
 ## Response Formatting
@@ -558,11 +568,7 @@ const accessToken = await createAccessToken(
   '15m' // expiration
 );
 
-const refreshToken = await createRefreshToken(
-  { user_id: userId },
-  jwtSecret,
-  '7d'
-);
+const refreshToken = await createRefreshToken({ user_id: userId }, jwtSecret, '7d');
 
 // Verify tokens
 const payload = await verifyAccessToken(token, jwtSecret);
@@ -599,11 +605,11 @@ await invalidateEntityCache(c.env.KV, entityId);
 
 ```typescript
 CACHE_TTL = {
-  TYPES: 300,      // 5 minutes
-  ENTITIES: 60,    // 1 minute
-  LINKS: 60,       // 1 minute
-  USERS: 120,      // 2 minutes
-}
+  TYPES: 300, // 5 minutes
+  ENTITIES: 60, // 1 minute
+  LINKS: 60, // 1 minute
+  USERS: 120, // 2 minutes
+};
 ```
 
 ## Logging and Monitoring
@@ -682,7 +688,7 @@ async function testMyFeature() {
 
   // Create test data
   const createRes = await makeRequest('POST', '/api/myresource', {
-    name: 'Test Resource'
+    name: 'Test Resource',
   });
   assertEquals(createRes.status, 201, 'Should create resource');
 
@@ -696,7 +702,7 @@ async function testMyFeature() {
 
   // Update test
   const updateRes = await makeRequest('PUT', `/api/myresource/${id}`, {
-    name: 'Updated Name'
+    name: 'Updated Name',
   });
   assertEquals(updateRes.status, 200, 'Should update resource');
 
@@ -752,6 +758,7 @@ The API is documented using OpenAPI 3.1.0. Update `src/openapi/spec.ts` when add
 ```
 
 View documentation at:
+
 - Interactive UI: `http://localhost:8787/docs`
 - OpenAPI JSON: `http://localhost:8787/docs/openapi.json`
 
@@ -784,10 +791,10 @@ View documentation at:
 
 ```typescript
 type Bindings = {
-  DB: D1Database;           // Cloudflare D1 database
-  KV: KVNamespace;          // Cloudflare KV store
-  JWT_SECRET: string;       // JWT signing secret
-  ENVIRONMENT: string;      // development | preview | production
+  DB: D1Database; // Cloudflare D1 database
+  KV: KVNamespace; // Cloudflare KV store
+  JWT_SECRET: string; // JWT signing secret
+  ENVIRONMENT: string; // development | preview | production
   ANALYTICS?: AnalyticsEngineDataset; // Error tracking
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -818,15 +825,15 @@ import { logEntityOperation } from '../utils/audit.js';
 
 ### HTTP Status Codes
 
-| Code | Usage |
-|------|-------|
-| 200 | Success (GET, PUT, DELETE) |
-| 201 | Created (POST) |
-| 304 | Not Modified (ETag match) |
-| 400 | Bad Request / Validation Error |
-| 401 | Unauthorized |
-| 403 | Forbidden |
-| 404 | Not Found |
-| 409 | Conflict |
-| 429 | Rate Limited |
-| 500 | Internal Server Error |
+| Code | Usage                          |
+| ---- | ------------------------------ |
+| 200  | Success (GET, PUT, DELETE)     |
+| 201  | Created (POST)                 |
+| 304  | Not Modified (ETag match)      |
+| 400  | Bad Request / Validation Error |
+| 401  | Unauthorized                   |
+| 403  | Forbidden                      |
+| 404  | Not Found                      |
+| 409  | Conflict                       |
+| 429  | Rate Limited                   |
+| 500  | Internal Server Error          |

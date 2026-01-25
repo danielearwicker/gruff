@@ -55,10 +55,7 @@ export async function hashPassword(password: string): Promise<string> {
  * @param storedHash - Hash in format: salt:hash (both base64 encoded)
  * @returns Promise<boolean> - True if password matches, false otherwise
  */
-export async function verifyPassword(
-  password: string,
-  storedHash: string
-): Promise<boolean> {
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   try {
     // Parse the stored hash
     const [saltBase64, hashBase64] = storedHash.split(':');
@@ -67,7 +64,7 @@ export async function verifyPassword(
     }
 
     // Decode salt from base64
-    const salt = Uint8Array.from(atob(saltBase64), (c) => c.charCodeAt(0));
+    const salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0));
 
     // Import password as a key
     const passwordKey = await crypto.subtle.importKey(
@@ -91,9 +88,7 @@ export async function verifyPassword(
     );
 
     // Convert to base64 for comparison
-    const computedHashBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(hashBuffer))
-    );
+    const computedHashBase64 = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
 
     // Constant-time comparison to prevent timing attacks
     return timingSafeEqual(computedHashBase64, hashBase64);

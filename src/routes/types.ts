@@ -1,6 +1,13 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createTypeSchema, updateTypeSchema, typeQuerySchema, CreateType, UpdateType, TypeQuery } from '../schemas/index.js';
+import {
+  createTypeSchema,
+  updateTypeSchema,
+  typeQuerySchema,
+  CreateType,
+  UpdateType,
+  TypeQuery,
+} from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
@@ -39,7 +46,7 @@ function getCurrentTimestamp(): number {
  * POST /api/types
  * Create a new type
  */
-types.post('/', validateJson(createTypeSchema), async (c) => {
+types.post('/', validateJson(createTypeSchema), async c => {
   const data = c.get('validated_json') as CreateType;
   const db = c.env.DB;
 
@@ -51,7 +58,8 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
 
   try {
     // Check if type name already exists
-    const existing = await db.prepare('SELECT id FROM types WHERE name = ?')
+    const existing = await db
+      .prepare('SELECT id FROM types WHERE name = ?')
       .bind(data.name)
       .first();
 
@@ -63,23 +71,26 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
     const jsonSchemaString = data.json_schema ? JSON.stringify(data.json_schema) : null;
 
     // Insert the new type
-    await db.prepare(`
+    await db
+      .prepare(
+        `
       INSERT INTO types (id, name, category, description, json_schema, created_at, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      id,
-      data.name,
-      data.category,
-      data.description || null,
-      jsonSchemaString,
-      now,
-      systemUserId
-    ).run();
+    `
+      )
+      .bind(
+        id,
+        data.name,
+        data.category,
+        data.description || null,
+        jsonSchemaString,
+        now,
+        systemUserId
+      )
+      .run();
 
     // Fetch the created type
-    const created = await db.prepare('SELECT * FROM types WHERE id = ?')
-      .bind(id)
-      .first();
+    const created = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     // Parse json_schema back to object if it exists
     const result = {
@@ -99,7 +110,9 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
     return c.json(response.created(result), 201);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
-    logger.error('Error creating type', error instanceof Error ? error : undefined, { typeName: data.name });
+    logger.error('Error creating type', error instanceof Error ? error : undefined, {
+      typeName: data.name,
+    });
     throw error;
   }
 });
@@ -112,7 +125,7 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
  * to avoid stale pagination issues while still benefiting from caching
  * for the most common case.
  */
-types.get('/', validateQuery(typeQuerySchema), async (c) => {
+types.get('/', validateQuery(typeQuerySchema), async c => {
   const query = c.get('validated_query') as TypeQuery;
   const db = c.env.DB;
   const kv = c.env.KV;
@@ -169,7 +182,10 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
     sql += ' LIMIT ?';
     bindings.push(limit + 1);
 
-    const { results } = await db.prepare(sql).bind(...bindings).all();
+    const { results } = await db
+      .prepare(sql)
+      .bind(...bindings)
+      .all();
 
     // Check if there are more results
     const hasMore = results.length > limit;
@@ -234,7 +250,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
  * Caching: Individual type lookups are cached for fast repeated access.
  * Note: Field selection is applied after cache retrieval for consistency.
  */
-types.get('/:id', async (c) => {
+types.get('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
@@ -247,11 +263,7 @@ types.get('/:id', async (c) => {
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
-        const fieldSelection = applyFieldSelection(
-          cached.data,
-          fieldsParam,
-          TYPE_ALLOWED_FIELDS
-        );
+        const fieldSelection = applyFieldSelection(cached.data, fieldsParam, TYPE_ALLOWED_FIELDS);
         if (!fieldSelection.success) {
           return c.json(
             response.error(
@@ -267,9 +279,7 @@ types.get('/:id', async (c) => {
       return c.json(cached);
     }
 
-    const type = await db.prepare('SELECT * FROM types WHERE id = ?')
-      .bind(id)
-      .first();
+    const type = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!type) {
       return c.json(response.notFound('Type'), 404);
@@ -311,7 +321,9 @@ types.get('/:id', async (c) => {
     return c.json(responseData);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
-    logger.error('Error fetching type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
+    logger.error('Error fetching type', error instanceof Error ? error : undefined, {
+      typeId: c.req.param('id'),
+    });
     throw error;
   }
 });
@@ -320,16 +332,14 @@ types.get('/:id', async (c) => {
  * PUT /api/types/:id
  * Update a type's metadata
  */
-types.put('/:id', validateJson(updateTypeSchema), async (c) => {
+types.put('/:id', validateJson(updateTypeSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateType;
   const db = c.env.DB;
 
   try {
     // Check if type exists
-    const existing = await db.prepare('SELECT * FROM types WHERE id = ?')
-      .bind(id)
-      .first();
+    const existing = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!existing) {
       return c.json(response.notFound('Type'), 404);
@@ -341,7 +351,8 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
 
     if (data.name !== undefined) {
       // Check if new name already exists (for different type)
-      const nameCheck = await db.prepare('SELECT id FROM types WHERE name = ? AND id != ?')
+      const nameCheck = await db
+        .prepare('SELECT id FROM types WHERE name = ? AND id != ?')
         .bind(data.name, id)
         .first();
 
@@ -375,14 +386,13 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
 
     // Execute update
     bindings.push(id);
-    await db.prepare(`UPDATE types SET ${updates.join(', ')} WHERE id = ?`)
+    await db
+      .prepare(`UPDATE types SET ${updates.join(', ')} WHERE id = ?`)
       .bind(...bindings)
       .run();
 
     // Fetch updated type
-    const updated = await db.prepare('SELECT * FROM types WHERE id = ?')
-      .bind(id)
-      .first();
+    const updated = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     const result = {
       ...updated,
@@ -400,7 +410,9 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
     return c.json(response.updated(result));
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
-    logger.error('Error updating type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
+    logger.error('Error updating type', error instanceof Error ? error : undefined, {
+      typeId: c.req.param('id'),
+    });
     throw error;
   }
 });
@@ -409,22 +421,21 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
  * DELETE /api/types/:id
  * Delete a type (only if not in use)
  */
-types.delete('/:id', async (c) => {
+types.delete('/:id', async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 
   try {
     // Check if type exists
-    const existing = await db.prepare('SELECT * FROM types WHERE id = ?')
-      .bind(id)
-      .first();
+    const existing = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!existing) {
       return c.json(response.notFound('Type'), 404);
     }
 
     // Check if type is in use by entities
-    const entityCount = await db.prepare('SELECT COUNT(*) as count FROM entities WHERE type_id = ?')
+    const entityCount = await db
+      .prepare('SELECT COUNT(*) as count FROM entities WHERE type_id = ?')
       .bind(id)
       .first();
 
@@ -436,7 +447,8 @@ types.delete('/:id', async (c) => {
     }
 
     // Check if type is in use by links
-    const linkCount = await db.prepare('SELECT COUNT(*) as count FROM links WHERE type_id = ?')
+    const linkCount = await db
+      .prepare('SELECT COUNT(*) as count FROM links WHERE type_id = ?')
       .bind(id)
       .first();
 
@@ -448,9 +460,7 @@ types.delete('/:id', async (c) => {
     }
 
     // Delete the type
-    await db.prepare('DELETE FROM types WHERE id = ?')
-      .bind(id)
-      .run();
+    await db.prepare('DELETE FROM types WHERE id = ?').bind(id).run();
 
     // Invalidate cache after delete
     try {
@@ -463,7 +473,9 @@ types.delete('/:id', async (c) => {
     return c.json(response.deleted());
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
-    logger.error('Error deleting type', error instanceof Error ? error : undefined, { typeId: c.req.param('id') });
+    logger.error('Error deleting type', error instanceof Error ? error : undefined, {
+      typeId: c.req.param('id'),
+    });
     throw error;
   }
 });

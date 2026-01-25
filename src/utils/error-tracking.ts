@@ -97,7 +97,10 @@ export interface ErrorTrackerConfig {
   /** Minimum severity to track (lower severities are logged but not tracked) */
   minSeverity?: ErrorSeverity;
   /** Custom error categorizer function */
-  categorizer?: (error: Error, statusCode?: number) => { category: ErrorCategory; severity: ErrorSeverity };
+  categorizer?: (
+    error: Error,
+    statusCode?: number
+  ) => { category: ErrorCategory; severity: ErrorSeverity };
 }
 
 /**
@@ -107,7 +110,8 @@ export function categorizeError(
   error: Error | unknown,
   statusCode?: number
 ): { category: ErrorCategory; severity: ErrorSeverity } {
-  const errorMessage = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const errorMessage =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   const errorName = error instanceof Error ? error.name : 'Error';
 
   // Validation errors (400)
@@ -148,7 +152,11 @@ export function categorizeError(
   }
 
   // Rate limiting (429)
-  if (statusCode === 429 || errorMessage.includes('rate limit') || errorMessage.includes('too many requests')) {
+  if (
+    statusCode === 429 ||
+    errorMessage.includes('rate limit') ||
+    errorMessage.includes('too many requests')
+  ) {
     return { category: ErrorCategory.RATE_LIMIT, severity: ErrorSeverity.LOW };
   }
 
@@ -223,7 +231,9 @@ export class ErrorTracker {
 
     // Redact sensitive data from error message
     const errorMessage =
-      error instanceof Error ? redactSensitiveData(error.message) : redactSensitiveData(String(error));
+      error instanceof Error
+        ? redactSensitiveData(error.message)
+        : redactSensitiveData(String(error));
 
     const trackedError: TrackedError = {
       name: error instanceof Error ? error.name : 'Error',

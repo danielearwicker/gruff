@@ -3,6 +3,7 @@
 ## Overview
 
 The Gruff project includes two types of testing:
+
 1. **Unit Tests** - Fast, isolated tests using Vitest
 2. **Integration Tests** - End-to-end API tests against a local development server
 
@@ -101,6 +102,7 @@ npm test
 ```
 
 This will:
+
 1. Delete and recreate the local database
 2. Run migrations
 3. Start the Wrangler dev server
@@ -147,7 +149,7 @@ async function testMyNewFeature() {
   logTest('My New Feature Description');
 
   const response = await makeRequest('POST', '/api/my-endpoint', {
-    key: 'value'
+    key: 'value',
   });
 
   assertEquals(response.status, 201, 'Should return 201 Created');
@@ -164,7 +166,7 @@ const tests = [
   testRootEndpoint,
   testApiEndpoint,
   test404NotFound,
-  testMyNewFeature,  // <-- Add here
+  testMyNewFeature, // <-- Add here
 ];
 ```
 
@@ -225,7 +227,7 @@ async function testEntityLifecycle() {
   // Create
   const createRes = await makeRequest('POST', '/api/entities', {
     type_id: 'some-type',
-    properties: { name: 'Test' }
+    properties: { name: 'Test' },
   });
   assertEquals(createRes.status, 201, 'Should create entity');
   const entityId = createRes.data.id;
@@ -237,7 +239,7 @@ async function testEntityLifecycle() {
 
   // Update
   const updateRes = await makeRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated' }
+    properties: { name: 'Updated' },
   });
   assertEquals(updateRes.status, 200, 'Should update entity');
 
@@ -256,14 +258,14 @@ async function testAuthFlow() {
   // Register
   const registerRes = await makeRequest('POST', '/api/auth/register', {
     email: 'test@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   assertEquals(registerRes.status, 201, 'Should register user');
 
   // Login
   const loginRes = await makeRequest('POST', '/api/auth/login', {
     email: 'test@example.com',
-    password: 'password123'
+    password: 'password123',
   });
   assertEquals(loginRes.status, 200, 'Should login successfully');
   const token = loginRes.data.token;
@@ -271,7 +273,7 @@ async function testAuthFlow() {
 
   // Use token for authenticated request
   const meRes = await fetch(`${DEV_SERVER_URL}/api/auth/me`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
   assertEquals(meRes.status, 200, 'Should access protected endpoint');
 }
@@ -286,7 +288,7 @@ async function testValidation() {
   // Missing required field
   const res1 = await makeRequest('POST', '/api/entities', {
     // missing type_id
-    properties: {}
+    properties: {},
   });
   assertEquals(res1.status, 400, 'Should reject invalid input');
   assert(res1.data.error, 'Should return error message');
@@ -294,7 +296,7 @@ async function testValidation() {
   // Invalid format
   const res2 = await makeRequest('POST', '/api/entities', {
     type_id: 'invalid-uuid-format',
-    properties: {}
+    properties: {},
   });
   assertEquals(res2.status, 400, 'Should reject invalid UUID');
 }
@@ -309,20 +311,20 @@ async function testShortestPath() {
   // Create types
   const entityTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ShortestPathTestEntityType',
-    category: 'entity'
+    category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   const linkTypeResponse = await makeRequest('POST', '/api/types', {
     name: 'ShortestPathTestLinkType',
-    category: 'link'
+    category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a linear path: A -> B -> C -> D
   const entityA = await makeRequest('POST', '/api/entities', {
     type_id: entityTypeId,
-    properties: { name: 'Entity A' }
+    properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
@@ -350,6 +352,7 @@ The test suite is designed to work in CI environments:
 ```
 
 The test runner will:
+
 - Exit with code 0 if all tests pass
 - Exit with code 1 if any test fails
 - Properly clean up the dev server on exit

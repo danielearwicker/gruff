@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { uuidSchema, jsonPropertiesSchema, sanitizedJsonPropertiesSchema, timestampSchema } from './common.js';
+import {
+  uuidSchema,
+  jsonPropertiesSchema,
+  sanitizedJsonPropertiesSchema,
+  timestampSchema,
+} from './common.js';
 import { escapeHtml } from '../utils/sanitize.js';
 
 // Maximum number of items in a single export (to prevent abuse and memory issues)
@@ -14,38 +19,38 @@ export const exportQuerySchema = z.object({
   type_ids: z
     .string()
     .optional()
-    .transform((val) => val ? val.split(',').filter(id => id.trim()) : undefined),
+    .transform(val => (val ? val.split(',').filter(id => id.trim()) : undefined)),
   // Filter by creation date range
   created_after: z
     .string()
     .optional()
-    .transform((val) => val ? parseInt(val, 10) : undefined)
+    .transform(val => (val ? parseInt(val, 10) : undefined))
     .pipe(z.number().int().positive().optional()),
   created_before: z
     .string()
     .optional()
-    .transform((val) => val ? parseInt(val, 10) : undefined)
+    .transform(val => (val ? parseInt(val, 10) : undefined))
     .pipe(z.number().int().positive().optional()),
   // Include soft-deleted items
   include_deleted: z
     .string()
     .optional()
     .default('false')
-    .transform((val) => val === 'true')
+    .transform(val => val === 'true')
     .pipe(z.boolean()),
   // Include version history
   include_versions: z
     .string()
     .optional()
     .default('false')
-    .transform((val) => val === 'true')
+    .transform(val => val === 'true')
     .pipe(z.boolean()),
   // Pagination limit
   limit: z
     .string()
     .optional()
     .default(String(MAX_EXPORT_ITEMS))
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().min(1).max(MAX_EXPORT_ITEMS)),
 });
 
@@ -107,70 +112,79 @@ export const exportResponseSchema = z.object({
 });
 
 // Schema for a single entity in import request (with sanitization for XSS prevention)
-export const importEntityItemSchema = z.object({
-  // Client-provided ID for cross-reference (will be mapped to new IDs)
-  client_id: z.string(),
-  // Type can be specified by ID (for existing types) or name (for included types)
-  type_id: uuidSchema.optional(),
-  type_name: z.string().optional(),
-  properties: sanitizedJsonPropertiesSchema.optional().default({}),
-}).refine(
-  (data) => data.type_id || data.type_name,
-  { message: 'Either type_id or type_name must be provided' }
-);
+export const importEntityItemSchema = z
+  .object({
+    // Client-provided ID for cross-reference (will be mapped to new IDs)
+    client_id: z.string(),
+    // Type can be specified by ID (for existing types) or name (for included types)
+    type_id: uuidSchema.optional(),
+    type_name: z.string().optional(),
+    properties: sanitizedJsonPropertiesSchema.optional().default({}),
+  })
+  .refine(data => data.type_id || data.type_name, {
+    message: 'Either type_id or type_name must be provided',
+  });
 
 // Schema for a single link in import request (with sanitization for XSS prevention)
-export const importLinkItemSchema = z.object({
-  // Client-provided ID for cross-reference
-  client_id: z.string().optional(),
-  // Type can be specified by ID or name
-  type_id: uuidSchema.optional(),
-  type_name: z.string().optional(),
-  // Source and target can reference client_ids from the import or existing entity IDs
-  source_entity_client_id: z.string().optional(),
-  source_entity_id: uuidSchema.optional(),
-  target_entity_client_id: z.string().optional(),
-  target_entity_id: uuidSchema.optional(),
-  properties: sanitizedJsonPropertiesSchema.optional().default({}),
-}).refine(
-  (data) => data.type_id || data.type_name,
-  { message: 'Either type_id or type_name must be provided' }
-).refine(
-  (data) => data.source_entity_client_id || data.source_entity_id,
-  { message: 'Either source_entity_client_id or source_entity_id must be provided' }
-).refine(
-  (data) => data.target_entity_client_id || data.target_entity_id,
-  { message: 'Either target_entity_client_id or target_entity_id must be provided' }
-);
+export const importLinkItemSchema = z
+  .object({
+    // Client-provided ID for cross-reference
+    client_id: z.string().optional(),
+    // Type can be specified by ID or name
+    type_id: uuidSchema.optional(),
+    type_name: z.string().optional(),
+    // Source and target can reference client_ids from the import or existing entity IDs
+    source_entity_client_id: z.string().optional(),
+    source_entity_id: uuidSchema.optional(),
+    target_entity_client_id: z.string().optional(),
+    target_entity_id: uuidSchema.optional(),
+    properties: sanitizedJsonPropertiesSchema.optional().default({}),
+  })
+  .refine(data => data.type_id || data.type_name, {
+    message: 'Either type_id or type_name must be provided',
+  })
+  .refine(data => data.source_entity_client_id || data.source_entity_id, {
+    message: 'Either source_entity_client_id or source_entity_id must be provided',
+  })
+  .refine(data => data.target_entity_client_id || data.target_entity_id, {
+    message: 'Either target_entity_client_id or target_entity_id must be provided',
+  });
 
 // Schema for type in import request (with sanitization for XSS prevention)
 export const importTypeItemSchema = z.object({
   // Client-provided ID or name for cross-reference
   client_id: z.string().optional(),
-  name: z.string().min(1).transform((val) => escapeHtml(val)),
+  name: z
+    .string()
+    .min(1)
+    .transform(val => escapeHtml(val)),
   category: z.enum(['entity', 'link']),
-  description: z.string().transform((val) => escapeHtml(val)).optional(),
+  description: z
+    .string()
+    .transform(val => escapeHtml(val))
+    .optional(),
   json_schema: z.string().optional(), // JSON schema stored as string
 });
 
 // Schema for import request body
-export const importRequestSchema = z.object({
-  // Optional types to create (useful for importing a complete subgraph)
-  types: z.array(importTypeItemSchema)
-    .optional()
-    .default([]),
-  // Entities to import
-  entities: z.array(importEntityItemSchema)
-    .min(0)
-    .max(MAX_IMPORT_ITEMS, `Maximum ${MAX_IMPORT_ITEMS} entities per import request`),
-  // Links to import
-  links: z.array(importLinkItemSchema)
-    .min(0)
-    .max(MAX_IMPORT_ITEMS, `Maximum ${MAX_IMPORT_ITEMS} links per import request`),
-}).refine(
-  (data) => data.entities.length > 0 || data.links.length > 0 || data.types.length > 0,
-  { message: 'At least one type, entity, or link is required for import' }
-);
+export const importRequestSchema = z
+  .object({
+    // Optional types to create (useful for importing a complete subgraph)
+    types: z.array(importTypeItemSchema).optional().default([]),
+    // Entities to import
+    entities: z
+      .array(importEntityItemSchema)
+      .min(0)
+      .max(MAX_IMPORT_ITEMS, `Maximum ${MAX_IMPORT_ITEMS} entities per import request`),
+    // Links to import
+    links: z
+      .array(importLinkItemSchema)
+      .min(0)
+      .max(MAX_IMPORT_ITEMS, `Maximum ${MAX_IMPORT_ITEMS} links per import request`),
+  })
+  .refine(data => data.entities.length > 0 || data.links.length > 0 || data.types.length > 0, {
+    message: 'At least one type, entity, or link is required for import',
+  });
 
 // Result item for import operations
 export const importResultItemSchema = z.object({

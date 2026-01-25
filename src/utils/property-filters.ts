@@ -287,7 +287,10 @@ function sanitizeJsonPath(path: string): string {
  * @param tableAlias The table alias to use in the SQL (e.g., 'e' for entities, 'l' for links)
  * @returns SQL clause and bindings
  */
-export function buildPropertyFilter(filter: PropertyFilter, tableAlias: string = 'e'): PropertyFilterResult {
+export function buildPropertyFilter(
+  filter: PropertyFilter,
+  tableAlias: string = 'e'
+): PropertyFilterResult {
   const jsonPath = sanitizeJsonPath(filter.path);
   const { operator, value } = filter;
 
@@ -467,7 +470,7 @@ export function buildPropertyFilter(filter: PropertyFilter, tableAlias: string =
       } else if (typeof value[0] === 'boolean') {
         return {
           sql: `CAST(json_extract(${tableAlias}.properties, ?) AS INTEGER) IN (${placeholders})`,
-          bindings: [jsonPath, ...value.map(v => v ? 1 : 0)],
+          bindings: [jsonPath, ...value.map(v => (v ? 1 : 0))],
         };
       }
       throw new Error(`Unsupported value type in array for in operator: ${typeof value[0]}`);
@@ -496,7 +499,7 @@ export function buildPropertyFilter(filter: PropertyFilter, tableAlias: string =
       } else if (typeof value[0] === 'boolean') {
         return {
           sql: `CAST(json_extract(${tableAlias}.properties, ?) AS INTEGER) NOT IN (${placeholders})`,
-          bindings: [jsonPath, ...value.map(v => v ? 1 : 0)],
+          bindings: [jsonPath, ...value.map(v => (v ? 1 : 0))],
         };
       }
       throw new Error(`Unsupported value type in array for not_in operator: ${typeof value[0]}`);
@@ -530,7 +533,10 @@ export function buildPropertyFilter(filter: PropertyFilter, tableAlias: string =
  * @param tableAlias The table alias to use in the SQL
  * @returns Combined SQL clause and bindings
  */
-export function buildPropertyFilters(filters: PropertyFilter[], tableAlias: string = 'e'): PropertyFilterResult {
+export function buildPropertyFilters(
+  filters: PropertyFilter[],
+  tableAlias: string = 'e'
+): PropertyFilterResult {
   if (filters.length === 0) {
     return { sql: '', bindings: [] };
   }
@@ -573,7 +579,9 @@ export function buildFilterExpression(
 ): PropertyFilterResult {
   // Check for maximum depth
   if (depth > MAX_FILTER_EXPRESSION_DEPTH) {
-    throw new Error(`Filter expression exceeds maximum nesting depth of ${MAX_FILTER_EXPRESSION_DEPTH}`);
+    throw new Error(
+      `Filter expression exceeds maximum nesting depth of ${MAX_FILTER_EXPRESSION_DEPTH}`
+    );
   }
 
   // Handle simple property filter
@@ -592,9 +600,7 @@ export function buildFilterExpression(
       return buildFilterExpression(expression.and[0], tableAlias, depth + 1);
     }
 
-    const results = expression.and.map(expr =>
-      buildFilterExpression(expr, tableAlias, depth + 1)
-    );
+    const results = expression.and.map(expr => buildFilterExpression(expr, tableAlias, depth + 1));
 
     // Filter out empty results
     const nonEmptyResults = results.filter(r => r.sql !== '');
@@ -625,9 +631,7 @@ export function buildFilterExpression(
       return buildFilterExpression(expression.or[0], tableAlias, depth + 1);
     }
 
-    const results = expression.or.map(expr =>
-      buildFilterExpression(expr, tableAlias, depth + 1)
-    );
+    const results = expression.or.map(expr => buildFilterExpression(expr, tableAlias, depth + 1));
 
     // Filter out empty results
     const nonEmptyResults = results.filter(r => r.sql !== '');

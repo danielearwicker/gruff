@@ -58,7 +58,7 @@ function base64UrlDecode(data: string): Uint8Array {
   const padded = data + '=='.substring(0, (4 - (data.length % 4)) % 4);
   const base64 = padded.replace(/-/g, '+').replace(/_/g, '/');
   const binary = atob(base64);
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return Uint8Array.from(binary, c => c.charCodeAt(0));
 }
 
 /**
@@ -69,13 +69,10 @@ async function getSigningKey(secret: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);
 
-  return await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify']
-  );
+  return await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+    'verify',
+  ]);
 }
 
 /**
@@ -100,18 +97,12 @@ async function createToken(
   // Encode header and payload
   const encoder = new TextEncoder();
   const headerEncoded = base64UrlEncode(encoder.encode(JSON.stringify(header)));
-  const payloadEncoded = base64UrlEncode(
-    encoder.encode(JSON.stringify(payload))
-  );
+  const payloadEncoded = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
 
   // Create signature
   const data = `${headerEncoded}.${payloadEncoded}`;
   const signingKey = await getSigningKey(secret);
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    signingKey,
-    encoder.encode(data)
-  );
+  const signature = await crypto.subtle.sign('HMAC', signingKey, encoder.encode(data));
   const signatureEncoded = base64UrlEncode(signature);
 
   return `${data}.${signatureEncoded}`;
@@ -124,10 +115,7 @@ async function createToken(
  * @param secret - Secret key for verification
  * @returns Promise<JwtPayloadInternal | null> - Decoded payload if valid, null otherwise
  */
-async function verifyToken(
-  token: string,
-  secret: string
-): Promise<JwtPayloadInternal | null> {
+async function verifyToken(token: string, secret: string): Promise<JwtPayloadInternal | null> {
   try {
     // Split token into parts
     const parts = token.split('.');
@@ -263,10 +251,7 @@ export async function createTokenPair(
  * @param secret - JWT secret from environment
  * @returns Promise<JwtPayload | null> - Decoded payload if valid, null otherwise
  */
-export async function verifyAccessToken(
-  token: string,
-  secret: string
-): Promise<JwtPayload | null> {
+export async function verifyAccessToken(token: string, secret: string): Promise<JwtPayload | null> {
   const payload = await verifyToken(token, secret);
 
   // Ensure this is not a refresh token

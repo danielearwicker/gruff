@@ -133,7 +133,10 @@ The seed data provides consistent test fixtures that can be referenced in integr
 const response = await makeRequest('GET', '/api/entities/entity-alice');
 
 // Example: Finding all employees of Acme Corp
-const response = await makeRequest('GET', '/api/entities/entity-acme-corp/inbound?type=type-works-for');
+const response = await makeRequest(
+  'GET',
+  '/api/entities/entity-acme-corp/inbound?type=type-works-for'
+);
 
 // Example: Finding Alice's direct reports
 const response = await makeRequest('GET', '/api/entities/entity-alice/outbound?type=type-manages');

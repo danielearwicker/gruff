@@ -62,20 +62,14 @@ export function requireAuth() {
 
     if (!token) {
       logger.warn('Missing or invalid Authorization header');
-      return c.json(
-        response.error('Missing or invalid Authorization header', 'UNAUTHORIZED'),
-        401
-      );
+      return c.json(response.error('Missing or invalid Authorization header', 'UNAUTHORIZED'), 401);
     }
 
     // Get JWT secret from environment
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Verify the access token
@@ -83,10 +77,7 @@ export function requireAuth() {
 
     if (!payload) {
       logger.warn('Invalid or expired JWT token');
-      return c.json(
-        response.error('Invalid or expired token', 'INVALID_TOKEN'),
-        401
-      );
+      return c.json(response.error('Invalid or expired token', 'INVALID_TOKEN'), 401);
     }
 
     // Attach user context to the request

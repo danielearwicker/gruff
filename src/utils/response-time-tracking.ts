@@ -96,7 +96,12 @@ export function categorizeEndpoint(path: string, method: string): EndpointCatego
   }
 
   // Graph traversal endpoints
-  if (lowerPath.startsWith('/api/graph') || lowerPath.includes('/neighbors') || lowerPath.includes('/inbound') || lowerPath.includes('/outbound')) {
+  if (
+    lowerPath.startsWith('/api/graph') ||
+    lowerPath.includes('/neighbors') ||
+    lowerPath.includes('/inbound') ||
+    lowerPath.includes('/outbound')
+  ) {
     return EndpointCategory.GRAPH;
   }
 
@@ -116,7 +121,12 @@ export function categorizeEndpoint(path: string, method: string): EndpointCatego
   }
 
   // Write operations
-  if (upperMethod === 'POST' || upperMethod === 'PUT' || upperMethod === 'PATCH' || upperMethod === 'DELETE') {
+  if (
+    upperMethod === 'POST' ||
+    upperMethod === 'PUT' ||
+    upperMethod === 'PATCH' ||
+    upperMethod === 'DELETE'
+  ) {
     return EndpointCategory.WRITE;
   }
 
@@ -244,12 +254,7 @@ export class ResponseTimeTracker {
           context.country || 'unknown',
           context.requestId || 'unknown',
         ],
-        doubles: [
-          context.durationMs,
-          context.statusCode,
-          context.contentLength || 0,
-          Date.now(),
-        ],
+        doubles: [context.durationMs, context.statusCode, context.contentLength || 0, Date.now()],
         indexes: [this.config.environment],
       };
 

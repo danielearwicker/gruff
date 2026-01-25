@@ -243,10 +243,7 @@ export function generateTemplateSQL(
  * @param sql - The SQL query to analyze
  * @returns Array of query plan steps
  */
-export async function executeQueryPlan(
-  db: D1Database,
-  sql: string
-): Promise<QueryPlanStep[]> {
+export async function executeQueryPlan(db: D1Database, sql: string): Promise<QueryPlanStep[]> {
   // Replace parameter placeholders with dummy values for EXPLAIN QUERY PLAN
   // SQLite cannot execute EXPLAIN with unbound parameters
   let analyzableSQL = sql;
@@ -385,7 +382,7 @@ export function generateRecommendations(
   ) {
     recommendations.push(
       'Query does not filter by is_latest. This may return historical versions. ' +
-          'Add "is_latest = 1" filter to query only current versions.'
+        'Add "is_latest = 1" filter to query only current versions.'
     );
   }
 
@@ -396,7 +393,7 @@ export function generateRecommendations(
   ) {
     recommendations.push(
       'Query does not filter by is_deleted. This may include soft-deleted items. ' +
-          'Add "is_deleted = 0" filter to exclude deleted items.'
+        'Add "is_deleted = 0" filter to exclude deleted items.'
     );
   }
 
@@ -411,7 +408,7 @@ export function generateRecommendations(
   if (normalizedSQL.includes('order by') && analysis.has_table_scan) {
     recommendations.push(
       'ORDER BY clause combined with table scan may require sorting all rows. ' +
-          'Consider adding an index that covers the ORDER BY columns.'
+        'Consider adding an index that covers the ORDER BY columns.'
     );
   }
 
@@ -431,9 +428,7 @@ export function generateRecommendations(
  * @param template - The template name
  * @returns Template information or null if not found
  */
-export function getTemplateInfo(
-  template: QueryTemplate
-): {
+export function getTemplateInfo(template: QueryTemplate): {
   sql: string;
   description: string;
   parameters: string[];

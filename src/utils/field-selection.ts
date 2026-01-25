@@ -22,8 +22,8 @@ export function parseFields(fieldsParam: string | undefined | null): string[] {
 
   return fieldsParam
     .split(',')
-    .map((field) => field.trim())
-    .filter((field) => field.length > 0);
+    .map(field => field.trim())
+    .filter(field => field.length > 0);
 }
 
 /**
@@ -38,7 +38,7 @@ export function validateFields(
   requestedFields: string[],
   allowedFields: Set<string>
 ): { valid: boolean; invalidFields: string[] } {
-  const invalidFields = requestedFields.filter((field) => !allowedFields.has(field));
+  const invalidFields = requestedFields.filter(field => !allowedFields.has(field));
   return {
     valid: invalidFields.length === 0,
     invalidFields,
@@ -86,7 +86,7 @@ export function selectFieldsFromArray<T extends Record<string, unknown>>(
     return items;
   }
 
-  return items.map((item) => selectFields(item, fields));
+  return items.map(item => selectFields(item, fields));
 }
 
 /**

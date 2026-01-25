@@ -86,7 +86,7 @@ export async function verifyTokenHash(token: string, storedHash: string): Promis
  */
 function isSensitiveKey(key: string): boolean {
   const lowerKey = key.toLowerCase();
-  return SENSITIVE_KEYS.some((sensitiveKey) => lowerKey.includes(sensitiveKey.toLowerCase()));
+  return SENSITIVE_KEYS.some(sensitiveKey => lowerKey.includes(sensitiveKey.toLowerCase()));
 }
 
 /**
@@ -123,7 +123,7 @@ export function redactSensitiveData<T>(data: T, maxDepth: number = 10): T {
   }
 
   if (Array.isArray(data)) {
-    return data.map((item) => redactSensitiveData(item, maxDepth - 1)) as T;
+    return data.map(item => redactSensitiveData(item, maxDepth - 1)) as T;
   }
 
   const result: Record<string, unknown> = {};
@@ -160,7 +160,7 @@ function isJwtLike(str: string): boolean {
 
   // Check if all parts look like base64url
   const base64UrlRegex = /^[A-Za-z0-9_-]+$/;
-  return parts.every((part) => part.length > 0 && base64UrlRegex.test(part));
+  return parts.every(part => part.length > 0 && base64UrlRegex.test(part));
 }
 
 /**

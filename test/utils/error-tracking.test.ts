@@ -168,10 +168,14 @@ describe('Error Tracking', () => {
       it('should merge context with status code', () => {
         const tracker = new ErrorTracker();
 
-        const tracked = tracker.track(new Error('Test'), {
-          requestId: 'req-123',
-          userId: 'user-456',
-        }, 404);
+        const tracked = tracker.track(
+          new Error('Test'),
+          {
+            requestId: 'req-123',
+            userId: 'user-456',
+          },
+          404
+        );
 
         expect(tracked.context).toMatchObject({
           requestId: 'req-123',
@@ -337,9 +341,7 @@ describe('Error Tracking', () => {
       it('should redact sensitive data from error messages', () => {
         const tracker = new ErrorTracker();
 
-        const tracked = tracker.track(
-          new Error('Password: secret123 failed')
-        );
+        const tracked = tracker.track(new Error('Password: secret123 failed'));
 
         expect(tracked.message).not.toContain('secret123');
         expect(tracked.message).toContain('[REDACTED]');

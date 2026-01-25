@@ -26,14 +26,24 @@ export const createUserSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password must be at most 128 characters')
     .optional(),
-  display_name: z.string().min(1).max(255).transform((val) => escapeHtml(val)).optional(),
+  display_name: z
+    .string()
+    .min(1)
+    .max(255)
+    .transform(val => escapeHtml(val))
+    .optional(),
   provider: providerSchema.optional().default('local'),
   provider_id: z.string().optional(),
 });
 
 // User update schema - with sanitization for display_name
 export const updateUserSchema = z.object({
-  display_name: z.string().min(1).max(255).transform((val) => escapeHtml(val)).optional(),
+  display_name: z
+    .string()
+    .min(1)
+    .max(255)
+    .transform(val => escapeHtml(val))
+    .optional(),
   email: z.string().email('Invalid email address').optional(),
   is_active: sqliteBooleanSchema.optional(),
 });

@@ -18,7 +18,13 @@ const shortestPathSchema = z.object({
   to: z.string().uuid('Target entity ID must be a valid UUID'),
   type_id: z.string().uuid('Link type ID must be a valid UUID').optional(),
   include_deleted: z.enum(['true', 'false']).optional().default('false'),
-  max_depth: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(10)).optional().default(10),
+  max_depth: z
+    .string()
+    .regex(/^\d+$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(10))
+    .optional()
+    .default(10),
 });
 
 // Schema for multi-hop traversal request body
@@ -33,9 +39,13 @@ const traverseSchema = z.object({
 });
 
 // Helper function to find the latest version of an entity by any ID in its version chain
-async function findLatestVersion(db: D1Database, entityId: string): Promise<Record<string, unknown> | null> {
+async function findLatestVersion(
+  db: D1Database,
+  entityId: string
+): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
-  const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
+  const entity = await db
+    .prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
     .first();
 
@@ -44,7 +54,9 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
   }
 
   // If not found, this ID might be an old version
-  const result = await db.prepare(`
+  const result = await db
+    .prepare(
+      `
     WITH RECURSIVE version_chain AS (
       SELECT * FROM entities WHERE id = ?
       UNION ALL
@@ -52,7 +64,10 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
       INNER JOIN version_chain vc ON e.previous_version_id = vc.id
     )
     SELECT * FROM version_chain WHERE is_latest = 1 LIMIT 1
-  `).bind(entityId).first();
+  `
+    )
+    .bind(entityId)
+    .first();
 
   return result || null;
 }
@@ -61,7 +76,7 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<Reco
  * POST /api/graph/traverse
  * Advanced multi-hop graph traversal with configurable depth and filtering
  */
-graph.post('/traverse', async (c) => {
+graph.post('/traverse', async c => {
   const db = c.env.DB;
   const logger = getLogger(c).child({ module: 'graph' });
 
@@ -89,14 +104,21 @@ graph.post('/traverse', async (c) => {
     }
 
     const queue: QueueItem[] = [
-      { entityId: startEntity.id as string, depth: 0, path: [{ entityId: startEntity.id as string, linkId: null }] }
+      {
+        entityId: startEntity.id as string,
+        depth: 0,
+        path: [{ entityId: startEntity.id as string, linkId: null }],
+      },
     ];
 
     const visited = new Set<string>();
     visited.add(startEntity.id as string);
 
     // Store entities with their paths (if requested)
-    const foundEntities = new Map<string, { entity: Record<string, unknown>; paths: PathNode[][] }>();
+    const foundEntities = new Map<
+      string,
+      { entity: Record<string, unknown>; paths: PathNode[][] }
+    >();
 
     // Add the starting entity
     foundEntities.set(startEntity.id as string, {
@@ -200,11 +222,17 @@ graph.post('/traverse', async (c) => {
 
       // Execute all queries and collect neighbors
       for (const query of queries) {
-        const { results } = await db.prepare(query.sql).bind(...query.bindings).all();
+        const { results } = await db
+          .prepare(query.sql)
+          .bind(...query.bindings)
+          .all();
 
         for (const neighbor of results) {
           const neighborId = neighbor.entity_id as string;
-          const newPath = [...current.path, { entityId: neighborId, linkId: neighbor.link_id as string }];
+          const newPath = [
+            ...current.path,
+            { entityId: neighborId, linkId: neighbor.link_id as string },
+          ];
 
           // Track this entity if we haven't seen it before
           if (!visited.has(neighborId)) {
@@ -219,7 +247,9 @@ graph.post('/traverse', async (c) => {
             const entity = {
               id: neighbor.entity_id,
               type_id: neighbor.entity_type_id,
-              properties: neighbor.entity_properties ? JSON.parse(neighbor.entity_properties as string) : {},
+              properties: neighbor.entity_properties
+                ? JSON.parse(neighbor.entity_properties as string)
+                : {},
               version: neighbor.entity_version,
               created_at: neighbor.entity_created_at,
               is_deleted: neighbor.entity_is_deleted === 1,
@@ -267,19 +297,18 @@ graph.post('/traverse', async (c) => {
       entities_found: result.length,
     });
 
-    return c.json(response.success({
-      entities: result,
-      count: result.length,
-      start_entity_id: params.start_entity_id,
-      max_depth: params.max_depth,
-      direction: params.direction,
-    }));
+    return c.json(
+      response.success({
+        entities: result,
+        count: result.length,
+        start_entity_id: params.start_entity_id,
+        max_depth: params.max_depth,
+        direction: params.direction,
+      })
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json(
-        response.error('Validation error', 'VALIDATION_ERROR', error.issues),
-        400
-      );
+      return c.json(response.error('Validation error', 'VALIDATION_ERROR', error.issues), 400);
     }
     logger.error('Error during graph traversal', error instanceof Error ? error : undefined);
     throw error;
@@ -290,7 +319,7 @@ graph.post('/traverse', async (c) => {
  * GET /api/graph/path
  * Find the shortest path between two entities using BFS
  */
-graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
+graph.get('/path', validateQuery(shortestPathSchema), async c => {
   const query = c.get('validated_query') as z.infer<typeof shortestPathSchema>;
   const db = c.env.DB;
   const logger = getLogger(c).child({ module: 'graph' });
@@ -310,27 +339,39 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
 
     // If source and target are the same, return empty path
     if (fromEntity.id === toEntity.id) {
-      return c.json(response.success({
-        path: [{
-          entity: {
-            id: fromEntity.id,
-            type_id: fromEntity.type_id,
-            properties: fromEntity.properties ? JSON.parse(fromEntity.properties as string) : {},
-          },
-          link: null,
-        }],
-        length: 0,
-        from: query.from,
-        to: query.to,
-      }));
+      return c.json(
+        response.success({
+          path: [
+            {
+              entity: {
+                id: fromEntity.id,
+                type_id: fromEntity.type_id,
+                properties: fromEntity.properties
+                  ? JSON.parse(fromEntity.properties as string)
+                  : {},
+              },
+              link: null,
+            },
+          ],
+          length: 0,
+          from: query.from,
+          to: query.to,
+        })
+      );
     }
 
     const includeDeleted = query.include_deleted === 'true';
     const maxDepth = query.max_depth;
 
     // BFS to find shortest path
-    const queue: Array<{ entityId: string, path: Array<{ entityId: string, linkId: string | null }> }> = [
-      { entityId: fromEntity.id as string, path: [{ entityId: fromEntity.id as string, linkId: null }] }
+    const queue: Array<{
+      entityId: string;
+      path: Array<{ entityId: string; linkId: string | null }>;
+    }> = [
+      {
+        entityId: fromEntity.id as string,
+        path: [{ entityId: fromEntity.id as string, linkId: null }],
+      },
     ];
     const visited = new Set<string>();
     visited.add(fromEntity.id as string);
@@ -369,7 +410,10 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
         bindings.push(query.type_id);
       }
 
-      const { results } = await db.prepare(sql).bind(...bindings).all();
+      const { results } = await db
+        .prepare(sql)
+        .bind(...bindings)
+        .all();
 
       for (const neighbor of results) {
         const neighborId = neighbor.entity_id as string;
@@ -377,18 +421,23 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
         // Check if we've reached the target
         if (neighborId === toEntity.id) {
           // Construct the full path
-          const fullPath = [...current.path, { entityId: neighborId, linkId: neighbor.link_id as string }];
+          const fullPath = [
+            ...current.path,
+            { entityId: neighborId, linkId: neighbor.link_id as string },
+          ];
 
           // Fetch full entity and link details for the path
           const pathWithDetails = await Promise.all(
-            fullPath.map(async (step) => {
-              const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
+            fullPath.map(async step => {
+              const entity = await db
+                .prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
                 .bind(step.entityId)
                 .first();
 
               let link = null;
               if (step.linkId) {
-                const linkData = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
+                const linkData = await db
+                  .prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
                   .bind(step.linkId)
                   .first();
 
@@ -398,7 +447,9 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
                     type_id: linkData.type_id,
                     source_entity_id: linkData.source_entity_id,
                     target_entity_id: linkData.target_entity_id,
-                    properties: linkData.properties ? JSON.parse(linkData.properties as string) : {},
+                    properties: linkData.properties
+                      ? JSON.parse(linkData.properties as string)
+                      : {},
                   };
                 }
               }
@@ -420,15 +471,17 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
           logger.info('Shortest path found', {
             from: query.from,
             to: query.to,
-            length: fullPath.length - 1
+            length: fullPath.length - 1,
           });
 
-          return c.json(response.success({
-            path: pathWithDetails,
-            length: fullPath.length - 1, // Number of hops (edges)
-            from: query.from,
-            to: query.to,
-          }));
+          return c.json(
+            response.success({
+              path: pathWithDetails,
+              length: fullPath.length - 1, // Number of hops (edges)
+              from: query.from,
+              to: query.to,
+            })
+          );
         }
 
         // Add unvisited neighbors to the queue

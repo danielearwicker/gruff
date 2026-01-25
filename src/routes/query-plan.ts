@@ -27,7 +27,7 @@ const queryPlanRouter = new Hono<{ Bindings: Bindings }>();
  *
  * Returns the predefined query templates that can be used for analysis.
  */
-queryPlanRouter.get('/templates', (c) => {
+queryPlanRouter.get('/templates', c => {
   const logger = getLogger(c);
 
   logger.info('Listing query templates');
@@ -38,7 +38,8 @@ queryPlanRouter.get('/templates', (c) => {
     response.success({
       templates,
       usage: {
-        description: 'Use these template names with POST /api/schema/query-plan to analyze query execution plans',
+        description:
+          'Use these template names with POST /api/schema/query-plan to analyze query execution plans',
         example: {
           template: 'entity_by_type',
           parameters: { type_id: 'your-type-uuid' },
@@ -52,7 +53,7 @@ queryPlanRouter.get('/templates', (c) => {
  * GET /api/schema/query-plan/templates/:template
  * Get details about a specific query template
  */
-queryPlanRouter.get('/templates/:template', (c) => {
+queryPlanRouter.get('/templates/:template', c => {
   const templateName = c.req.param('template') as QueryTemplate;
   const logger = getLogger(c);
 
@@ -61,10 +62,7 @@ queryPlanRouter.get('/templates/:template', (c) => {
   const info = getTemplateInfo(templateName);
 
   if (!info) {
-    return c.json(
-      response.error(`Unknown template: ${templateName}`, 'INVALID_TEMPLATE'),
-      400
-    );
+    return c.json(response.error(`Unknown template: ${templateName}`, 'INVALID_TEMPLATE'), 400);
   }
 
   return c.json(
@@ -87,7 +85,7 @@ queryPlanRouter.get('/templates/:template', (c) => {
  *
  * Returns the query execution plan with analysis and recommendations.
  */
-queryPlanRouter.post('/', validateJson(analyzeQueryPlanSchema), async (c) => {
+queryPlanRouter.post('/', validateJson(analyzeQueryPlanSchema), async c => {
   const body = c.get('validated_json') as {
     template?: QueryTemplate;
     parameters?: Record<string, string | number | boolean>;
@@ -157,16 +155,10 @@ queryPlanRouter.post('/', validateJson(analyzeQueryPlanSchema), async (c) => {
 
     // Check for SQL syntax errors
     if (error instanceof Error && error.message.includes('SQLITE_ERROR')) {
-      return c.json(
-        response.error(`SQL error: ${error.message}`, 'SQL_ERROR'),
-        400
-      );
+      return c.json(response.error(`SQL error: ${error.message}`, 'SQL_ERROR'), 400);
     }
 
-    return c.json(
-      response.error('Failed to analyze query plan', 'DATABASE_ERROR'),
-      500
-    );
+    return c.json(response.error('Failed to analyze query plan', 'DATABASE_ERROR'), 500);
   }
 });
 

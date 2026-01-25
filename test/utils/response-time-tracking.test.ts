@@ -110,10 +110,12 @@ describe('Response Time Tracking', () => {
 
   describe('extractRoutePattern', () => {
     it('should replace UUIDs with :id', () => {
-      expect(extractRoutePattern('/api/entities/550e8400-e29b-41d4-a716-446655440000'))
-        .toBe('/api/entities/:id');
-      expect(extractRoutePattern('/api/links/A1B2C3D4-E5F6-7890-ABCD-EF1234567890'))
-        .toBe('/api/links/:id');
+      expect(extractRoutePattern('/api/entities/550e8400-e29b-41d4-a716-446655440000')).toBe(
+        '/api/entities/:id'
+      );
+      expect(extractRoutePattern('/api/links/A1B2C3D4-E5F6-7890-ABCD-EF1234567890')).toBe(
+        '/api/links/:id'
+      );
     });
 
     it('should replace numeric IDs with :id', () => {
@@ -122,8 +124,9 @@ describe('Response Time Tracking', () => {
     });
 
     it('should replace version numbers in paths', () => {
-      expect(extractRoutePattern('/api/entities/abc123/versions/5'))
-        .toBe('/api/entities/abc123/versions/:version');
+      expect(extractRoutePattern('/api/entities/abc123/versions/5')).toBe(
+        '/api/entities/abc123/versions/:version'
+      );
     });
 
     it('should handle multiple IDs in path', () => {
@@ -373,7 +376,7 @@ describe('Response Time Tracking', () => {
         const getElapsed = tracker.startTimer();
 
         // Wait a bit
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await new Promise(resolve => setTimeout(resolve, 10));
 
         const duration = getElapsed();
         expect(duration).toBeGreaterThanOrEqual(10);
@@ -384,7 +387,7 @@ describe('Response Time Tracking', () => {
         const tracker = new ResponseTimeTracker();
         const getElapsed = tracker.startTimer();
 
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await new Promise(resolve => setTimeout(resolve, 5));
 
         const duration = getElapsed();
         expect(Number.isInteger(duration)).toBe(true);

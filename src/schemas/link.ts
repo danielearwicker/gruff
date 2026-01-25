@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { uuidSchema, timestampSchema, sqliteBooleanSchema, jsonPropertiesSchema, sanitizedJsonPropertiesSchema, paginationQuerySchema } from './common.js';
+import {
+  uuidSchema,
+  timestampSchema,
+  sqliteBooleanSchema,
+  jsonPropertiesSchema,
+  sanitizedJsonPropertiesSchema,
+  paginationQuerySchema,
+} from './common.js';
 
 // Link database model schema
 export const linkSchema = z.object({
@@ -52,12 +59,12 @@ export const linkQuerySchema = paginationQuerySchema.extend({
   created_by: z.string().uuid().optional(),
   created_after: z
     .string()
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
   created_before: z
     .string()
-    .transform((val) => parseInt(val, 10))
+    .transform(val => parseInt(val, 10))
     .pipe(z.number().int().positive())
     .optional(),
 });

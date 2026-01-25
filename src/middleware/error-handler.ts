@@ -86,11 +86,13 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
     // Get request ID and logger from context (set by request context middleware)
     // Fallback to generating new ones if not available (shouldn't happen in normal flow)
     const requestId = (c.get('requestId') as string) || crypto.randomUUID();
-    const logger = (c.get('logger') as ReturnType<typeof createLogger>) || createLogger({
-      requestId,
-      path: c.req.path,
-      method: c.req.method,
-    });
+    const logger =
+      (c.get('logger') as ReturnType<typeof createLogger>) ||
+      createLogger({
+        requestId,
+        path: c.req.path,
+        method: c.req.method,
+      });
 
     // Default error response
     let statusCode = 500;
@@ -109,7 +111,7 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
       errorResponse = {
         error: 'Validation failed',
         code: 'VALIDATION_ERROR',
-        details: zodError.issues.map((issue) => ({
+        details: zodError.issues.map(issue => ({
           path: issue.path.join('.'),
           message: issue.message,
           code: issue.code,
@@ -171,14 +173,10 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
     }
 
     // Log error details for monitoring
-    logger.error(
-      'Request error',
-      error instanceof Error ? error : new Error(String(error)),
-      {
-        statusCode,
-        errorCode: errorResponse.code,
-      }
-    );
+    logger.error('Request error', error instanceof Error ? error : new Error(String(error)), {
+      statusCode,
+      errorCode: errorResponse.code,
+    });
 
     return c.json(errorResponse, statusCode as 200 | 201 | 400 | 401 | 403 | 404 | 409 | 500);
   }

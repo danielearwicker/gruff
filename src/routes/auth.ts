@@ -7,10 +7,19 @@
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema } from '../schemas/index.js';
+import {
+  createUserSchema,
+  loginSchema,
+  refreshTokenSchema,
+  logoutSchema,
+} from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
 import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
-import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, invalidateSession } from '../utils/session.js';
+import {
+  storeRefreshToken,
+  validateRefreshToken as validateStoredRefreshToken,
+  invalidateSession,
+} from '../utils/session.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
@@ -53,9 +62,15 @@ const authRouter = new Hono<{ Bindings: Bindings }>();
  *
  * Register a new user with email and password
  */
-authRouter.post('/register', validateJson(createUserSchema), async (c) => {
+authRouter.post('/register', validateJson(createUserSchema), async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as { email: string; password?: string; display_name?: string; provider?: string; provider_id?: string };
+  const validated = c.get('validated_json') as {
+    email: string;
+    password?: string;
+    display_name?: string;
+    provider?: string;
+    provider_id?: string;
+  };
 
   // Extract and validate required fields for local auth
   const { email, password, display_name } = validated;
@@ -70,18 +85,13 @@ authRouter.post('/register', validateJson(createUserSchema), async (c) => {
 
   try {
     // Check if user already exists
-    const existingUser = await c.env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    )
+    const existingUser = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(email)
       .first();
 
     if (existingUser) {
       logger.warn('Registration attempt with existing email', { email });
-      return c.json(
-        response.error('User with this email already exists', 'USER_EXISTS'),
-        409
-      );
+      return c.json(response.error('User with this email already exists', 'USER_EXISTS'), 409);
     }
 
     // Hash the password
@@ -105,10 +115,7 @@ authRouter.post('/register', validateJson(createUserSchema), async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Generate access and refresh tokens
@@ -140,10 +147,7 @@ authRouter.post('/register', validateJson(createUserSchema), async (c) => {
     );
   } catch (error) {
     logger.error('Error during user registration', error as Error, { email });
-    return c.json(
-      response.error('Failed to register user', 'REGISTRATION_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to register user', 'REGISTRATION_FAILED'), 500);
   }
 });
 
@@ -152,7 +156,7 @@ authRouter.post('/register', validateJson(createUserSchema), async (c) => {
  *
  * Login with email and password
  */
-authRouter.post('/login', validateJson(loginSchema), async (c) => {
+authRouter.post('/login', validateJson(loginSchema), async c => {
   const logger = getLogger(c);
   const validated = c.get('validated_json') as { email: string; password: string };
 
@@ -168,26 +172,23 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
 
     if (!user) {
       logger.warn('Login attempt with non-existent email', { email });
-      return c.json(
-        response.error('Invalid email or password', 'INVALID_CREDENTIALS'),
-        401
-      );
+      return c.json(response.error('Invalid email or password', 'INVALID_CREDENTIALS'), 401);
     }
 
     // Check if account is active
     if (!user.is_active) {
       logger.warn('Login attempt for inactive account', { email, userId: String(user.id) });
-      return c.json(
-        response.error('Account is not active', 'ACCOUNT_INACTIVE'),
-        401
-      );
+      return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
     }
 
     // Verify this is a local account with password
     if (user.provider !== 'local' || typeof user.password_hash !== 'string') {
       logger.warn('Login attempt for non-local account', { email, provider: user.provider });
       return c.json(
-        response.error('This account uses a different authentication method', 'INVALID_AUTH_METHOD'),
+        response.error(
+          'This account uses a different authentication method',
+          'INVALID_AUTH_METHOD'
+        ),
         401
       );
     }
@@ -198,10 +199,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
 
     if (!isValidPassword) {
       logger.warn('Login attempt with incorrect password', { email });
-      return c.json(
-        response.error('Invalid email or password', 'INVALID_CREDENTIALS'),
-        401
-      );
+      return c.json(response.error('Invalid email or password', 'INVALID_CREDENTIALS'), 401);
     }
 
     logger.info('User login successful', { userId: String(user.id), email });
@@ -210,10 +208,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Generate access and refresh tokens
@@ -245,10 +240,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
     );
   } catch (error) {
     logger.error('Error during login', error as Error, { email });
-    return c.json(
-      response.error('Failed to login', 'LOGIN_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to login', 'LOGIN_FAILED'), 500);
   }
 });
 
@@ -257,7 +249,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
  *
  * Refresh access token using a valid refresh token
  */
-authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
+authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
   const logger = getLogger(c);
   const validated = c.get('validated_json') as { refresh_token: string };
 
@@ -268,10 +260,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Verify the refresh token JWT signature and expiration
@@ -279,10 +268,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
 
     if (!payload) {
       logger.warn('Invalid or expired refresh token');
-      return c.json(
-        response.error('Invalid or expired refresh token', 'INVALID_TOKEN'),
-        401
-      );
+      return c.json(response.error('Invalid or expired refresh token', 'INVALID_TOKEN'), 401);
     }
 
     const { user_id, email } = payload;
@@ -292,10 +278,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
 
     if (!isValid) {
       logger.warn('Refresh token not found in session store', { userId: user_id });
-      return c.json(
-        response.error('Refresh token has been revoked', 'TOKEN_REVOKED'),
-        401
-      );
+      return c.json(response.error('Refresh token has been revoked', 'TOKEN_REVOKED'), 401);
     }
 
     logger.info('Refresh token validated', { userId: user_id });
@@ -320,10 +303,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
     );
   } catch (error) {
     logger.error('Error during token refresh', error as Error);
-    return c.json(
-      response.error('Failed to refresh token', 'REFRESH_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to refresh token', 'REFRESH_FAILED'), 500);
   }
 });
 
@@ -332,7 +312,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
  *
  * Logout by invalidating the refresh token
  */
-authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
+authRouter.post('/logout', validateJson(logoutSchema), async c => {
   const logger = getLogger(c);
   const validated = c.get('validated_json') as { refresh_token: string };
 
@@ -343,10 +323,7 @@ authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Verify the refresh token JWT signature and expiration
@@ -354,10 +331,7 @@ authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
 
     if (!payload) {
       logger.warn('Logout attempt with invalid or expired refresh token');
-      return c.json(
-        response.error('Invalid or expired refresh token', 'INVALID_TOKEN'),
-        401
-      );
+      return c.json(response.error('Invalid or expired refresh token', 'INVALID_TOKEN'), 401);
     }
 
     const { user_id } = payload;
@@ -375,10 +349,7 @@ authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
     );
   } catch (error) {
     logger.error('Error during logout', error as Error);
-    return c.json(
-      response.error('Failed to logout', 'LOGOUT_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to logout', 'LOGOUT_FAILED'), 500);
   }
 });
 
@@ -388,7 +359,7 @@ authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
  * Get the authenticated user's profile information
  * Requires valid JWT in Authorization header
  */
-authRouter.get('/me', requireAuth(), async (c) => {
+authRouter.get('/me', requireAuth(), async c => {
   const logger = getLogger(c);
 
   // Get the authenticated user from context (set by requireAuth middleware)
@@ -404,19 +375,13 @@ authRouter.get('/me', requireAuth(), async (c) => {
 
     if (!userRecord) {
       logger.warn('User not found in database', { userId: user.user_id });
-      return c.json(
-        response.error('User not found', 'USER_NOT_FOUND'),
-        404
-      );
+      return c.json(response.error('User not found', 'USER_NOT_FOUND'), 404);
     }
 
     // Check if account is active
     if (!userRecord.is_active) {
       logger.warn('Inactive user attempted to access profile', { userId: user.user_id });
-      return c.json(
-        response.error('Account is not active', 'ACCOUNT_INACTIVE'),
-        403
-      );
+      return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 403);
     }
 
     logger.info('User profile retrieved', { userId: user.user_id });
@@ -458,16 +423,13 @@ const OAUTH_STATE_TTL = 15 * 60; // 15 minutes
  * Initiates Google OAuth2 sign-in flow
  * Returns authorization URL for redirect
  */
-authRouter.get('/google', async (c) => {
+authRouter.get('/google', async c => {
   const logger = getLogger(c);
 
   // Check if Google OAuth is configured
   if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_REDIRECT_URI) {
     logger.warn('Google OAuth not configured');
-    return c.json(
-      response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
-      501
-    );
+    return c.json(response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
   try {
@@ -481,18 +443,12 @@ authRouter.get('/google', async (c) => {
     const { state, stateData } = generateGoogleOAuthState();
 
     // Store state in KV for validation during callback
-    await c.env.KV.put(
-      `${OAUTH_STATE_PREFIX}${state}`,
-      JSON.stringify(stateData),
-      { expirationTtl: OAUTH_STATE_TTL }
-    );
+    await c.env.KV.put(`${OAUTH_STATE_PREFIX}${state}`, JSON.stringify(stateData), {
+      expirationTtl: OAUTH_STATE_TTL,
+    });
 
     // Build authorization URL
-    const authUrl = await buildGoogleAuthorizationUrl(
-      config,
-      state,
-      stateData.codeVerifier || ''
-    );
+    const authUrl = await buildGoogleAuthorizationUrl(config, state, stateData.codeVerifier || '');
 
     logger.info('Google OAuth authorization URL generated', { state: stateData.nonce });
 
@@ -504,10 +460,7 @@ authRouter.get('/google', async (c) => {
     );
   } catch (error) {
     logger.error('Error generating Google OAuth URL', error as Error);
-    return c.json(
-      response.error('Failed to initiate Google sign-in', 'OAUTH_INIT_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to initiate Google sign-in', 'OAUTH_INIT_FAILED'), 500);
   }
 });
 
@@ -517,16 +470,13 @@ authRouter.get('/google', async (c) => {
  * Handles Google OAuth2 callback with authorization code
  * Creates or links user account and returns tokens
  */
-authRouter.get('/google/callback', async (c) => {
+authRouter.get('/google/callback', async c => {
   const logger = getLogger(c);
 
   // Check if Google OAuth is configured
   if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET || !c.env.GOOGLE_REDIRECT_URI) {
     logger.warn('Google OAuth not fully configured');
-    return c.json(
-      response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
-      501
-    );
+    return c.json(response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
   // Parse query parameters
@@ -539,10 +489,7 @@ authRouter.get('/google/callback', async (c) => {
       description: query.error_description,
     });
     return c.json(
-      response.error(
-        query.error_description || 'OAuth authentication failed',
-        'OAUTH_ERROR'
-      ),
+      response.error(query.error_description || 'OAuth authentication failed', 'OAUTH_ERROR'),
       400
     );
   }
@@ -550,10 +497,7 @@ authRouter.get('/google/callback', async (c) => {
   // Validate required parameters
   if (!query.code || !query.state) {
     logger.warn('Missing OAuth callback parameters');
-    return c.json(
-      response.error('Missing authorization code or state', 'INVALID_CALLBACK'),
-      400
-    );
+    return c.json(response.error('Missing authorization code or state', 'INVALID_CALLBACK'), 400);
   }
 
   const { code, state } = query;
@@ -563,10 +507,7 @@ authRouter.get('/google/callback', async (c) => {
     const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${state}`);
     if (!storedStateJson) {
       logger.warn('OAuth state not found or expired', { state });
-      return c.json(
-        response.error('Invalid or expired state parameter', 'INVALID_STATE'),
-        400
-      );
+      return c.json(response.error('Invalid or expired state parameter', 'INVALID_STATE'), 400);
     }
 
     // Parse stored state
@@ -575,10 +516,7 @@ authRouter.get('/google/callback', async (c) => {
 
     if (!parsedState || !storedState.codeVerifier) {
       logger.warn('Invalid OAuth state data');
-      return c.json(
-        response.error('Invalid state data', 'INVALID_STATE'),
-        400
-      );
+      return c.json(response.error('Invalid state data', 'INVALID_STATE'), 400);
     }
 
     // Delete state from KV (one-time use)
@@ -592,11 +530,7 @@ authRouter.get('/google/callback', async (c) => {
 
     // Exchange authorization code for tokens
     logger.info('Exchanging authorization code for tokens');
-    const tokenResponse = await exchangeGoogleCodeForTokens(
-      config,
-      code,
-      storedState.codeVerifier
-    );
+    const tokenResponse = await exchangeGoogleCodeForTokens(config, code, storedState.codeVerifier);
 
     // Fetch user profile from Google
     logger.info('Fetching Google user profile');
@@ -659,10 +593,7 @@ authRouter.get('/google/callback', async (c) => {
       // Check if account is active
       if (!existingUser.is_active) {
         logger.warn('Google login attempt for inactive account', { email: googleProfile.email });
-        return c.json(
-          response.error('Account is not active', 'ACCOUNT_INACTIVE'),
-          401
-        );
+        return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
       }
     } else {
       // Create new user
@@ -687,10 +618,7 @@ authRouter.get('/google/callback', async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Generate access and refresh tokens
@@ -743,16 +671,13 @@ authRouter.get('/google/callback', async (c) => {
  * Initiates GitHub OAuth2 sign-in flow
  * Returns authorization URL for redirect
  */
-authRouter.get('/github', async (c) => {
+authRouter.get('/github', async c => {
   const logger = getLogger(c);
 
   // Check if GitHub OAuth is configured
   if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_REDIRECT_URI) {
     logger.warn('GitHub OAuth not configured');
-    return c.json(
-      response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
-      501
-    );
+    return c.json(response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
   try {
@@ -766,11 +691,9 @@ authRouter.get('/github', async (c) => {
     const { state, stateData } = generateGitHubOAuthState();
 
     // Store state in KV for validation during callback
-    await c.env.KV.put(
-      `${OAUTH_STATE_PREFIX}github:${state}`,
-      JSON.stringify(stateData),
-      { expirationTtl: OAUTH_STATE_TTL }
-    );
+    await c.env.KV.put(`${OAUTH_STATE_PREFIX}github:${state}`, JSON.stringify(stateData), {
+      expirationTtl: OAUTH_STATE_TTL,
+    });
 
     // Build authorization URL
     const authUrl = buildGitHubAuthorizationUrl(config, state);
@@ -785,10 +708,7 @@ authRouter.get('/github', async (c) => {
     );
   } catch (error) {
     logger.error('Error generating GitHub OAuth URL', error as Error);
-    return c.json(
-      response.error('Failed to initiate GitHub sign-in', 'OAUTH_INIT_FAILED'),
-      500
-    );
+    return c.json(response.error('Failed to initiate GitHub sign-in', 'OAUTH_INIT_FAILED'), 500);
   }
 });
 
@@ -798,16 +718,13 @@ authRouter.get('/github', async (c) => {
  * Handles GitHub OAuth2 callback with authorization code
  * Creates or links user account and returns tokens
  */
-authRouter.get('/github/callback', async (c) => {
+authRouter.get('/github/callback', async c => {
   const logger = getLogger(c);
 
   // Check if GitHub OAuth is configured
   if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET || !c.env.GITHUB_REDIRECT_URI) {
     logger.warn('GitHub OAuth not fully configured');
-    return c.json(
-      response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'),
-      501
-    );
+    return c.json(response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
   // Parse query parameters
@@ -820,10 +737,7 @@ authRouter.get('/github/callback', async (c) => {
       description: query.error_description,
     });
     return c.json(
-      response.error(
-        query.error_description || 'OAuth authentication failed',
-        'OAUTH_ERROR'
-      ),
+      response.error(query.error_description || 'OAuth authentication failed', 'OAUTH_ERROR'),
       400
     );
   }
@@ -831,10 +745,7 @@ authRouter.get('/github/callback', async (c) => {
   // Validate required parameters
   if (!query.code || !query.state) {
     logger.warn('Missing OAuth callback parameters');
-    return c.json(
-      response.error('Missing authorization code or state', 'INVALID_CALLBACK'),
-      400
-    );
+    return c.json(response.error('Missing authorization code or state', 'INVALID_CALLBACK'), 400);
   }
 
   const { code, state } = query;
@@ -844,10 +755,7 @@ authRouter.get('/github/callback', async (c) => {
     const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}github:${state}`);
     if (!storedStateJson) {
       logger.warn('OAuth state not found or expired', { state });
-      return c.json(
-        response.error('Invalid or expired state parameter', 'INVALID_STATE'),
-        400
-      );
+      return c.json(response.error('Invalid or expired state parameter', 'INVALID_STATE'), 400);
     }
 
     // Parse stored state
@@ -856,10 +764,7 @@ authRouter.get('/github/callback', async (c) => {
 
     if (!parsedState) {
       logger.warn('Invalid OAuth state data');
-      return c.json(
-        response.error('Invalid state data', 'INVALID_STATE'),
-        400
-      );
+      return c.json(response.error('Invalid state data', 'INVALID_STATE'), 400);
     }
 
     // Delete state from KV (one-time use)
@@ -944,10 +849,7 @@ authRouter.get('/github/callback', async (c) => {
       // Check if account is active
       if (!existingUser.is_active) {
         logger.warn('GitHub login attempt for inactive account', { email });
-        return c.json(
-          response.error('Account is not active', 'ACCOUNT_INACTIVE'),
-          401
-        );
+        return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
       }
     } else {
       // Create new user
@@ -972,10 +874,7 @@ authRouter.get('/github/callback', async (c) => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(
-        response.error('Server configuration error', 'CONFIG_ERROR'),
-        500
-      );
+      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
     // Generate access and refresh tokens
@@ -1039,7 +938,7 @@ interface AuthProvider {
  * Returns a list of available authentication providers.
  * This allows clients to discover which auth methods are configured and available.
  */
-authRouter.get('/providers', async (c) => {
+authRouter.get('/providers', async c => {
   const logger = getLogger(c);
 
   try {
@@ -1075,7 +974,7 @@ authRouter.get('/providers', async (c) => {
 
     logger.info('Auth providers retrieved', {
       totalProviders: providers.length,
-      enabledProviders: providers.filter((p) => p.enabled).length,
+      enabledProviders: providers.filter(p => p.enabled).length,
     });
 
     return c.json(

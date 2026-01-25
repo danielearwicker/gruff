@@ -35,7 +35,7 @@ export const listGeneratedColumnsQuerySchema = z.object({
   is_indexed: z
     .string()
     .optional()
-    .transform((val) => val === 'true' ? 1 : val === 'false' ? 0 : undefined)
+    .transform(val => (val === 'true' ? 1 : val === 'false' ? 0 : undefined))
     .pipe(z.union([z.literal(0), z.literal(1)]).optional()),
 });
 
@@ -46,20 +46,24 @@ export type ListGeneratedColumnsQuery = z.infer<typeof listGeneratedColumnsQuery
  * Returns information about which JSON paths have generated columns
  */
 export const queryOptimizationInfoSchema = z.object({
-  entities: z.array(z.object({
-    column_name: z.string(),
-    json_path: z.string(),
-    data_type: dataTypeSchema,
-    is_indexed: z.boolean(),
-    description: z.string().nullable(),
-  })),
-  links: z.array(z.object({
-    column_name: z.string(),
-    json_path: z.string(),
-    data_type: dataTypeSchema,
-    is_indexed: z.boolean(),
-    description: z.string().nullable(),
-  })),
+  entities: z.array(
+    z.object({
+      column_name: z.string(),
+      json_path: z.string(),
+      data_type: dataTypeSchema,
+      is_indexed: z.boolean(),
+      description: z.string().nullable(),
+    })
+  ),
+  links: z.array(
+    z.object({
+      column_name: z.string(),
+      json_path: z.string(),
+      data_type: dataTypeSchema,
+      is_indexed: z.boolean(),
+      description: z.string().nullable(),
+    })
+  ),
 });
 
 export type QueryOptimizationInfo = z.infer<typeof queryOptimizationInfoSchema>;
@@ -85,20 +89,19 @@ export type QueryTemplate = z.infer<typeof queryTemplateSchema>;
 /**
  * Schema for query plan analysis request body
  */
-export const analyzeQueryPlanSchema = z.object({
-  // Either provide a template or a custom SQL query
-  template: queryTemplateSchema.optional(),
-  // Parameters for the template (type_id, entity_id, property_path, etc.)
-  parameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-  // Or provide a custom SQL query for analysis (restricted to SELECT statements)
-  sql: z.string().optional(),
-}).refine(
-  (data) => data.template || data.sql,
-  { message: 'Either template or sql must be provided' }
-).refine(
-  (data) => !(data.template && data.sql),
-  { message: 'Cannot provide both template and sql' }
-);
+export const analyzeQueryPlanSchema = z
+  .object({
+    // Either provide a template or a custom SQL query
+    template: queryTemplateSchema.optional(),
+    // Parameters for the template (type_id, entity_id, property_path, etc.)
+    parameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    // Or provide a custom SQL query for analysis (restricted to SELECT statements)
+    sql: z.string().optional(),
+  })
+  .refine(data => data.template || data.sql, { message: 'Either template or sql must be provided' })
+  .refine(data => !(data.template && data.sql), {
+    message: 'Cannot provide both template and sql',
+  });
 
 export type AnalyzeQueryPlanRequest = z.infer<typeof analyzeQueryPlanSchema>;
 

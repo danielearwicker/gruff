@@ -29,31 +29,33 @@ export const propertyFilterSchema = z.object({
 
   // Comparison operator
   operator: z.enum([
-    'eq',           // equals
-    'ne',           // not equals
-    'gt',           // greater than
-    'lt',           // less than
-    'gte',          // greater than or equal
-    'lte',          // less than or equal
-    'like',         // SQL LIKE pattern matching (case-sensitive)
-    'ilike',        // case-insensitive LIKE
-    'starts_with',  // string starts with value
-    'ends_with',    // string ends with value
-    'contains',     // string contains value (case-insensitive)
-    'in',           // value in array
-    'not_in',       // value not in array
-    'exists',       // property exists (value is ignored)
-    'not_exists',   // property doesn't exist (value is ignored)
+    'eq', // equals
+    'ne', // not equals
+    'gt', // greater than
+    'lt', // less than
+    'gte', // greater than or equal
+    'lte', // less than or equal
+    'like', // SQL LIKE pattern matching (case-sensitive)
+    'ilike', // case-insensitive LIKE
+    'starts_with', // string starts with value
+    'ends_with', // string ends with value
+    'contains', // string contains value (case-insensitive)
+    'in', // value in array
+    'not_in', // value not in array
+    'exists', // property exists (value is ignored)
+    'not_exists', // property doesn't exist (value is ignored)
   ]),
 
   // Value to compare against (optional for exists/not_exists operators)
-  value: z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(z.union([z.string(), z.number(), z.boolean()])),
-  ]).optional(),
+  value: z
+    .union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.null(),
+      z.array(z.union([z.string(), z.number(), z.boolean()])),
+    ])
+    .optional(),
 });
 
 export type PropertyFilter = z.infer<typeof propertyFilterSchema>;
@@ -203,7 +205,11 @@ export const suggestionsSchema = z.object({
   type_id: uuidSchema.optional(),
 
   // Maximum number of suggestions to return (comes as string from query params)
-  limit: z.string().optional().transform((val) => val ? parseInt(val, 10) : 10).pipe(z.number().int().positive().max(50)),
+  limit: z
+    .string()
+    .optional()
+    .transform(val => (val ? parseInt(val, 10) : 10))
+    .pipe(z.number().int().positive().max(50)),
 });
 
 // Types derived from schemas

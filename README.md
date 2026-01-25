@@ -5,22 +5,26 @@ Entity-Relationship Graph Database with versioning built on Cloudflare Workers +
 ## Local Development Setup
 
 ### Prerequisites
+
 - Node.js (v18 or later)
 - npm
 
 ### Installation
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Run database migrations:
+
 ```bash
 npm run migrate:local
 ```
 
 3. Start the development server:
+
 ```bash
 npm run dev
 ```
@@ -55,15 +59,19 @@ The local D1 database is stored in `.wrangler/state/v3/d1/`. This directory is g
 ## API Endpoints
 
 ### Health Check
+
 ```
 GET /health
 ```
+
 Returns the health status of the API, database, and KV store.
 
 ### Root
+
 ```
 GET /
 ```
+
 Returns basic API information.
 
 ## Testing
@@ -77,6 +85,7 @@ npm test
 ```
 
 This will automatically:
+
 - Reset the local database
 - Apply migrations
 - Start the dev server
