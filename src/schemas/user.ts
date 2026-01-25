@@ -76,6 +76,7 @@ export const jwtPayloadSchema = z.object({
   email: z.string().email(),
   iat: z.number(),
   exp: z.number(),
+  jti: z.string().optional(), // JWT ID for uniqueness
 });
 
 // OAuth callback query parameters schema

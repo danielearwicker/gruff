@@ -115,7 +115,16 @@ export function redactSensitiveData<T>(data: T, maxDepth: number = 10): T {
     if (data.toLowerCase().startsWith('bearer ')) {
       return `Bearer ${REDACTED}` as T;
     }
-    return data;
+    // Redact patterns like "password=..." or "secret=..." in strings
+    let redacted = data;
+    for (const sensitiveKey of SENSITIVE_KEYS) {
+      // Match patterns like "word=value" or "word: value"
+      const regexEq = new RegExp(`${sensitiveKey}\\s*=\\s*\\S+`, 'gi');
+      const regexColon = new RegExp(`${sensitiveKey}\\s*:\\s*\\S+`, 'gi');
+      redacted = redacted.replace(regexEq, `${sensitiveKey}=${REDACTED}`);
+      redacted = redacted.replace(regexColon, `${sensitiveKey}: ${REDACTED}`);
+    }
+    return redacted as T;
   }
 
   if (typeof data !== 'object') {
@@ -129,13 +138,20 @@ export function redactSensitiveData<T>(data: T, maxDepth: number = 10): T {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (isSensitiveKey(key)) {
-      // Redact sensitive values but preserve type info
+      // For sensitive keys, redact string values but recurse into objects
       if (typeof value === 'string') {
         result[key] = REDACTED;
-      } else if (value !== null && value !== undefined) {
-        result[key] = REDACTED;
-      } else {
+      } else if (value === null || value === undefined) {
         result[key] = value;
+      } else if (Array.isArray(value)) {
+        // Recurse into arrays
+        result[key] = redactSensitiveData(value, maxDepth - 1);
+      } else if (typeof value === 'object') {
+        // Recurse into objects to redact nested sensitive fields
+        result[key] = redactSensitiveData(value, maxDepth - 1);
+      } else {
+        // Redact other types (numbers, booleans, etc)
+        result[key] = REDACTED;
       }
     } else {
       result[key] = redactSensitiveData(value, maxDepth - 1);

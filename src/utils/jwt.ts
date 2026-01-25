@@ -178,11 +178,15 @@ export async function createAccessToken(
   const now = Math.floor(Date.now() / 1000);
   const expiresIn = config?.accessTokenExpiry ?? ACCESS_TOKEN_EXPIRY;
 
+  // Generate a random jti (JWT ID) to ensure tokens are unique even at the same second
+  const jti = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
   const payload: JwtPayloadInternal = {
     user_id: userId,
     email: email,
     iat: now,
     exp: now + expiresIn,
+    jti,
   };
 
   return await createToken(payload, secret, expiresIn);

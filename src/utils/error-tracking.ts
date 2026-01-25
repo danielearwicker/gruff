@@ -371,8 +371,28 @@ export class ErrorTracker {
   private sanitizeStack(stack?: string): string | undefined {
     if (!stack) return undefined;
 
-    // Redact any sensitive data that might appear in stack traces
-    return redactSensitiveData(stack);
+    // First try to redact using the general sensitive data function
+    let sanitized = redactSensitiveData(stack) as string;
+
+    // Additionally redact patterns like "key=value" where key is sensitive
+    const sensitivePatterns = [
+      'password',
+      'token',
+      'secret',
+      'api_key',
+      'apiKey',
+      'auth',
+      'credential',
+      'credentials',
+    ];
+
+    for (const pattern of sensitivePatterns) {
+      // Match patterns like "word=value" where word is sensitive
+      const regex = new RegExp(`${pattern}\\s*=\\s*\\S+`, 'gi');
+      sanitized = sanitized.replace(regex, `${pattern}=[REDACTED]`);
+    }
+
+    return sanitized;
   }
 }
 

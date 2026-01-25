@@ -154,17 +154,17 @@ export function getStatusCategory(statusCode: number): StatusCategory {
  * e.g., /api/entities/abc123 -> /api/entities/:id
  */
 export function extractRoutePattern(path: string): string {
+  // Replace version numbers in paths like /versions/123 (before generic numeric replacement)
+  let pattern = path.replace(/\/versions\/\d+/g, '/versions/:version');
+
   // Replace UUIDs (various formats)
-  let pattern = path.replace(
+  pattern = pattern.replace(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
     ':id'
   );
 
   // Replace numeric IDs
   pattern = pattern.replace(/\/\d+/g, '/:id');
-
-  // Replace version numbers in paths like /versions/123
-  pattern = pattern.replace(/\/versions\/\d+/g, '/versions/:version');
 
   return pattern;
 }

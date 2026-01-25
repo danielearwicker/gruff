@@ -551,7 +551,7 @@ describe('buildFilterExpression', () => {
       );
       expect(result.sql).toContain(' AND ');
       expect(result.sql).toContain(' OR ');
-      expect(result.bindings).toHaveLength(6);
+      expect(result.bindings).toHaveLength(8);
     });
 
     it('should handle product search with multiple criteria', () => {

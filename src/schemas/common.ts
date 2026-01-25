@@ -43,8 +43,12 @@ export const paginationQuerySchema = z.object({
     .string()
     .optional()
     .default('20')
-    .transform(val => parseInt(val, 10))
-    .pipe(z.number().int().min(1).max(100)),
+    .transform(val => {
+      const parsed = parseInt(val, 10);
+      // Cap the limit at 100 instead of rejecting
+      return Math.min(Math.max(parsed, 1), 100);
+    })
+    .pipe(z.number().int()),
   cursor: z.string().optional(),
   include_deleted: z
     .string()

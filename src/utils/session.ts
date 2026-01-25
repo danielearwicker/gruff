@@ -298,14 +298,26 @@ export async function cleanupExpiredSessions(
   userId: string,
   config?: SessionConfig
 ): Promise<number> {
-  const session = await getSession(kv, userId, config);
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+  const key = getSessionKey(userId, mergedConfig.keyPrefix);
 
-  if (!session) {
+  // Get session directly from KV without auto-deleting via getSession
+  const value = await kv.get(key);
+  if (!value) {
     return 0;
   }
 
-  const now = Date.now();
-  if (session.expiresAt < now) {
+  try {
+    const sessionData = JSON.parse(value) as SessionData;
+    const now = Date.now();
+
+    // Check if session is expired
+    if (sessionData.expiresAt < now) {
+      await invalidateSession(kv, userId, config);
+      return 1;
+    }
+  } catch {
+    // Invalid JSON, delete it
     await invalidateSession(kv, userId, config);
     return 1;
   }
