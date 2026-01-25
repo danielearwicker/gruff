@@ -37,6 +37,7 @@ import auditRouter from './routes/audit.js';
 import docsRouter from './routes/docs.js';
 import generatedColumnsRouter from './routes/generated-columns.js';
 import queryPlanRouter from './routes/query-plan.js';
+import uiRouter from './routes/ui.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -394,6 +395,7 @@ app.get('/', c => {
       version: '/api/version',
       documentation: '/docs',
       openapi: '/docs/openapi.json',
+      ui: '/ui',
     },
   });
 });
@@ -441,6 +443,9 @@ app.route('/api/schema/query-plan', queryPlanRouter);
 
 // Mount API documentation routes (OpenAPI spec and Scalar UI)
 app.route('/docs', docsRouter);
+
+// Mount UI routes (server-side rendered web interface)
+app.route('/ui', uiRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), c => {

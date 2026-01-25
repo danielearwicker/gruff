@@ -12,10 +12,6 @@ Having chosen a feature to implement, you should read around related areas of th
 - Update its entry in the specification to have the ✅ marker,
 - Commit the changes to this git repository with a short, snappy description of the feature.
 
-## Granularity of Features
-
-**IMPORTANT** Some features in the spec may be quite large-grained, high level features. If you think a feature is elaborate and it should be tackled in smaller sub-tasks, you should expand the specification to describe those sub-tasks. Give each its own 🟦 marker, and remove the original parent feature's marker. You are responsible for improving the granularity of the spec appropriately! Then choose ONE of the new sub-tasks to work on.
-
 ## Testing
 
 In addition, to preserve the robustness of the product, refer to `TESTING.md`. Extend the tests to cover your newly implemented feature. You **MUST** run the tests and address any discrepancies:

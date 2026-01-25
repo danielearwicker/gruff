@@ -246,7 +246,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
   - Includes provider name, type (local/oauth2), and authorize URL for OAuth providers
   - Allows clients to dynamically discover available authentication methods
 
-#### 🟦 OAuth2 - Additional Providers
+#### 🟥 OAuth2 - Additional Providers
 
 - Support for Microsoft, Apple, or other OIDC-compliant providers
 - Configurable provider registry for easy addition of new OAuth providers
@@ -600,7 +600,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 
 A minimal, low-level administrative interface served directly by the Workers application for browsing and managing the graph database. This provides a built-in tool for developers and administrators to explore data without requiring external clients.
 
-### 🟦 UI Architecture
+### ✅ UI Architecture
 
 #### Server-Side Rendering
 
@@ -1059,7 +1059,7 @@ Note: Form submissions use standard HTML forms that POST to existing `/api/*` en
   - Analytics Engine writes with graceful failure handling (won't affect application on write errors)
   - Health endpoint reports analytics availability status
 
-#### 🟦 External Logging Service Integration
+#### 🟥 External Logging Service Integration
 
 - Integration with external logging services (Datadog, Sentry, etc.)
 - Configuration for different environments
@@ -1282,7 +1282,7 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 - ✅ Version information endpoint
 - ✅ Workers runtime status
 
-### 🟦 Metrics and Monitoring
+### 🟥 Metrics and Monitoring
 
 - Cloudflare Workers Analytics for request metrics
 - D1 query performance metrics via Analytics Engine
@@ -1297,10 +1297,10 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 
 - ✅ Setup and installation guide
 - ✅ Database schema documentation
-- 🟦 API development guide
-- 🟦 Contributing guidelines
+- 🟥 API development guide
+- 🟥 Contributing guidelines
 
-### 🟦 Deployment Documentation
+### 🟥 Deployment Documentation
 
 - Cloudflare Workers deployment guide via Wrangler
 - Environment configuration reference (wrangler.toml and secrets)
