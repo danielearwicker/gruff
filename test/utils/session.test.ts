@@ -44,11 +44,11 @@ class MockKVNamespace implements KVNamespace {
   }
 
   // Other KVNamespace methods (not used in tests, but required by interface)
-  async list(): Promise<any> {
+  async list(): Promise<{ keys: unknown[]; list_complete: boolean; cursor: string }> {
     return { keys: [], list_complete: true, cursor: '' };
   }
 
-  async getWithMetadata(): Promise<any> {
+  async getWithMetadata(): Promise<{ value: string | null; metadata: unknown }> {
     return { value: null, metadata: null };
   }
 }

@@ -540,7 +540,7 @@ describe('buildFilterExpression', () => {
 
     it('should throw for exceeding maximum depth', () => {
       // Create a deeply nested structure (6 levels)
-      const deeplyNested: any = {
+      const deeplyNested: { and?: unknown[]; or?: unknown[] } = {
         and: [
           {
             or: [

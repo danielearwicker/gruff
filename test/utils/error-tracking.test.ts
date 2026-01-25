@@ -10,9 +10,9 @@ import {
 
 describe('Error Tracking', () => {
   // Mock console methods
-  let consoleInfoSpy: any;
-  let consoleWarnSpy: any;
-  let consoleErrorSpy: any;
+  let consoleInfoSpy: ReturnType<typeof vi.spyOn>;
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -38,7 +38,7 @@ describe('Error Tracking', () => {
 
     it('should categorize ZodError by name', () => {
       const zodError = new Error('Invalid input');
-      (zodError as any).name = 'ZodError';
+      (zodError as Error & { name: string }).name = 'ZodError';
       const result = categorizeError(zodError);
       expect(result.category).toBe(ErrorCategory.VALIDATION);
     });
@@ -132,7 +132,7 @@ describe('Error Tracking', () => {
       it('should include error code if present', () => {
         const tracker = new ErrorTracker();
         const error = new Error('Custom error');
-        (error as any).code = 'CUSTOM_ERROR';
+        (error as Error & { code: string }).code = 'CUSTOM_ERROR';
 
         const tracked = tracker.track(error);
 
@@ -230,7 +230,7 @@ describe('Error Tracking', () => {
         tracker.track(new Error('Test error'), { requestId: 'req-123' }, 500);
 
         expect(mockAnalytics.writeDataPoint).toHaveBeenCalledTimes(1);
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.blobs).toContain('Error');
         expect(call.blobs).toContain('internal');
         expect(call.blobs).toContain('high');
@@ -245,7 +245,7 @@ describe('Error Tracking', () => {
         const tracker = new ErrorTracker(mockAnalytics, { environment: 'production' });
         tracker.track(new Error('Test error'));
 
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.indexes).toContain('production');
       });
 

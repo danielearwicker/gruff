@@ -36,9 +36,9 @@ describe('sanitize utilities', () => {
     });
 
     it('should return non-strings unchanged', () => {
-      expect(escapeHtml(null as any)).toBe(null);
-      expect(escapeHtml(undefined as any)).toBe(undefined);
-      expect(escapeHtml(123 as any)).toBe(123);
+      expect(escapeHtml(null as unknown as string)).toBe(null);
+      expect(escapeHtml(undefined as unknown as string)).toBe(undefined);
+      expect(escapeHtml(123 as unknown as string)).toBe(123);
     });
 
     it('should handle strings without special characters', () => {
@@ -99,9 +99,9 @@ describe('sanitize utilities', () => {
     });
 
     it('should return false for non-strings', () => {
-      expect(containsDangerousContent(null as any)).toBe(false);
-      expect(containsDangerousContent(undefined as any)).toBe(false);
-      expect(containsDangerousContent(123 as any)).toBe(false);
+      expect(containsDangerousContent(null as unknown as string)).toBe(false);
+      expect(containsDangerousContent(undefined as unknown as string)).toBe(false);
+      expect(containsDangerousContent(123 as unknown as string)).toBe(false);
     });
   });
 
@@ -192,8 +192,8 @@ describe('sanitize utilities', () => {
     });
 
     it('should handle null/undefined input', () => {
-      expect(sanitizeProperties(null as any)).toEqual({});
-      expect(sanitizeProperties(undefined as any)).toEqual({});
+      expect(sanitizeProperties(null as unknown as Record<string, unknown>)).toEqual({});
+      expect(sanitizeProperties(undefined as unknown as Record<string, unknown>)).toEqual({});
     });
   });
 
@@ -207,7 +207,7 @@ describe('sanitize utilities', () => {
 
       expect(result.hadDangerousContent).toBe(true);
       expect(result.dangerousFields).toContain('dangerous');
-      expect((result.sanitized as any).dangerous).toBe(
+      expect((result.sanitized as Record<string, unknown>).dangerous).toBe(
         '&lt;script&gt;alert(1)&lt;&#x2F;script&gt;'
       );
     });
@@ -260,8 +260,8 @@ describe('sanitize utilities', () => {
     });
 
     it('should return non-strings unchanged', () => {
-      expect(stripHtmlTags(null as any)).toBe(null);
-      expect(stripHtmlTags(123 as any)).toBe(123);
+      expect(stripHtmlTags(null as unknown as string)).toBe(null);
+      expect(stripHtmlTags(123 as unknown as string)).toBe(123);
     });
 
     it('should handle strings without tags', () => {
@@ -324,9 +324,9 @@ describe('sanitize utilities', () => {
     });
 
     it('should handle non-strings', () => {
-      expect(sanitizeUrl(null as any)).toBe('');
-      expect(sanitizeUrl(undefined as any)).toBe('');
-      expect(sanitizeUrl(123 as any)).toBe('');
+      expect(sanitizeUrl(null as unknown as string)).toBe('');
+      expect(sanitizeUrl(undefined as unknown as string)).toBe('');
+      expect(sanitizeUrl(123 as unknown as string)).toBe('');
     });
   });
 });

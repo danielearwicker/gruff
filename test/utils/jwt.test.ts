@@ -362,7 +362,7 @@ describe('JWT Token Service', () => {
       const payload = decodeToken(refreshToken);
 
       expect(payload).toBeTruthy();
-      expect((payload as any).refresh).toBeUndefined();
+      expect((payload as Record<string, unknown>).refresh).toBeUndefined();
     });
   });
 

@@ -99,7 +99,7 @@ describe('Response Time Middleware', () => {
       expect(res.status).toBe(200);
       expect(mockAnalytics.writeDataPoint).toHaveBeenCalledTimes(1);
 
-      const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[1]).toBe('read'); // category
       expect(call.blobs[2]).toBe('GET'); // method
       expect(call.blobs[3]).toBe('/api/entities'); // route pattern
@@ -118,7 +118,7 @@ describe('Response Time Middleware', () => {
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
       await app.fetch(req, env);
 
-      const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[1]).toBe('write'); // category
       expect(call.blobs[2]).toBe('POST'); // method
       expect(call.doubles[1]).toBe(201); // status code
@@ -138,17 +138,17 @@ describe('Response Time Middleware', () => {
 
       // Search endpoint
       await app.fetch(new Request('http://localhost/api/search/entities'), env);
-      let call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      let call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[1]).toBe('search');
 
       // Graph endpoint
       await app.fetch(new Request('http://localhost/api/graph/path'), env);
-      call = (mockAnalytics.writeDataPoint as any).mock.calls[1][0];
+      call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[1][0];
       expect(call.blobs[1]).toBe('graph');
 
       // Auth endpoint
       await app.fetch(new Request('http://localhost/api/auth/login', { method: 'POST' }), env);
-      call = (mockAnalytics.writeDataPoint as any).mock.calls[2][0];
+      call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[2][0];
       expect(call.blobs[1]).toBe('auth');
     });
 
@@ -164,7 +164,7 @@ describe('Response Time Middleware', () => {
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'production' };
       await app.fetch(req, env);
 
-      const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[0]).toBe('production');
       expect(call.indexes[0]).toBe('production');
     });
@@ -181,7 +181,7 @@ describe('Response Time Middleware', () => {
       const env = { ANALYTICS: mockAnalytics, ENVIRONMENT: 'test' };
       await app.fetch(req, env);
 
-      const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[3]).toBe('/api/entities/:id');
     });
   });
@@ -343,7 +343,7 @@ describe('Response Time Middleware', () => {
       const env = { ENVIRONMENT: 'test' };
 
       // Should not throw
-      const res = await app.fetch(req, env as any);
+      const res = await app.fetch(req, env as { ENVIRONMENT: string });
       const data = await res.json();
 
       expect(res.status).toBe(200);

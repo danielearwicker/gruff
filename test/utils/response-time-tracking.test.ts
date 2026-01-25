@@ -157,7 +157,7 @@ describe('Response Time Tracking', () => {
         });
 
         expect(mockAnalytics.writeDataPoint).toHaveBeenCalledTimes(1);
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
 
         // Check blobs structure
         expect(call.blobs[0]).toBe('development'); // environment
@@ -187,7 +187,7 @@ describe('Response Time Tracking', () => {
           userId: 'user-456',
         });
 
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.blobs[5]).toBe('user-456');
       });
 
@@ -206,7 +206,7 @@ describe('Response Time Tracking', () => {
           durationMs: 25,
         });
 
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.blobs[0]).toBe('production');
         expect(call.indexes).toContain('production');
       });
@@ -225,7 +225,7 @@ describe('Response Time Tracking', () => {
           contentLength: 1024,
         });
 
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.doubles[2]).toBe(1024);
       });
 
@@ -244,7 +244,7 @@ describe('Response Time Tracking', () => {
           country: 'US',
         });
 
-        const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+        const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
         expect(call.blobs[6]).toBe('SFO');
         expect(call.blobs[7]).toBe('US');
       });
@@ -420,7 +420,7 @@ describe('Response Time Tracking', () => {
       expect(mockAnalytics.writeDataPoint).toHaveBeenCalledTimes(1);
 
       // Verify environment was passed
-      const call = (mockAnalytics.writeDataPoint as any).mock.calls[0][0];
+      const call = (mockAnalytics.writeDataPoint as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.blobs[0]).toBe('test');
     });
   });
