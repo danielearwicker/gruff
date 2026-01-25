@@ -373,7 +373,7 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async (c) => {
 
   try {
     // First, fetch all current versions and collect type IDs
-    const currentVersions: Map<string, Record<string, unknown>> = new Map();
+    const currentVersions: Map<string, { currentVersion: Record<string, unknown>; index: number }> = new Map();
     const typeIdsToFetch: Set<string> = new Set();
 
     for (let i = 0; i < data.entities.length; i++) {
@@ -530,7 +530,7 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async (c) => {
 
   try {
     // First, fetch all current versions and collect type IDs
-    const currentVersions: Map<string, Record<string, unknown>> = new Map();
+    const currentVersions: Map<string, { currentVersion: Record<string, unknown>; index: number }> = new Map();
     const typeIdsToFetch: Set<string> = new Set();
 
     for (let i = 0; i < data.links.length; i++) {

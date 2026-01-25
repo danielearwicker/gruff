@@ -475,7 +475,7 @@ entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
     try {
       await Promise.all([
         invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id),
+        invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
@@ -551,7 +551,7 @@ entities.delete('/:id', async (c) => {
     try {
       await Promise.all([
         invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id),
+        invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });
@@ -639,7 +639,7 @@ entities.post('/:id/restore', async (c) => {
     try {
       await Promise.all([
         invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id),
+        invalidateEntityCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'entities' }).warn('Failed to invalidate cache', { error: cacheError });

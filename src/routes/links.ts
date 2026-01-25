@@ -507,7 +507,7 @@ links.put('/:id', validateJson(updateLinkSchema), async (c) => {
     try {
       await Promise.all([
         invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id),
+        invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
@@ -587,7 +587,7 @@ links.delete('/:id', async (c) => {
     try {
       await Promise.all([
         invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id),
+        invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
@@ -679,7 +679,7 @@ links.post('/:id/restore', async (c) => {
     try {
       await Promise.all([
         invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id),
+        invalidateLinkCache(c.env.KV, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c).child({ module: 'links' }).warn('Failed to invalidate cache', { error: cacheError });
