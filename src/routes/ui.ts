@@ -350,15 +350,346 @@ ui.get('/', async c => {
 });
 
 /**
- * Entity list view (placeholder)
+ * Entity list view
  * GET /ui/entities
  */
 ui.get('/entities', async c => {
   const user = c.get('user');
 
+  // Get filter parameters
+  const filterUserId = c.req.query('user_id') || '';
+  const filterTypeId = c.req.query('type_id') || '';
+  const filterTimeRange = c.req.query('time_range') || 'all';
+  const filterStartDate = c.req.query('start_date') || '';
+  const filterEndDate = c.req.query('end_date') || '';
+  const showDeleted = c.req.query('show_deleted') === 'true';
+  const showAllVersions = c.req.query('show_all_versions') === 'true';
+  const sortBy = c.req.query('sort_by') || 'created_at';
+  const sortOrder = c.req.query('sort_order') || 'desc';
+
+  // Get pagination parameters
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+  const cursor = c.req.query('cursor') || '';
+
+  // Calculate timestamp for time range filters
+  let timeRangeFilter = '';
+  const now = Date.now();
+  if (filterTimeRange !== 'all' && filterTimeRange !== 'custom') {
+    let since = now;
+    switch (filterTimeRange) {
+      case 'hour':
+        since = now - 60 * 60 * 1000;
+        break;
+      case 'day':
+        since = now - 24 * 60 * 60 * 1000;
+        break;
+      case 'week':
+        since = now - 7 * 24 * 60 * 60 * 1000;
+        break;
+      case 'month':
+        since = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+    }
+    timeRangeFilter = `AND e.created_at >= ${since}`;
+  } else if (filterTimeRange === 'custom' && filterStartDate) {
+    const startTimestamp = new Date(filterStartDate).getTime();
+    if (!isNaN(startTimestamp)) {
+      timeRangeFilter = `AND e.created_at >= ${startTimestamp}`;
+    }
+    if (filterEndDate) {
+      const endTimestamp = new Date(filterEndDate).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+      if (!isNaN(endTimestamp)) {
+        timeRangeFilter += ` AND e.created_at <= ${endTimestamp}`;
+      }
+    }
+  }
+
+  // Build WHERE clause for filters
+  const userFilter = filterUserId ? `AND e.created_by = ?` : '';
+  const typeFilter = filterTypeId ? `AND e.type_id = ?` : '';
+  const deletedFilter = showDeleted ? '' : 'AND e.is_deleted = 0';
+  const versionFilter = showAllVersions ? '' : 'AND e.is_latest = 1';
+  const cursorFilter = cursor ? `AND e.created_at < ?` : '';
+
+  // Validate sort column to prevent SQL injection
+  const allowedSortColumns = ['created_at', 'type_name', 'version'];
+  const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+  const sortDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+  // Fetch users for filter dropdown
+  const allUsers = await c.env.DB.prepare(
+    'SELECT id, email, display_name FROM users ORDER BY email'
+  ).all<{ id: string; email: string; display_name?: string }>();
+
+  // Fetch types for filter dropdown (entity types only)
+  const allTypes = await c.env.DB.prepare(
+    "SELECT id, name FROM types WHERE category = 'entity' ORDER BY name"
+  ).all<{ id: string; name: string }>();
+
+  // Build query for entities with filters
+  const entitiesQuery = `
+    SELECT
+      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+      e.is_latest, e.is_deleted, e.previous_version_id,
+      t.name as type_name,
+      u.display_name, u.email
+    FROM entities e
+    JOIN types t ON e.type_id = t.id
+    LEFT JOIN users u ON e.created_by = u.id
+    WHERE 1=1 ${timeRangeFilter} ${userFilter} ${typeFilter} ${deletedFilter} ${versionFilter} ${cursorFilter}
+    ORDER BY ${sortColumn === 'type_name' ? 't.name' : 'e.' + sortColumn} ${sortDirection}
+    LIMIT ?
+  `;
+
+  const queryParams: (string | number)[] = [];
+  if (filterUserId) queryParams.push(filterUserId);
+  if (filterTypeId) queryParams.push(filterTypeId);
+  if (cursor) {
+    // Cursor is a timestamp
+    queryParams.push(parseInt(cursor, 10));
+  }
+  queryParams.push(limit + 1); // Fetch one extra to determine if there are more results
+
+  const entitiesResult = await c.env.DB.prepare(entitiesQuery)
+    .bind(...queryParams)
+    .all<{
+      id: string;
+      type_id: string;
+      properties: string;
+      version: number;
+      created_at: number;
+      created_by: string;
+      is_latest: number;
+      is_deleted: number;
+      previous_version_id: string | null;
+      type_name: string;
+      display_name?: string;
+      email: string;
+    }>();
+
+  // Determine if there are more results
+  const hasMore = entitiesResult.results.length > limit;
+  const entities = hasMore ? entitiesResult.results.slice(0, limit) : entitiesResult.results;
+
+  // Calculate next cursor
+  let nextCursor = '';
+  if (hasMore && entities.length > 0) {
+    nextCursor = entities[entities.length - 1].created_at.toString();
+  }
+
+  // Build pagination links
+  const buildPaginationUrl = (newCursor: string) => {
+    const params = new URLSearchParams();
+    if (filterUserId) params.set('user_id', filterUserId);
+    if (filterTypeId) params.set('type_id', filterTypeId);
+    if (filterTimeRange !== 'all') params.set('time_range', filterTimeRange);
+    if (filterStartDate) params.set('start_date', filterStartDate);
+    if (filterEndDate) params.set('end_date', filterEndDate);
+    if (showDeleted) params.set('show_deleted', 'true');
+    if (showAllVersions) params.set('show_all_versions', 'true');
+    if (sortBy !== 'created_at') params.set('sort_by', sortBy);
+    if (sortOrder !== 'desc') params.set('sort_order', sortOrder);
+    if (limit !== 20) params.set('limit', limit.toString());
+    if (newCursor) params.set('cursor', newCursor);
+    return `/ui/entities?${params.toString()}`;
+  };
+
+  // Render filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/entities" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="user_id">User:</label>
+            <select id="user_id" name="user_id">
+              <option value="">All users</option>
+              ${allUsers.results
+                .map(
+                  u => `
+                <option value="${u.id}" ${filterUserId === u.id ? 'selected' : ''}>
+                  ${escapeHtml(u.display_name || u.email)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="type_id">Entity Type:</label>
+            <select id="type_id" name="type_id">
+              <option value="">All types</option>
+              ${allTypes.results
+                .map(
+                  t => `
+                <option value="${t.id}" ${filterTypeId === t.id ? 'selected' : ''}>
+                  ${escapeHtml(t.name)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="time_range">Time Range:</label>
+            <select id="time_range" name="time_range" onchange="toggleCustomDates()">
+              <option value="all" ${filterTimeRange === 'all' ? 'selected' : ''}>All time</option>
+              <option value="hour" ${filterTimeRange === 'hour' ? 'selected' : ''}>Last hour</option>
+              <option value="day" ${filterTimeRange === 'day' ? 'selected' : ''}>Last day</option>
+              <option value="week" ${filterTimeRange === 'week' ? 'selected' : ''}>Last week</option>
+              <option value="month" ${filterTimeRange === 'month' ? 'selected' : ''}>Last month</option>
+              <option value="custom" ${filterTimeRange === 'custom' ? 'selected' : ''}>Custom range</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="sort_by">Sort By:</label>
+            <select id="sort_by" name="sort_by">
+              <option value="created_at" ${sortBy === 'created_at' ? 'selected' : ''}>Date</option>
+              <option value="type_name" ${sortBy === 'type_name' ? 'selected' : ''}>Type</option>
+              <option value="version" ${sortBy === 'version' ? 'selected' : ''}>Version</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="sort_order">Order:</label>
+            <select id="sort_order" name="sort_order">
+              <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+              <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" id="custom-dates" style="display: ${filterTimeRange === 'custom' ? 'flex' : 'none'}">
+          <div class="form-group">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" name="start_date" value="${escapeHtml(filterStartDate)}">
+          </div>
+
+          <div class="form-group">
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" name="end_date" value="${escapeHtml(filterEndDate)}">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" name="show_deleted" value="true" ${showDeleted ? 'checked' : ''}>
+              Show deleted entities
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" name="show_all_versions" value="true" ${showAllVersions ? 'checked' : ''}>
+              Show all versions
+            </label>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Apply Filters</button>
+          <a href="/ui/entities" class="button secondary">Clear Filters</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      function toggleCustomDates() {
+        const timeRange = document.getElementById('time_range').value;
+        const customDates = document.getElementById('custom-dates');
+        customDates.style.display = timeRange === 'custom' ? 'flex' : 'none';
+      }
+    </script>
+  `;
+
+  // Render entities table
+  const entitiesTable = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Properties</th>
+          <th>Version</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${entities
+          .map(entity => {
+            const props = JSON.parse(entity.properties);
+            const displayName =
+              props.name || props.title || props.label || entity.id.substring(0, 8);
+            const propsPreview = JSON.stringify(props, null, 2);
+            const truncatedPreview =
+              propsPreview.length > 100 ? propsPreview.substring(0, 100) + '...' : propsPreview;
+
+            return `
+          <tr>
+            <td>
+              <a href="/ui/entities/${entity.id}">${escapeHtml(displayName)}</a>
+              <div class="muted small">${entity.id.substring(0, 8)}...</div>
+            </td>
+            <td>
+              <a href="/ui/entities?type_id=${entity.type_id}" class="badge">${escapeHtml(entity.type_name)}</a>
+            </td>
+            <td>
+              <code class="small">${escapeHtml(truncatedPreview)}</code>
+            </td>
+            <td>${entity.version}</td>
+            <td>
+              ${escapeHtml(entity.display_name || entity.email)}
+            </td>
+            <td>
+              ${formatTimestamp(entity.created_at)}
+            </td>
+            <td>
+              ${entity.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old</span>'}
+              ${entity.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+            </td>
+            <td>
+              <div class="button-group compact">
+                <a href="/ui/entities/${entity.id}" class="button small">View</a>
+                ${!entity.is_deleted && entity.is_latest ? `<a href="/ui/entities/${entity.id}/edit" class="button small secondary">Edit</a>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `;
+
   const content = `
     <h2>Entities</h2>
-    <p>Entity list view coming soon.</p>
+    <p>Browse and filter all entities in the database.</p>
+
+    <h3>Filters</h3>
+    ${filterForm}
+
+    <h3>Results</h3>
+    <p>Showing ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'}${hasMore ? ' (more available)' : ''}.</p>
+
+    ${entities.length > 0 ? entitiesTable : '<p class="muted">No entities found matching the filters.</p>'}
+
+    ${
+      hasMore || cursor
+        ? `
+      <div class="pagination">
+        ${cursor ? `<a href="${buildPaginationUrl('')}" class="button secondary">First Page</a>` : ''}
+        ${hasMore ? `<a href="${buildPaginationUrl(nextCursor)}" class="button">Next Page</a>` : ''}
+      </div>
+    `
+        : ''
+    }
+
     <div class="button-group">
       <a href="/ui" class="button secondary">Back to Dashboard</a>
       <a href="/ui/entities/new" class="button">Create Entity</a>

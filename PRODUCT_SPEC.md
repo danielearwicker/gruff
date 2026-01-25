@@ -668,7 +668,7 @@ Each entity in the list shows:
 - Updated at (if different from created_at)
 - Version number
 
-### 🟦 Entity List View
+### ✅ Entity List View
 
 **Route:** `GET /ui/entities`
 
@@ -678,23 +678,20 @@ Each entity in the list shows:
 - Same filtering controls as home page (user, time range, type)
 - Additional filters:
   - Show deleted entities (checkbox)
-  - Show all versions vs. latest only (radio buttons)
-- Sorting options (by created_at, updated_at, type)
-- Bulk selection for batch operations (future: bulk delete, bulk export)
+  - Show all versions vs. latest only (checkbox)
+- Sorting options (by created_at, type_name, version)
+- Future: Bulk selection for batch operations (bulk delete, bulk export)
 
 #### Table Columns
 
-- Checkbox (for selection)
-- Entity ID (truncated, linked)
-- Type name
-- Properties preview (JSON or extracted key fields)
+- Entity ID (truncated, linked with display name from properties)
+- Type name (linked to filter by that type)
+- Properties preview (JSON truncated to 100 chars)
 - Version
-- Created by
-- Created at
-- Updated at
-- Is latest (badge)
-- Is deleted (badge)
-- Actions (View, Edit, Delete buttons)
+- Created by (user display name or email)
+- Created at (formatted timestamp)
+- Status badges (Latest/Old, Deleted if applicable)
+- Actions (View, Edit buttons - Edit only for latest non-deleted)
 
 ### 🟦 Entity Detail View
 

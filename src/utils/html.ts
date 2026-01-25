@@ -213,10 +213,52 @@ export const commonStyles = `
     background-color: #dc2626;
   }
 
+  .button.small {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
   .button-group {
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
+  }
+
+  .button-group.compact {
+    margin-top: 0;
+    gap: 0.25rem;
+  }
+
+  .pagination {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1.5rem 0;
+    justify-content: center;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.875rem;
+  }
+
+  .data-table th {
+    background-color: var(--color-muted);
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--color-border);
+  }
+
+  .data-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+
+  .data-table tr:hover {
+    background-color: var(--color-muted);
   }
 
   table {
@@ -269,6 +311,19 @@ export const commonStyles = `
   .badge.muted {
     background-color: var(--color-secondary);
     color: white;
+  }
+
+  .badge.danger {
+    background-color: var(--color-error);
+    color: white;
+  }
+
+  .muted {
+    color: var(--color-secondary);
+  }
+
+  .small {
+    font-size: 0.875rem;
   }
 
   code {

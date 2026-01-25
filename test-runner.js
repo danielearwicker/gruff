@@ -9360,6 +9360,277 @@ async function testSanitizationImport() {
 }
 
 // ============================================================================
+// UI Tests
+// ============================================================================
+
+async function testUIDashboard() {
+  logTest('UI - Dashboard Page');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(
+    response.headers.get('content-type'),
+    'text/html; charset=UTF-8',
+    'Should return HTML'
+  );
+  assert(html.includes('<h2>Dashboard</h2>'), 'Should have dashboard heading');
+  assert(html.includes('Entities'), 'Should show entity count');
+  assert(html.includes('Links'), 'Should show link count');
+  assert(html.includes('Recently Created Entities'), 'Should show recent entities section');
+  assert(html.includes('Recently Updated Entities'), 'Should show recent updates section');
+}
+
+async function testUIEntityListBasic() {
+  logTest('UI - Entity List Page - Basic View');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(
+    response.headers.get('content-type'),
+    'text/html; charset=UTF-8',
+    'Should return HTML'
+  );
+  assert(html.includes('<h2>Entities</h2>'), 'Should have entities heading');
+  assert(html.includes('Browse and filter all entities'), 'Should have description');
+  assert(html.includes('Filters'), 'Should have filters section');
+  assert(html.includes('name="user_id"'), 'Should have user filter');
+  assert(html.includes('name="type_id"'), 'Should have type filter');
+  assert(html.includes('name="time_range"'), 'Should have time range filter');
+  assert(html.includes('name="sort_by"'), 'Should have sort by selector');
+  assert(html.includes('name="show_deleted"'), 'Should have show deleted checkbox');
+  assert(html.includes('name="show_all_versions"'), 'Should have show all versions checkbox');
+}
+
+async function testUIEntityListWithData() {
+  logTest('UI - Entity List Page - With Entity Data');
+
+  // Create a type and entity for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'UITestEntityType',
+    category: 'entity',
+    description: 'Test type for UI',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Test Entity for UI', description: 'Testing UI display' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Fetch the entity list page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('<table class="data-table">'), 'Should have data table');
+  assert(html.includes('Test Entity for UI'), 'Should display entity name');
+  assert(html.includes('UITestEntityType'), 'Should display entity type');
+  assert(html.includes(entityId.substring(0, 8)), 'Should display entity ID');
+  assert(html.includes('class="badge success">Latest</span>'), 'Should show latest badge');
+}
+
+async function testUIEntityListFiltering() {
+  logTest('UI - Entity List Page - Filtering by Type');
+
+  // Create types and entities
+  const type1Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestType1',
+    category: 'entity',
+  });
+  const type1Id = type1Response.data.data.id;
+
+  const type2Response = await makeRequest('POST', '/api/types', {
+    name: 'FilterTestType2',
+    category: 'entity',
+  });
+  const type2Id = type2Response.data.data.id;
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: type1Id,
+    properties: { name: 'Entity Type 1' },
+  });
+
+  await makeRequest('POST', '/api/entities', {
+    type_id: type2Id,
+    properties: { name: 'Entity Type 2' },
+  });
+
+  // Filter by type1
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${type1Id}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Entity Type 1'), 'Should show filtered entity');
+  assert(html.includes(`value="${type1Id}" selected`), 'Type filter should be selected');
+}
+
+async function testUIEntityListSorting() {
+  logTest('UI - Entity List Page - Sorting');
+
+  // Test sort by date ascending
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?sort_by=created_at&sort_order=asc`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('value="created_at" selected'), 'Sort by created_at should be selected');
+  assert(html.includes('value="asc" selected'), 'Sort order asc should be selected');
+}
+
+async function testUIEntityListPagination() {
+  logTest('UI - Entity List Page - Pagination');
+
+  // Create a type for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'PaginationTestType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create 25 entities (more than the default page size of 20)
+  for (let i = 0; i < 25; i++) {
+    await makeRequest('POST', '/api/entities', {
+      type_id: typeId,
+      properties: { name: `Pagination Test Entity ${i}` },
+    });
+    // Small delay to ensure different timestamps
+    await sleep(5);
+  }
+
+  // Fetch first page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${typeId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Showing 20 entities'), 'Should show page size');
+  assert(html.includes('Next Page'), 'Should have next page link');
+  assert(html.includes('cursor='), 'Next page link should have cursor parameter');
+}
+
+async function testUIEntityListShowDeleted() {
+  logTest('UI - Entity List Page - Show Deleted Entities');
+
+  // Create and delete an entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedEntityType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Entity To Delete' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Request with show_deleted=true
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?show_deleted=true`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(
+    html.includes('checked') && html.includes('show_deleted'),
+    'Show deleted should be checked'
+  );
+  assert(html.includes('Entity To Delete'), 'Should display deleted entity');
+  assert(html.includes('class="badge danger">Deleted</span>'), 'Should show deleted badge');
+}
+
+async function testUIEntityListShowAllVersions() {
+  logTest('UI - Entity List Page - Show All Versions');
+
+  // Create an entity and update it
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'VersionTestType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original Name' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Update to create version 2
+  await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Name' },
+  });
+
+  // Request with show_all_versions=true
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?show_all_versions=true`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(
+    html.includes('checked') && html.includes('show_all_versions'),
+    'Show all versions should be checked'
+  );
+  // Should see both versions
+  const version1Count = (html.match(/Original Name/g) || []).length;
+  const version2Count = (html.match(/Updated Name/g) || []).length;
+  assert(version1Count > 0 || version2Count > 0, 'Should show multiple versions of entity');
+}
+
+async function testUIEntityListTimeRangeFilter() {
+  logTest('UI - Entity List Page - Time Range Filter');
+
+  // Test with "last day" filter
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?time_range=day`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('value="day" selected'), 'Time range filter should be selected');
+}
+
+async function testUIEntityListCustomDateRange() {
+  logTest('UI - Entity List Page - Custom Date Range');
+
+  const startDate = '2024-01-01';
+  const endDate = '2024-12-31';
+  const response = await fetch(
+    `${DEV_SERVER_URL}/ui/entities?time_range=custom&start_date=${startDate}&end_date=${endDate}`
+  );
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('value="custom" selected'), 'Custom time range should be selected');
+  assert(html.includes(`value="${startDate}"`), 'Start date should be populated');
+  assert(html.includes(`value="${endDate}"`), 'End date should be populated');
+  assert(
+    html.includes('id="custom-dates" style="display: flex"'),
+    'Custom date inputs should be visible'
+  );
+}
+
+async function testUIEntityListEmptyState() {
+  logTest('UI - Entity List Page - Empty State');
+
+  // Create a type with no entities, and filter by it
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'EmptyStateType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${typeId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Showing 0 entities'), 'Should show zero entities');
+  assert(
+    html.includes('No entities found matching the filters'),
+    'Should show empty state message'
+  );
+}
+
+// ============================================================================
 // Caching Tests
 // ============================================================================
 
@@ -11293,6 +11564,19 @@ async function runTests() {
     testSanitizationUpdate,
     testSanitizationSpecialCharactersPreserved,
     testSanitizationImport,
+
+    // UI tests
+    testUIDashboard,
+    testUIEntityListBasic,
+    testUIEntityListWithData,
+    testUIEntityListFiltering,
+    testUIEntityListSorting,
+    testUIEntityListPagination,
+    testUIEntityListShowDeleted,
+    testUIEntityListShowAllVersions,
+    testUIEntityListTimeRangeFilter,
+    testUIEntityListCustomDateRange,
+    testUIEntityListEmptyState,
 
     // Caching tests
     testCachingTypeGet,
