@@ -33,7 +33,7 @@ const traverseSchema = z.object({
 });
 
 // Helper function to find the latest version of an entity by any ID in its version chain
-async function findLatestVersion(db: D1Database, entityId: string): Promise<any> {
+async function findLatestVersion(db: D1Database, entityId: string): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
   const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
@@ -96,7 +96,7 @@ graph.post('/traverse', async (c) => {
     visited.add(startEntity.id);
 
     // Store entities with their paths (if requested)
-    const foundEntities = new Map<string, { entity: any; paths: PathNode[][] }>();
+    const foundEntities = new Map<string, { entity: Record<string, unknown>; paths: PathNode[][] }>();
 
     // Add the starting entity
     foundEntities.set(startEntity.id, {
@@ -120,7 +120,7 @@ graph.post('/traverse', async (c) => {
       }
 
       // Build queries based on direction
-      const queries: Array<{ sql: string; bindings: any[] }> = [];
+      const queries: Array<{ sql: string; bindings: (string | number)[] }> = [];
 
       // Outbound links (this entity -> others)
       if (params.direction === 'outbound' || params.direction === 'both') {
@@ -141,7 +141,7 @@ graph.post('/traverse', async (c) => {
           AND l.is_latest = 1
           AND e.is_latest = 1
         `;
-        const bindings: any[] = [current.entityId];
+        const bindings: (string | number)[] = [current.entityId];
 
         if (!params.include_deleted) {
           sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
@@ -179,7 +179,7 @@ graph.post('/traverse', async (c) => {
           AND l.is_latest = 1
           AND e.is_latest = 1
         `;
-        const bindings: any[] = [current.entityId];
+        const bindings: (string | number)[] = [current.entityId];
 
         if (!params.include_deleted) {
           sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
@@ -244,7 +244,7 @@ graph.post('/traverse', async (c) => {
     // Build the response
     const entitiesArray = Array.from(foundEntities.values());
 
-    let result: any;
+    let result: Array<Record<string, unknown>>;
     if (params.return_paths) {
       // Return entities with all their paths
       result = entitiesArray.map(item => ({
@@ -358,7 +358,7 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
         AND l.is_latest = 1
         AND e.is_latest = 1
       `;
-      const bindings: any[] = [current.entityId];
+      const bindings: (string | number)[] = [current.entityId];
 
       if (!includeDeleted) {
         sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';

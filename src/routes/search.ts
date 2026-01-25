@@ -4,6 +4,7 @@ import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../s
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { buildPropertyFilters, buildFilterExpression } from '../utils/property-filters.js';
+import { z } from 'zod';
 
 type Bindings = {
   DB: D1Database;
@@ -18,7 +19,7 @@ const search = new Hono<{ Bindings: Bindings }>();
  * Search for entities based on criteria
  */
 search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
-  const criteria = c.get('validated_json') as any;
+  const criteria = c.get('validated_json') as Record<string, unknown>;
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -27,7 +28,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
   try {
     // Build the WHERE clause dynamically based on criteria
     const whereClauses: string[] = ['e.is_latest = 1'];
-    const bindings: any[] = [];
+    const bindings: (string | number | boolean)[] = [];
 
     // Type filter
     if (criteria.type_id) {
@@ -148,7 +149,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
     }
 
     // Parse properties for each entity
-    const parsedEntities = entities.map((entity: any) => ({
+    const parsedEntities = entities.map((entity: Record<string, unknown>) => ({
       ...entity,
       properties: entity.properties ? JSON.parse(entity.properties) : {},
       is_deleted: Boolean(entity.is_deleted),
@@ -161,7 +162,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
     }));
 
     // Remove type fields from root level
-    const cleanedEntities = parsedEntities.map((entity: any) => {
+    const cleanedEntities = parsedEntities.map((entity: Record<string, unknown>) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { type_name, type_category, ...rest } = entity;
       return rest;
@@ -185,7 +186,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
  * Search for links based on criteria
  */
 search.post('/links', validateJson(searchLinksSchema), async (c) => {
-  const criteria = c.get('validated_json') as any;
+  const criteria = c.get('validated_json') as Record<string, unknown>;
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -194,7 +195,7 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
   try {
     // Build the WHERE clause dynamically based on criteria
     const whereClauses: string[] = ['l.is_latest = 1'];
-    const bindings: any[] = [];
+    const bindings: (string | number | boolean)[] = [];
 
     // Type filter
     if (criteria.type_id) {
@@ -337,7 +338,7 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
     }
 
     // Parse properties for each link and format response
-    const parsedLinks = links.map((link: any) => ({
+    const parsedLinks = links.map((link: Record<string, unknown>) => ({
       id: link.id,
       type_id: link.type_id,
       source_entity_id: link.source_entity_id,
@@ -386,7 +387,7 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
  * Type-ahead suggestions for entity properties
  */
 search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
-  const params = c.get('validated_query') as any;
+  const params = c.get('validated_query') as z.infer<typeof suggestionsSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -395,7 +396,7 @@ search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
   try {
     // Build the WHERE clause dynamically
     const whereClauses: string[] = ['e.is_latest = 1', 'e.is_deleted = 0'];
-    const bindings: any[] = [];
+    const bindings: (string | number)[] = [];
 
     // Type filter
     if (params.type_id) {
@@ -442,7 +443,7 @@ search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
     const results = await db.prepare(query).bind(...bindings).all();
 
     // Format the suggestions
-    const suggestions = results.results.map((row: any) => ({
+    const suggestions = results.results.map((row: Record<string, unknown>) => ({
       entity_id: row.id,
       type_id: row.type_id,
       type_name: row.type_name,

@@ -49,7 +49,7 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
 
     // Build entity query
     let entitySql = 'SELECT e.*, t.name as type_name FROM entities e LEFT JOIN types t ON e.type_id = t.id WHERE 1=1';
-    const entityBindings: any[] = [];
+    const entityBindings: (string | number)[] = [];
 
     // Only get latest versions unless include_versions is true
     if (!query.include_versions) {
@@ -84,7 +84,7 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
 
     // Execute entity query
     const { results: rawEntities } = await db.prepare(entitySql).bind(...entityBindings).all();
-    const entities = rawEntities.map((e: any) => ({
+    const entities = rawEntities.map((e: Record<string, unknown>) => ({
       id: e.id,
       type_id: e.type_id,
       type_name: e.type_name || undefined,
@@ -98,11 +98,11 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
     }));
 
     // Get all entity IDs for link filtering
-    const entityIds = new Set(entities.map((e: any) => e.id));
+    const entityIds = new Set(entities.map(e => e.id as string));
 
     // Build link query - only get links where both source and target are in the exported entities
     let linkSql = 'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
-    const linkBindings: any[] = [];
+    const linkBindings: (string | number)[] = [];
 
     // Only get latest versions unless include_versions is true
     if (!query.include_versions) {
@@ -130,7 +130,7 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
 
     // Execute link query
     const { results: rawLinks } = await db.prepare(linkSql).bind(...linkBindings).all();
-    const links = rawLinks.map((l: any) => ({
+    const links = rawLinks.map((l: Record<string, unknown>) => ({
       id: l.id,
       type_id: l.type_id,
       type_name: l.type_name || undefined,
@@ -147,18 +147,18 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async (c) => {
 
     // Get all used type IDs
     const usedTypeIds = new Set([
-      ...entities.map((e: any) => e.type_id),
-      ...links.map((l: any) => l.type_id),
+      ...entities.map(e => e.type_id as string),
+      ...links.map(l => l.type_id as string),
     ]);
 
     // Fetch used types
-    let types: any[] = [];
+    let types: Array<Record<string, unknown>> = [];
     if (usedTypeIds.size > 0) {
       const typePlaceholders = Array.from(usedTypeIds).map(() => '?').join(',');
       const { results: rawTypes } = await db.prepare(
         `SELECT * FROM types WHERE id IN (${typePlaceholders})`
       ).bind(...usedTypeIds).all();
-      types = rawTypes.map((t: any) => ({
+      types = rawTypes.map((t: Record<string, unknown>) => ({
         id: t.id,
         name: t.name,
         category: t.category,
