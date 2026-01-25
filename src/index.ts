@@ -260,12 +260,12 @@ app.onError((err, c) => {
     path: c.req.path,
     method: c.req.method,
     statusCode,
-    userId: c.get('user')?.id,
+    userId: c.get('user')?.user_id,
     userAgent: c.req.header('user-agent'),
     ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
   }, statusCode);
 
-  return c.json(errorResponse, statusCode);
+  return c.json(errorResponse, statusCode as any);
 });
 
 // Health check endpoint

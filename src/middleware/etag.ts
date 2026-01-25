@@ -50,11 +50,11 @@ function parseIfNoneMatch(header: string | undefined): string[] {
       // Remove quotes and weak indicator if present
       // Weak ETags look like: W/"abc123"
       // Strong ETags look like: "abc123"
-      const weakMatch = tag.match(/^W\/\"(.*)\"$/);
+      const weakMatch = tag.match(/^W\/"(.*)"$/);
       if (weakMatch) {
         return weakMatch[1];
       }
-      const strongMatch = tag.match(/^\"(.*)\"$/);
+      const strongMatch = tag.match(/^"(.*)"$/);
       if (strongMatch) {
         return strongMatch[1];
       }

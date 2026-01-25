@@ -15,7 +15,9 @@ export class AppError extends Error {
   ) {
     super(message);
     this.name = this.constructor.name;
-    Error.captureStackTrace(this, this.constructor);
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 
@@ -178,7 +180,7 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
       }
     );
 
-    return c.json(errorResponse, statusCode);
+    return c.json(errorResponse, statusCode as any);
   }
 };
 
@@ -186,7 +188,7 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
  * 404 Not Found handler
  * Should be added as the last route in the application
  */
-export const notFoundHandler: MiddlewareHandler = (c: Context) => {
+export const notFoundHandler = async (c: Context) => {
   return c.json(
     {
       error: 'Not Found',

@@ -39,7 +39,7 @@ function getCurrentTimestamp(): number {
 // Helper function to find the latest version of a link by any ID in its version chain
 async function findLatestVersion(db: D1Database, linkId: string): Promise<any> {
   // First, try direct match with is_latest
-  let link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
+  const link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
     .bind(linkId)
     .first();
 

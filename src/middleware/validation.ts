@@ -18,34 +18,29 @@ export function validate<T extends z.ZodTypeAny>(
   schema: T
 ): MiddlewareHandler {
   return async (c: Context, next) => {
-    try {
-      let data: unknown;
+    let data: unknown;
 
-      switch (target) {
-        case 'json':
-          data = await c.req.json();
-          break;
-        case 'query':
-          data = c.req.query();
-          break;
-        case 'param':
-          data = c.req.param();
-          break;
-        default:
-          throw new Error(`Unknown validation target: ${target}`);
-      }
-
-      // Validate and parse the data
-      const parsed = schema.parse(data);
-
-      // Store the validated data in the context for later use
-      c.set(`validated_${target}`, parsed);
-
-      await next();
-    } catch (error) {
-      // Re-throw all errors so they can be handled by the global error handler
-      throw error;
+    switch (target) {
+      case 'json':
+        data = await c.req.json();
+        break;
+      case 'query':
+        data = c.req.query();
+        break;
+      case 'param':
+        data = c.req.param();
+        break;
+      default:
+        throw new Error(`Unknown validation target: ${target}`);
     }
+
+    // Validate and parse the data
+    const parsed = schema.parse(data);
+
+    // Store the validated data in the context for later use
+    c.set(`validated_${target}`, parsed);
+
+    await next();
   };
 }
 

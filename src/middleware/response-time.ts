@@ -105,7 +105,7 @@ export function responseTime(config: ResponseTimeMiddlewareConfig = {}) {
 
     tracker.track({
       requestId: requestId ?? undefined,
-      userId: c.get('user')?.id,
+      userId: c.get('user')?.user_id,
       path: c.req.path,
       method: c.req.method,
       statusCode: c.res.status,

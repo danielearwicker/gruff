@@ -32,7 +32,7 @@ function getCurrentTimestamp(): number {
 
 // Helper function to find the latest version of an entity by any ID in its version chain
 async function findLatestEntityVersion(db: D1Database, entityId: string): Promise<any> {
-  let entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
+  const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
     .first();
 
@@ -55,7 +55,7 @@ async function findLatestEntityVersion(db: D1Database, entityId: string): Promis
 
 // Helper function to find the latest version of a link by any ID in its version chain
 async function findLatestLinkVersion(db: D1Database, linkId: string): Promise<any> {
-  let link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
+  const link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
     .bind(linkId)
     .first();
 

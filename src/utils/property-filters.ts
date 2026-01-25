@@ -86,7 +86,7 @@ export function parseJsonPath(path: string): ParsedJsonPath {
 
   // Validate the path only contains safe characters
   // Allow: alphanumeric, underscores, dots, square brackets, and digits inside brackets
-  if (!/^[a-zA-Z0-9_.\[\]]+$/.test(normalizedPath)) {
+  if (!/^[a-zA-Z0-9_.[\]]+$/.test(normalizedPath)) {
     return {
       isValid: false,
       sqlPath: '',

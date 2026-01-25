@@ -23,6 +23,9 @@ type Bindings = {
 declare module 'hono' {
   interface ContextVariableMap {
     user: JwtPayload;
+    validated_json: unknown;
+    validated_query: unknown;
+    validated_param: unknown;
   }
 }
 
@@ -30,7 +33,7 @@ declare module 'hono' {
  * Extract JWT token from Authorization header
  * Expects format: "Bearer <token>"
  */
-function extractBearerToken(authHeader: string | null): string | null {
+function extractBearerToken(authHeader: string | undefined): string | null {
   if (!authHeader) {
     return null;
   }

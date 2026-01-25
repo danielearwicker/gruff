@@ -1,5 +1,6 @@
 ---
-allowed-tools: Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git commit:*), Read(*), Write(*), Edit(*)
+allowed-tools: Bash(npm test:*), Bash(npm run test:*), Bash(npm run lint:*), Bash(npm run format:*), Bash(npm run dev:*), Bash(tsc:*), Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git push:*), Read(*), Write(*), Edit(*)
+
 description: Carries out development according to the specification
 ---
 
@@ -18,7 +19,11 @@ Having chosen a feature to implement, you should read around related areas of th
 
 ## Testing
 
-In additional, to preserve the robustness of the product, you should refer to `TESTING.md`. Extend the test to cover your newly implemented feature, and let
+In addition, to preserve the robustness of the product, you should refer to `TESTING.md`. Extend the test to cover your newly implemented feature and be sure to run the tests.
+
+## Hygiene
+
+Check for TS type errors and lint errors and make sure these are fixed.
 
 ## What to do if there's nothing to do!
 

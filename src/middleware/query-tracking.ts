@@ -125,7 +125,7 @@ export function queryTracking(config: QueryTrackingMiddlewareConfig = {}): Middl
 
     // Get request context for tracking
     const requestId = getRequestId(c) ?? undefined;
-    const userId = c.get('user')?.id;
+    const userId = c.get('user')?.user_id;
 
     // Create tracked database wrapper
     const trackedDb = createTrackedD1(c.env.DB, tracker, {
@@ -162,7 +162,7 @@ export function createContextTrackedDb(
   }
 
   const requestId = getRequestId(c) ?? undefined;
-  const userId = c.get('user')?.id;
+  const userId = c.get('user')?.user_id;
 
   return createTrackedD1(c.env.DB, tracker, {
     requestId,
