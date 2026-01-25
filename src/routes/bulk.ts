@@ -31,7 +31,7 @@ function getCurrentTimestamp(): number {
 }
 
 // Helper function to find the latest version of an entity by any ID in its version chain
-async function findLatestEntityVersion(db: D1Database, entityId: string): Promise<any> {
+async function findLatestEntityVersion(db: D1Database, entityId: string): Promise<Record<string, unknown> | null> {
   const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
     .first();
@@ -54,7 +54,7 @@ async function findLatestEntityVersion(db: D1Database, entityId: string): Promis
 }
 
 // Helper function to find the latest version of a link by any ID in its version chain
-async function findLatestLinkVersion(db: D1Database, linkId: string): Promise<any> {
+async function findLatestLinkVersion(db: D1Database, linkId: string): Promise<Record<string, unknown> | null> {
   const link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
     .bind(linkId)
     .first();
@@ -99,8 +99,8 @@ bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async (c) => {
     const { results: existingTypes } = await db.prepare(
       `SELECT id, json_schema FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'entity'`
     ).bind(...typeIds).all();
-    const validTypeIds = new Set(existingTypes.map((t: any) => t.id));
-    const typeSchemas = new Map(existingTypes.map((t: any) => [t.id, t.json_schema as string | null]));
+    const validTypeIds = new Set(existingTypes.map((t: Record<string, unknown>) => t.id));
+    const typeSchemas = new Map(existingTypes.map((t: Record<string, unknown>) => [t.id, t.json_schema as string | null]));
 
     // Process each entity
     for (let i = 0; i < data.entities.length; i++) {
@@ -221,8 +221,8 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async (c) => {
     const { results: existingTypes } = await db.prepare(
       `SELECT id, json_schema FROM types WHERE id IN (${typeCheckPlaceholders}) AND category = 'link'`
     ).bind(...typeIds).all();
-    const validTypeIds = new Set(existingTypes.map((t: any) => t.id));
-    const typeSchemas = new Map(existingTypes.map((t: any) => [t.id, t.json_schema as string | null]));
+    const validTypeIds = new Set(existingTypes.map((t: Record<string, unknown>) => t.id));
+    const typeSchemas = new Map(existingTypes.map((t: Record<string, unknown>) => [t.id, t.json_schema as string | null]));
 
     // Validate all source and target entities exist
     const allEntityIds = [...new Set([
@@ -233,7 +233,7 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async (c) => {
     const { results: existingEntities } = await db.prepare(
       `SELECT id FROM entities WHERE id IN (${entityCheckPlaceholders}) AND is_latest = 1 AND is_deleted = 0`
     ).bind(...allEntityIds).all();
-    const validEntityIds = new Set(existingEntities.map((e: any) => e.id));
+    const validEntityIds = new Set(existingEntities.map((e: Record<string, unknown>) => e.id));
 
     // Process each link
     for (let i = 0; i < data.links.length; i++) {
@@ -373,7 +373,7 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async (c) => {
 
   try {
     // First, fetch all current versions and collect type IDs
-    const currentVersions: Map<string, any> = new Map();
+    const currentVersions: Map<string, Record<string, unknown>> = new Map();
     const typeIdsToFetch: Set<string> = new Set();
 
     for (let i = 0; i < data.entities.length; i++) {
@@ -530,7 +530,7 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async (c) => {
 
   try {
     // First, fetch all current versions and collect type IDs
-    const currentVersions: Map<string, any> = new Map();
+    const currentVersions: Map<string, Record<string, unknown>> = new Map();
     const typeIdsToFetch: Set<string> = new Set();
 
     for (let i = 0; i < data.links.length; i++) {

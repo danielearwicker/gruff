@@ -7,7 +7,7 @@
 /**
  * Standard API response structure
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -26,7 +26,7 @@ export interface ResponseMetadata {
   total?: number;
   hasMore?: boolean;
   cursor?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -65,7 +65,7 @@ export function success<T>(data: T, message?: string, metadata?: ResponseMetadat
 export function error(
   message: string,
   code: string = 'ERROR',
-  details?: any
+  details?: unknown
 ): ApiResponse {
   const response: ApiResponse = {
     success: false,
@@ -168,7 +168,7 @@ export function notFound(resource: string = 'Resource'): ApiResponse {
 /**
  * Validation error (400)
  */
-export function validationError(details: any): ApiResponse {
+export function validationError(details: unknown): ApiResponse {
   return error('Validation failed', 'VALIDATION_ERROR', details);
 }
 

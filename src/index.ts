@@ -12,7 +12,7 @@ import {
 import { etag } from './middleware/etag.js';
 import { responseTime } from './middleware/response-time.js';
 import { queryTracking } from './middleware/query-tracking.js';
-import { createEntitySchema, entityQuerySchema } from './schemas/index.js';
+import { createEntitySchema, entityQuerySchema, CreateEntity, EntityQuery } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
 import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
@@ -199,7 +199,7 @@ app.onError((err, c) => {
   };
 
   // Handle Zod validation errors
-  if (err instanceof ZodError || (err as any)?.name === 'ZodError') {
+  if (err instanceof ZodError || (err as Error & { name?: string })?.name === 'ZodError') {
     const zodError = err as ZodError;
     statusCode = 400;
     errorResponse = {
@@ -264,7 +264,7 @@ app.onError((err, c) => {
     ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
   }, statusCode);
 
-  return c.json(errorResponse, statusCode as any);
+  return c.json(errorResponse, statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503);
 });
 
 // Health check endpoint
@@ -286,9 +286,9 @@ app.get('/health', async (c) => {
       context: {
         // The colo (data center) where the request is being processed
         // This is available via cf object in production but not in local dev
-        colo: (c.req.raw as any).cf?.colo || 'local',
+        colo: (c.req.raw as Request & { cf?: { colo?: string } }).cf?.colo || 'local',
         // Country of request origin
-        country: (c.req.raw as any).cf?.country || 'unknown',
+        country: (c.req.raw as Request & { cf?: { country?: string } }).cf?.country || 'unknown',
       },
       // Runtime capabilities
       capabilities: {
@@ -414,7 +414,7 @@ app.route('/docs', docsRouter);
 
 // Validation demo endpoint - validates JSON body
 app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as CreateEntity;
   return c.json({
     success: true,
     message: 'Entity schema validation passed',
@@ -424,7 +424,7 @@ app.post('/api/validate/entity', validateJson(createEntitySchema), (c) => {
 
 // Validation demo endpoint - validates query parameters
 app.get('/api/validate/query', validateQuery(entityQuerySchema), (c) => {
-  const validated = c.get('validated_query') as any;
+  const validated = c.get('validated_query') as EntityQuery;
   return c.json({
     success: true,
     message: 'Query parameters validation passed',
@@ -440,7 +440,7 @@ const testSchema = z.object({
 });
 
 app.post('/api/validate/test', validateJson(testSchema), (c) => {
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as z.infer<typeof testSchema>;
   return c.json({
     success: true,
     message: 'Custom validation passed',

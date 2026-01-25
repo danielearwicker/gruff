@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createTypeSchema, updateTypeSchema, typeQuerySchema } from '../schemas/index.js';
+import { createTypeSchema, updateTypeSchema, typeQuerySchema, CreateType, UpdateType, TypeQuery } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
@@ -40,7 +40,7 @@ function getCurrentTimestamp(): number {
  * Create a new type
  */
 types.post('/', validateJson(createTypeSchema), async (c) => {
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as CreateType;
   const db = c.env.DB;
 
   const id = generateUUID();
@@ -113,7 +113,7 @@ types.post('/', validateJson(createTypeSchema), async (c) => {
  * for the most common case.
  */
 types.get('/', validateQuery(typeQuerySchema), async (c) => {
-  const query = c.get('validated_query') as any;
+  const query = c.get('validated_query') as TypeQuery;
   const db = c.env.DB;
   const kv = c.env.KV;
 
@@ -132,7 +132,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
     }
 
     let sql = 'SELECT * FROM types WHERE 1=1';
-    const bindings: any[] = [];
+    const bindings: unknown[] = [];
 
     // Apply filters
     if (query.category) {
@@ -322,7 +322,7 @@ types.get('/:id', async (c) => {
  */
 types.put('/:id', validateJson(updateTypeSchema), async (c) => {
   const id = c.req.param('id');
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as UpdateType;
   const db = c.env.DB;
 
   try {
@@ -337,7 +337,7 @@ types.put('/:id', validateJson(updateTypeSchema), async (c) => {
 
     // Build update query dynamically based on provided fields
     const updates: string[] = [];
-    const bindings: any[] = [];
+    const bindings: unknown[] = [];
 
     if (data.name !== undefined) {
       // Check if new name already exists (for different type)

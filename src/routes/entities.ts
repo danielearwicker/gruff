@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createEntitySchema, updateEntitySchema, entityQuerySchema } from '../schemas/index.js';
+import { createEntitySchema, updateEntitySchema, entityQuerySchema, CreateEntity, UpdateEntity, EntityQuery } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -37,7 +37,7 @@ function getCurrentTimestamp(): number {
 }
 
 // Helper function to find the latest version of an entity by any ID in its version chain
-async function findLatestVersion(db: D1Database, entityId: string): Promise<any> {
+async function findLatestVersion(db: D1Database, entityId: string): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
   const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
     .bind(entityId)
@@ -69,7 +69,7 @@ async function findLatestVersion(db: D1Database, entityId: string): Promise<any>
  * Create a new entity
  */
 entities.post('/', validateJson(createEntitySchema), async (c) => {
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as CreateEntity;
   const db = c.env.DB;
 
   const id = generateUUID();
@@ -156,12 +156,12 @@ entities.post('/', validateJson(createEntitySchema), async (c) => {
  * List entities with optional filtering and cursor-based pagination
  */
 entities.get('/', validateQuery(entityQuerySchema), async (c) => {
-  const query = c.get('validated_query') as any;
+  const query = c.get('validated_query') as EntityQuery;
   const db = c.env.DB;
 
   try {
     let sql = 'SELECT * FROM entities WHERE is_latest = 1';
-    const bindings: any[] = [];
+    const bindings: unknown[] = [];
 
     // Apply filters
     if (!query.include_deleted) {
@@ -301,7 +301,7 @@ entities.get('/:id', async (c) => {
   try {
     // Try to get from cache first
     const cacheKey = getEntityCacheKey(id);
-    const cached = await getCache<any>(kv, cacheKey);
+    const cached = await getCache<Record<string, unknown>>(kv, cacheKey);
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
@@ -379,7 +379,7 @@ entities.get('/:id', async (c) => {
  */
 entities.put('/:id', validateJson(updateEntitySchema), async (c) => {
   const id = c.req.param('id');
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as UpdateEntity;
   const db = c.env.DB;
   const now = getCurrentTimestamp();
   const systemUserId = 'test-user-001';
@@ -862,11 +862,15 @@ entities.get('/:id/history', async (c) => {
 /**
  * Helper function to calculate differences between two JSON objects
  */
-function calculateDiff(oldObj: any, newObj: any): any {
-  const diff: any = {
-    added: {} as any,
-    removed: {} as any,
-    changed: {} as any,
+function calculateDiff(oldObj: Record<string, unknown>, newObj: Record<string, unknown>): {
+  added: Record<string, unknown>;
+  removed: Record<string, unknown>;
+  changed: Record<string, unknown>;
+} {
+  const diff = {
+    added: {} as Record<string, unknown>,
+    removed: {} as Record<string, unknown>,
+    changed: {} as Record<string, unknown>,
   };
 
   // Check for added and changed properties
@@ -920,7 +924,7 @@ entities.get('/:id/outbound', async (c) => {
       AND l.is_latest = 1
       AND e.is_latest = 1
     `;
-    const bindings: any[] = [entity.id];
+    const bindings: unknown[] = [entity.id];
 
     // Filter out deleted links and entities by default
     if (!includeDeleted) {
@@ -993,7 +997,7 @@ entities.get('/:id/inbound', async (c) => {
       AND l.is_latest = 1
       AND e.is_latest = 1
     `;
-    const bindings: any[] = [entity.id];
+    const bindings: unknown[] = [entity.id];
 
     // Filter out deleted links and entities by default
     if (!includeDeleted) {
@@ -1059,7 +1063,7 @@ entities.get('/:id/neighbors', async (c) => {
       return c.json(response.notFound('Entity'), 404);
     }
 
-    const neighbors: any[] = [];
+    const neighbors: Record<string, unknown>[] = [];
 
     // Fetch outbound neighbors (entities this entity links to)
     if (!direction || direction === 'outbound') {
@@ -1083,7 +1087,7 @@ entities.get('/:id/neighbors', async (c) => {
         AND l.is_latest = 1
         AND e.is_latest = 1
       `;
-      const outboundBindings: any[] = [entity.id];
+      const outboundBindings: unknown[] = [entity.id];
 
       if (!includeDeleted) {
         outboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
@@ -1128,7 +1132,7 @@ entities.get('/:id/neighbors', async (c) => {
         AND l.is_latest = 1
         AND e.is_latest = 1
       `;
-      const inboundBindings: any[] = [entity.id];
+      const inboundBindings: unknown[] = [entity.id];
 
       if (!includeDeleted) {
         inboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';

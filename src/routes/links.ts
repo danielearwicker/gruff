@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { createLinkSchema, updateLinkSchema, linkQuerySchema } from '../schemas/index.js';
+import { createLinkSchema, updateLinkSchema, linkQuerySchema, CreateLink, UpdateLink, LinkQuery } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -37,7 +37,7 @@ function getCurrentTimestamp(): number {
 }
 
 // Helper function to find the latest version of a link by any ID in its version chain
-async function findLatestVersion(db: D1Database, linkId: string): Promise<any> {
+async function findLatestVersion(db: D1Database, linkId: string): Promise<Record<string, unknown> | null> {
   // First, try direct match with is_latest
   const link = await db.prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
     .bind(linkId)
@@ -69,7 +69,7 @@ async function findLatestVersion(db: D1Database, linkId: string): Promise<any> {
  * Create a new link
  */
 links.post('/', validateJson(createLinkSchema), async (c) => {
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as CreateLink;
   const db = c.env.DB;
 
   const id = generateUUID();
@@ -177,12 +177,12 @@ links.post('/', validateJson(createLinkSchema), async (c) => {
  * List links with optional filtering and cursor-based pagination
  */
 links.get('/', validateQuery(linkQuerySchema), async (c) => {
-  const query = c.get('validated_query') as any;
+  const query = c.get('validated_query') as LinkQuery;
   const db = c.env.DB;
 
   try {
     let sql = 'SELECT * FROM links WHERE is_latest = 1';
-    const bindings: any[] = [];
+    const bindings: unknown[] = [];
 
     // Apply filters
     if (!query.include_deleted) {
@@ -410,7 +410,7 @@ links.get('/:id', async (c) => {
  */
 links.put('/:id', validateJson(updateLinkSchema), async (c) => {
   const id = c.req.param('id');
-  const data = c.get('validated_json') as any;
+  const data = c.get('validated_json') as UpdateLink;
   const db = c.env.DB;
   const now = getCurrentTimestamp();
   const systemUserId = 'test-user-001';
@@ -904,11 +904,15 @@ links.get('/:id/history', async (c) => {
 /**
  * Helper function to calculate differences between two JSON objects
  */
-function calculateDiff(oldObj: any, newObj: any): any {
-  const diff: any = {
-    added: {} as any,
-    removed: {} as any,
-    changed: {} as any,
+function calculateDiff(oldObj: Record<string, unknown>, newObj: Record<string, unknown>): {
+  added: Record<string, unknown>;
+  removed: Record<string, unknown>;
+  changed: Record<string, unknown>;
+} {
+  const diff = {
+    added: {} as Record<string, unknown>,
+    removed: {} as Record<string, unknown>,
+    changed: {} as Record<string, unknown>,
   };
 
   // Check for added and changed properties
