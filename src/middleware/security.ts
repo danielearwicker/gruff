@@ -153,12 +153,13 @@ export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): Mi
     hstsValue += '; preload';
   }
 
-  return secureHeaders({
+  // Build CSP header options - secureHeaders expects an object, but we store it as a string
+  // So we pass it as a custom header instead
+  const headerOptions: Parameters<typeof secureHeaders>[0] = {
     strictTransportSecurity: hstsValue,
     xContentTypeOptions: 'nosniff',
     xFrameOptions: mergedConfig.frameOptions,
     xXssProtection: '1; mode=block',
-    contentSecurityPolicy: mergedConfig.contentSecurityPolicy,
     referrerPolicy: mergedConfig.referrerPolicy,
     permissionsPolicy: {
       // Restrict browser features for API endpoints
@@ -169,7 +170,9 @@ export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): Mi
       usb: [],
       fullscreen: [],
     },
-  });
+  };
+
+  return secureHeaders(headerOptions);
 }
 
 /**

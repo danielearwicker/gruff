@@ -146,7 +146,7 @@ async function verifyToken(
     const isValid = await crypto.subtle.verify(
       'HMAC',
       signingKey,
-      signature.buffer,
+      signature.buffer as ArrayBuffer,
       encoder.encode(data)
     );
 

@@ -31,12 +31,27 @@ export default [
     },
   },
   {
+    files: ['test/**/*.ts', 'test/**/*.js'],
+    languageOptions: {
+      globals: {
+        // Test environment globals
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
+  {
     ignores: [
       'node_modules/',
       'dist/',
       '.wrangler/',
       'coverage/',
       'eslint.config.js',
+      'test-runner.js',
+      'monitor-claude.ts',
     ],
   },
 ];

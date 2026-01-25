@@ -15,7 +15,7 @@ export class AppError extends Error {
   ) {
     super(message);
     this.name = this.constructor.name;
-    if (Error.captureStackTrace) {
+    if ('captureStackTrace' in Error && typeof Error.captureStackTrace === 'function') {
       Error.captureStackTrace(this, this.constructor);
     }
   }

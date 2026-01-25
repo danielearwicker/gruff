@@ -74,7 +74,7 @@ export function getGeneratedColumnName(tableName: TableName, jsonPath: string): 
     return null;
   }
 
-  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns];
+  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as { columnName: string; dataType: string } | undefined;
   return mapping ? mapping.columnName : null;
 }
 
@@ -96,7 +96,7 @@ export function getGeneratedColumnDataType(tableName: TableName, jsonPath: strin
     return null;
   }
 
-  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns];
+  const mapping = tableColumns[normalizedPath as keyof typeof tableColumns] as { columnName: string; dataType: string } | undefined;
   return mapping ? mapping.dataType : null;
 }
 

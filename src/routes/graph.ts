@@ -18,7 +18,7 @@ const shortestPathSchema = z.object({
   to: z.string().uuid('Target entity ID must be a valid UUID'),
   type_id: z.string().uuid('Link type ID must be a valid UUID').optional(),
   include_deleted: z.enum(['true', 'false']).optional().default('false'),
-  max_depth: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(10)).optional().default('10'),
+  max_depth: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(10)).optional().default(10),
 });
 
 // Schema for multi-hop traversal request body
@@ -277,7 +277,7 @@ graph.post('/traverse', async (c) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json(
-        response.error('Validation error', 'VALIDATION_ERROR', error.errors),
+        response.error('Validation error', 'VALIDATION_ERROR', error.issues),
         400
       );
     }
@@ -403,6 +403,9 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
                 }
               }
 
+              if (!entity) {
+                throw new Error('Entity not found in path');
+              }
               return {
                 entity: {
                   id: entity.id,

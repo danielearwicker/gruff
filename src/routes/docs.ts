@@ -26,32 +26,10 @@ docs.get('/openapi.yaml', (c) => {
 docs.get(
   '/',
   apiReference({
-    pageTitle: 'Gruff API Documentation',
     spec: {
       url: '/docs/openapi.json',
     },
-    theme: 'default',
-    layout: 'modern',
-    darkMode: true,
-    hideModels: false,
-    hideDownloadButton: false,
-    showSidebar: true,
-    customCss: `
-      .darklight-reference {
-        --scalar-background-1: #1a1a2e;
-        --scalar-background-2: #16213e;
-        --scalar-background-3: #0f3460;
-        --scalar-color-1: #ffffff;
-        --scalar-color-2: #e4e4e7;
-        --scalar-color-3: #a1a1aa;
-        --scalar-color-accent: #60a5fa;
-      }
-    `,
-    metaData: {
-      title: 'Gruff API Documentation',
-      description: 'Entity-Relationship Graph Database with Versioning API',
-    },
-  })
+  } as any)
 );
 
 // Simple JSON to YAML converter (basic implementation)

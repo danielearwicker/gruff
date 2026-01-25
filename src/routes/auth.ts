@@ -176,7 +176,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
 
     // Check if account is active
     if (!user.is_active) {
-      logger.warn('Login attempt for inactive account', { email, userId: user.id });
+      logger.warn('Login attempt for inactive account', { email, userId: String(user.id) });
       return c.json(
         response.error('Account is not active', 'ACCOUNT_INACTIVE'),
         401
@@ -184,7 +184,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
     }
 
     // Verify this is a local account with password
-    if (user.provider !== 'local' || !user.password_hash) {
+    if (user.provider !== 'local' || typeof user.password_hash !== 'string') {
       logger.warn('Login attempt for non-local account', { email, provider: user.provider });
       return c.json(
         response.error('This account uses a different authentication method', 'INVALID_AUTH_METHOD'),
@@ -194,7 +194,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
 
     // Verify password using imported function
     const { verifyPassword } = await import('../utils/password.js');
-    const isValidPassword = await verifyPassword(password, user.password_hash as string);
+    const isValidPassword = await verifyPassword(password, user.password_hash);
 
     if (!isValidPassword) {
       logger.warn('Login attempt with incorrect password', { email });
@@ -204,7 +204,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
       );
     }
 
-    logger.info('User login successful', { userId: user.id, email });
+    logger.info('User login successful', { userId: String(user.id), email });
 
     // Get JWT secret from environment
     const jwtSecret = c.env.JWT_SECRET;
@@ -217,12 +217,13 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
     }
 
     // Generate access and refresh tokens
-    const tokens = await createTokenPair(user.id as string, email, jwtSecret);
+    const userId = String(user.id);
+    const tokens = await createTokenPair(userId, email, jwtSecret);
 
     // Store refresh token in KV
-    await storeRefreshToken(c.env.KV, user.id as string, email, tokens.refreshToken);
+    await storeRefreshToken(c.env.KV, userId, email, tokens.refreshToken);
 
-    logger.info('Tokens created and stored for login', { userId: user.id });
+    logger.info('Tokens created and stored for login', { userId });
 
     // Return success response with tokens
     return c.json(
@@ -633,11 +634,12 @@ authRouter.get('/google/callback', async (c) => {
       // User exists - check if it's already a Google account
       if (existingUser.provider === 'google') {
         // Same provider, just log them in
-        logger.info('Existing Google user logging in', { userId: existingUser.id });
+        logger.info('Existing Google user logging in', { userId: String(existingUser.id) });
       } else {
         // Different provider - link Google account to existing user
+        const existingUserId = String(existingUser.id);
         logger.info('Linking Google account to existing user', {
-          userId: existingUser.id,
+          userId: existingUserId,
           existingProvider: existingUser.provider,
         });
 
@@ -645,12 +647,12 @@ authRouter.get('/google/callback', async (c) => {
         await c.env.DB.prepare(
           `UPDATE users SET provider = 'google', provider_id = ?, updated_at = ? WHERE id = ?`
         )
-          .bind(googleProfile.id, now, existingUser.id)
+          .bind(googleProfile.id, now, existingUserId)
           .run();
       }
 
-      userId = existingUser.id as string;
-      displayName = existingUser.display_name as string | null;
+      userId = String(existingUser.id);
+      displayName = existingUser.display_name ? String(existingUser.display_name) : null;
       createdAt = existingUser.created_at as number;
       updatedAt = Math.floor(Date.now() / 1000);
 
@@ -917,11 +919,12 @@ authRouter.get('/github/callback', async (c) => {
       // User exists - check if it's already a GitHub account
       if (existingUser.provider === 'github') {
         // Same provider, just log them in
-        logger.info('Existing GitHub user logging in', { userId: existingUser.id });
+        logger.info('Existing GitHub user logging in', { userId: String(existingUser.id) });
       } else {
         // Different provider - link GitHub account to existing user
+        const existingUserId = String(existingUser.id);
         logger.info('Linking GitHub account to existing user', {
-          userId: existingUser.id,
+          userId: existingUserId,
           existingProvider: existingUser.provider,
         });
 
@@ -929,12 +932,12 @@ authRouter.get('/github/callback', async (c) => {
         await c.env.DB.prepare(
           `UPDATE users SET provider = 'github', provider_id = ?, updated_at = ? WHERE id = ?`
         )
-          .bind(String(githubProfile.id), now, existingUser.id)
+          .bind(String(githubProfile.id), now, existingUserId)
           .run();
       }
 
-      userId = existingUser.id as string;
-      displayName = existingUser.display_name as string | null;
+      userId = String(existingUser.id);
+      displayName = existingUser.display_name ? String(existingUser.display_name) : null;
       createdAt = existingUser.created_at as number;
       updatedAt = Math.floor(Date.now() / 1000);
 

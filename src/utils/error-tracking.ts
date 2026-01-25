@@ -218,7 +218,8 @@ export class ErrorTracker {
    * Logs the error and writes to Analytics Engine if available
    */
   track(error: Error | unknown, context: ErrorContext = {}, statusCode?: number): TrackedError {
-    const { category, severity } = this.config.categorizer(error, statusCode);
+    const errorObj = error instanceof Error ? error : new Error(String(error));
+    const { category, severity } = this.config.categorizer(errorObj, statusCode);
 
     // Redact sensitive data from error message
     const errorMessage =
