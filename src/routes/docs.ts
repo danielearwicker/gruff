@@ -26,6 +26,7 @@ docs.get('/openapi.yaml', () => {
 docs.get(
   '/',
   apiReference({
+    pageTitle: 'Gruff API Documentation',
     spec: {
       url: '/docs/openapi.json',
     },

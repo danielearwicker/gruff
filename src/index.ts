@@ -108,22 +108,27 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Security middleware - environment-aware configuration
-// In production: strict security headers and CORS
-// In development: relaxed settings for local testing
+// CORS middleware - apply with environment-aware configuration
+// This handles OPTIONS preflight requests automatically
 app.use('*', async (c, next) => {
   const isDevelopment = c.env?.ENVIRONMENT === 'development' || !c.env?.ENVIRONMENT;
   const securityConfig = isDevelopment
     ? getDevelopmentSecurityConfig()
     : getProductionSecurityConfig(c.env?.ALLOWED_ORIGINS?.split(',') || ['*']);
 
-  // Apply CORS middleware
   const corsMiddleware = createCorsMiddleware(securityConfig);
-  await corsMiddleware(c, async () => {});
+  return await corsMiddleware(c, next);
+});
 
-  // Apply security headers middleware
+// Security headers middleware - apply after CORS
+app.use('*', async (c, next) => {
+  const isDevelopment = c.env?.ENVIRONMENT === 'development' || !c.env?.ENVIRONMENT;
+  const securityConfig = isDevelopment
+    ? getDevelopmentSecurityConfig()
+    : getProductionSecurityConfig(c.env?.ALLOWED_ORIGINS?.split(',') || ['*']);
+
   const headersMiddleware = createSecurityHeadersMiddleware(securityConfig);
-  await headersMiddleware(c, next);
+  return await headersMiddleware(c, next);
 });
 
 // Response time tracking middleware - tracks all requests for performance analysis

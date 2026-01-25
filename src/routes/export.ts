@@ -120,26 +120,58 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
     }
 
     // Only include links where both entities are in the export
+    // To avoid exceeding SQLite's bind parameter limit (999), we need to be careful
+    // when we have many entities. Split into batches if needed.
+    let rawLinks: Record<string, unknown>[] = [];
+
     if (entityIds.size > 0) {
-      const entityIdPlaceholders = Array.from(entityIds)
-        .map(() => '?')
-        .join(',');
-      linkSql += ` AND l.source_entity_id IN (${entityIdPlaceholders}) AND l.target_entity_id IN (${entityIdPlaceholders})`;
-      linkBindings.push(...entityIds, ...entityIds);
-    } else {
-      // No entities, so no links to include
-      linkSql += ' AND 1=0';
+      const entityIdArray = Array.from(entityIds);
+      // SQLite has a limit of 999 bind parameters per statement
+      // Since we need to bind entity IDs twice (for source and target),
+      // we batch by 400 entities per query to stay well under the limit
+      const batchSize = 400;
+      const batches = Math.ceil(entityIdArray.length / batchSize);
+
+      for (let b = 0; b < batches; b++) {
+        const start = b * batchSize;
+        const end = Math.min(start + batchSize, entityIdArray.length);
+        const batchIds = entityIdArray.slice(start, end);
+        const batchPlaceholders = batchIds.map(() => '?').join(',');
+
+        let batchSql =
+          'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
+        const batchBindings: (string | number)[] = [];
+
+        // Only get latest versions unless include_versions is true
+        if (!query.include_versions) {
+          batchSql += ' AND l.is_latest = 1';
+        }
+
+        // Filter by deleted status
+        if (!query.include_deleted) {
+          batchSql += ' AND l.is_deleted = 0';
+        }
+
+        // Include links where both entities are in this batch
+        batchSql += ` AND l.source_entity_id IN (${batchPlaceholders}) AND l.target_entity_id IN (${batchPlaceholders})`;
+        batchBindings.push(...batchIds, ...batchIds);
+
+        batchSql += ' ORDER BY l.created_at DESC';
+
+        const { results: batchResults } = await db
+          .prepare(batchSql)
+          .bind(...batchBindings)
+          .all();
+        rawLinks = rawLinks.concat(batchResults as Record<string, unknown>[]);
+      }
+
+      // Remove duplicates and apply limit
+      const uniqueLinks = new Map();
+      for (const link of rawLinks) {
+        uniqueLinks.set(link.id, link);
+      }
+      rawLinks = Array.from(uniqueLinks.values()).slice(0, query.limit);
     }
-
-    // Apply limit
-    linkSql += ' ORDER BY l.created_at DESC LIMIT ?';
-    linkBindings.push(query.limit);
-
-    // Execute link query
-    const { results: rawLinks } = await db
-      .prepare(linkSql)
-      .bind(...linkBindings)
-      .all();
     const links = rawLinks.map((l: Record<string, unknown>) => ({
       id: l.id,
       type_id: l.type_id,
@@ -161,25 +193,39 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
       ...links.map(l => l.type_id as string),
     ]);
 
-    // Fetch used types
+    // Fetch used types with batching to avoid exceeding SQLite bind parameter limit
     let types: Array<Record<string, unknown>> = [];
     if (usedTypeIds.size > 0) {
-      const typePlaceholders = Array.from(usedTypeIds)
-        .map(() => '?')
-        .join(',');
-      const { results: rawTypes } = await db
-        .prepare(`SELECT * FROM types WHERE id IN (${typePlaceholders})`)
-        .bind(...usedTypeIds)
-        .all();
-      types = rawTypes.map((t: Record<string, unknown>) => ({
-        id: t.id,
-        name: t.name,
-        category: t.category,
-        description: t.description,
-        json_schema: t.json_schema,
-        created_at: t.created_at,
-        created_by: t.created_by,
-      }));
+      const typeIdArray = Array.from(usedTypeIds);
+      // Batch by 400 to stay well under SQLite's 999 bind parameter limit
+      const batchSize = 400;
+      const batches = Math.ceil(typeIdArray.length / batchSize);
+
+      const typeMap = new Map<string, Record<string, unknown>>();
+      for (let b = 0; b < batches; b++) {
+        const start = b * batchSize;
+        const end = Math.min(start + batchSize, typeIdArray.length);
+        const batchIds = typeIdArray.slice(start, end);
+        const batchPlaceholders = batchIds.map(() => '?').join(',');
+
+        const { results: rawTypes } = await db
+          .prepare(`SELECT * FROM types WHERE id IN (${batchPlaceholders})`)
+          .bind(...batchIds)
+          .all();
+
+        for (const t of rawTypes as Record<string, unknown>[]) {
+          typeMap.set(t.id as string, {
+            id: t.id,
+            name: t.name,
+            category: t.category,
+            description: t.description,
+            json_schema: t.json_schema,
+            created_at: t.created_at,
+            created_by: t.created_by,
+          });
+        }
+      }
+      types = Array.from(typeMap.values());
     }
 
     const exportData = {

@@ -177,7 +177,12 @@ export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): Mi
     },
   };
 
-  return secureHeaders(headerOptions);
+  return async (c, next) => {
+    // Apply the standard secure headers
+    await secureHeaders(headerOptions)(c, next);
+    // Add custom CSP header since secureHeaders doesn't support CSP configuration
+    c.header('Content-Security-Policy', mergedConfig.contentSecurityPolicy);
+  };
 }
 
 /**

@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(npm format:*), Bash(npm test:*), Bash(npm run test:*), Bash(npm run lint:*), Bash(npm run format:*), Bash(npm run dev:*), Bash(tsc:*), Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git push:*), Read(*), Write(*), Edit(*)
+allowed-tools: Bash(npm format:*), Bash(npm test:*), Bash(npm run test:*), Bash(npm run lint:*), Bash(npm run format:*), Bash(npm run dev:*), Bash(npx tsc:*), Bash(npm install:*), Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git push:*), Read(*), Write(*), Edit(*)
 description: Carries out development according to the specification
 ---
 
@@ -18,13 +18,16 @@ Having chosen a feature to implement, you should read around related areas of th
 
 ## Testing
 
-In addition, to preserve the robustness of the product, you should refer to `TESTING.md`. Extend the test to cover your newly implemented feature and be sure to run the tests.
+In addition, to preserve the robustness of the product, refer to `TESTING.md`. Extend the tests to cover your newly implemented feature. You **MUST** run the tests and address any discrepancies:
+
+- To run the unit tests: `npm test:unit`
+- To run the integration tests: `npm test`
 
 ## Hygiene
 
-Check for TS type errors and lint errors and make sure these are fixed.
+You **MUST** check for TS type errors (`npx tsc`) and lint errors (`npm run lint`) and make sure these are fixed,
 
-Run `npm run format:check` to ensure the code is correctly formatted with prettier, or just run `npm run format` to reformat it. This is essentially because the CI pipeline runs the check, so a commit that is not formatted correctly is entirely invalid.
+You **MUST** run `npm run format:check` to ensure the code is correctly formatted with prettier, or just run `npm run format` to reformat it. This is essentially because the CI pipeline runs the check, so a commit that is not formatted correctly is entirely invalid.
 
 ## What to do if there's nothing to do!
 
