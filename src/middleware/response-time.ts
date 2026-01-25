@@ -100,7 +100,7 @@ export function responseTime(config: ResponseTimeMiddlewareConfig = {}) {
 
     // Extract request details for tracking
     const requestId = getRequestId(c);
-    const cfData = (c.req.raw as any).cf;
+    const cfData = (c.req.raw as { cf?: { colo?: string; country?: string } }).cf;
 
     tracker.track({
       requestId: requestId ?? undefined,

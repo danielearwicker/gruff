@@ -231,7 +231,7 @@ export class ErrorTracker {
       stack: error instanceof Error ? this.sanitizeStack(error.stack) : undefined,
       category,
       severity,
-      code: (error as any)?.code,
+      code: (error as Error & { code?: string })?.code,
       context: {
         ...context,
         statusCode: statusCode ?? context.statusCode,

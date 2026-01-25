@@ -24,6 +24,16 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
+interface UserRow {
+  id: string;
+  email: string;
+  display_name: string;
+  provider: string;
+  created_at: number;
+  updated_at: number;
+  is_active: number;
+}
+
 const usersRouter = new Hono<{ Bindings: Bindings }>();
 
 // Query schema for listing users
@@ -47,14 +57,14 @@ const listUsersQuerySchema = z.object({
  */
 usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (c) => {
   const logger = getLogger(c);
-  const validated = c.get('validated_query') as any;
+  const validated = c.get('validated_query') as { limit: number; offset: number; is_active?: boolean; provider?: string; fields?: string };
 
   const { limit, offset, is_active, provider } = validated;
 
   try {
     // Build the query dynamically based on filters
     let query = 'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE 1=1';
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     if (is_active !== undefined) {
       query += ' AND is_active = ?';
@@ -76,7 +86,7 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
 
     // Get total count for pagination
     let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
-    const countParams: any[] = [];
+    const countParams: unknown[] = [];
 
     if (is_active !== undefined) {
       countQuery += ' AND is_active = ?';
@@ -95,7 +105,7 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
     logger.info('Users listed', { count: results.results?.length || 0, total });
 
     // Format the users (exclude sensitive data)
-    const users = (results.results || []).map((user: any) => ({
+    const users = ((results.results || []) as unknown as UserRow[]).map((user) => ({
       id: user.id,
       email: user.email,
       display_name: user.display_name,
@@ -225,7 +235,7 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
   const logger = getLogger(c);
   const userId = c.req.param('id');
   const currentUser = c.get('user');
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as { display_name?: string; email?: string; is_active?: number };
 
   try {
     // Check if user is updating their own profile
@@ -274,7 +284,7 @@ usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async (c)
 
     // Build update query dynamically
     const updates: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     if (validated.display_name !== undefined) {
       updates.push('display_name = ?');
@@ -383,7 +393,7 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
       .all();
 
     // Combine and sort by created_at
-    const entityActivities = (entities.results || []).map((e: any) => ({
+    const entityActivities = ((entities.results || []) as unknown as Array<Record<string, unknown>>).map((e) => ({
       type: 'entity',
       id: e.id,
       type_id: e.type_id,
@@ -393,7 +403,7 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
       is_latest: !!e.is_latest,
     }));
 
-    const linkActivities = (links.results || []).map((l: any) => ({
+    const linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map((l) => ({
       type: 'link',
       id: l.id,
       type_id: l.type_id,
@@ -406,7 +416,7 @@ usersRouter.get('/:id/activity', requireAuth(), async (c) => {
     }));
 
     const allActivities = [...entityActivities, ...linkActivities]
-      .sort((a, b) => b.created_at - a.created_at)
+      .sort((a, b) => (b.created_at as number) - (a.created_at as number))
       .slice(0, limit);
 
     logger.info('User activity retrieved', { userId, activityCount: allActivities.length });

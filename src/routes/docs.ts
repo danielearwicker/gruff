@@ -29,11 +29,11 @@ docs.get(
     spec: {
       url: '/docs/openapi.json',
     },
-  } as any)
+  } as Parameters<typeof apiReference>[0])
 );
 
 // Simple JSON to YAML converter (basic implementation)
-function jsonToYaml(obj: any, indent = 0): string {
+function jsonToYaml(obj: unknown, indent = 0): string {
   const spaces = '  '.repeat(indent);
   let yaml = '';
 
@@ -64,7 +64,7 @@ function jsonToYaml(obj: any, indent = 0): string {
   return yaml;
 }
 
-function formatYamlValue(value: any): string {
+function formatYamlValue(value: unknown): string {
   if (value === null) return 'null';
   if (value === undefined) return '~';
   if (typeof value === 'string') {

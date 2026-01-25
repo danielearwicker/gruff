@@ -28,7 +28,7 @@ export function validateOrThrow<T extends z.ZodTypeAny>(
     if (error instanceof ZodError) {
       const message = customMessage || 'Validation failed';
       throw new Error(
-        `${message}: ${error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+        `${message}: ${error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
       );
     }
     throw error;
@@ -39,7 +39,7 @@ export function validateOrThrow<T extends z.ZodTypeAny>(
  * Format Zod errors for user-friendly display
  */
 export function formatZodError(error: ZodError): { path: string; message: string; code: string }[] {
-  return error.issues.map((err: any) => ({
+  return error.issues.map((err) => ({
     path: err.path.join('.'),
     message: err.message,
     code: err.code,

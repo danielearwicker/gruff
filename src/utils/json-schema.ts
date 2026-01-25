@@ -422,7 +422,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (keysA.length !== keysB.length) return false;
 
   return keysA.every(key =>
-    key in (b as object) && deepEqual((a as any)[key], (b as any)[key])
+    key in (b as object) && deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
   );
 }
 
@@ -436,12 +436,12 @@ function resolveRef(ref: string, schema: JsonSchema): JsonSchema | undefined {
   }
 
   const path = ref.slice(2).split('/');
-  let current: any = schema;
+  let current: unknown = schema;
 
   for (const segment of path) {
     const decodedSegment = segment.replace(/~1/g, '/').replace(/~0/g, '~');
     if (current && typeof current === 'object' && decodedSegment in current) {
-      current = current[decodedSegment];
+      current = (current as Record<string, unknown>)[decodedSegment];
     } else {
       return undefined;
     }

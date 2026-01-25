@@ -190,7 +190,7 @@ app.onError((err, c) => {
     method: c.req.method,
   });
   let statusCode = 500;
-  let errorResponse: any = {
+  let errorResponse: Record<string, unknown> = {
     error: 'Internal server error',
     code: 'INTERNAL_SERVER_ERROR',
     timestamp: new Date().toISOString(),

@@ -254,11 +254,11 @@ export async function executeQueryPlan(
 
   const result = await db.prepare(explainSQL).all();
 
-  return result.results.map((row: any) => ({
-    id: row.id ?? 0,
-    parent: row.parent ?? 0,
-    notUsed: row.notused,
-    detail: row.detail ?? '',
+  return result.results.map((row: Record<string, unknown>) => ({
+    id: (row.id as number) ?? 0,
+    parent: (row.parent as number) ?? 0,
+    notUsed: row.notused as number | undefined,
+    detail: (row.detail as string) ?? '',
   }));
 }
 

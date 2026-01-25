@@ -55,7 +55,7 @@ const authRouter = new Hono<{ Bindings: Bindings }>();
  */
 authRouter.post('/register', validateJson(createUserSchema), async (c) => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as { email: string; password?: string; display_name?: string; provider?: string; provider_id?: string };
 
   // Extract and validate required fields for local auth
   const { email, password, display_name } = validated;
@@ -154,7 +154,7 @@ authRouter.post('/register', validateJson(createUserSchema), async (c) => {
  */
 authRouter.post('/login', validateJson(loginSchema), async (c) => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as { email: string; password: string };
 
   const { email, password } = validated;
 
@@ -259,7 +259,7 @@ authRouter.post('/login', validateJson(loginSchema), async (c) => {
  */
 authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as { refresh_token: string };
 
   const { refresh_token } = validated;
 
@@ -334,7 +334,7 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async (c) => {
  */
 authRouter.post('/logout', validateJson(logoutSchema), async (c) => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as any;
+  const validated = c.get('validated_json') as { refresh_token: string };
 
   const { refresh_token } = validated;
 

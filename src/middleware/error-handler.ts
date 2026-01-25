@@ -103,7 +103,7 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
     };
 
     // Handle Zod validation errors
-    if (error instanceof ZodError || (error as any)?.name === 'ZodError') {
+    if (error instanceof ZodError || (error as Error & { name?: string })?.name === 'ZodError') {
       const zodError = error as ZodError;
       statusCode = 400;
       errorResponse = {
@@ -180,7 +180,7 @@ export const errorHandler: MiddlewareHandler = async (c: Context, next) => {
       }
     );
 
-    return c.json(errorResponse, statusCode as any);
+    return c.json(errorResponse, statusCode as 200 | 201 | 400 | 401 | 403 | 404 | 409 | 500);
   }
 };
 

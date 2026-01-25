@@ -125,7 +125,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
     if (canCache) {
       // Get versioned cache key (includes list version for invalidation)
       cacheKey = await getVersionedTypesListCacheKey(kv, query.category, query.name);
-      const cached = await getCache<any>(kv, cacheKey);
+      const cached = await getCache<unknown>(kv, cacheKey);
       if (cached) {
         return c.json(cached);
       }
@@ -243,12 +243,12 @@ types.get('/:id', async (c) => {
   try {
     // Try to get from cache first
     const cacheKey = getTypeCacheKey(id);
-    const cached = await getCache<any>(kv, cacheKey);
+    const cached = await getCache<{ data?: Record<string, unknown> }>(kv, cacheKey);
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
         const fieldSelection = applyFieldSelection(
-          cached.data as Record<string, unknown>,
+          cached.data,
           fieldsParam,
           TYPE_ALLOWED_FIELDS
         );

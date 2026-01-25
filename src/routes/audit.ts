@@ -18,6 +18,18 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
+interface AuditLogRow {
+  id: number;
+  operation: string;
+  resource_type: string;
+  resource_id: string;
+  user_id: string;
+  timestamp: number;
+  details: string | null;
+  ip_address?: string;
+  user_agent?: string;
+}
+
 const auditRouter = new Hono<{ Bindings: Bindings }>();
 
 /**
@@ -104,15 +116,15 @@ auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async (c
     const results = await stmt.bind(...params).all();
 
     // Determine if there are more results
-    const logs = results.results || [];
+    const logs = (results.results || []) as unknown as AuditLogRow[];
     const hasMore = logs.length > limit;
     const items = hasMore ? logs.slice(0, limit) : logs;
 
     // Get the cursor for the next page (timestamp of last item)
-    const nextCursor = hasMore && items.length > 0 ? String((items[items.length - 1] as any).timestamp) : null;
+    const nextCursor = hasMore && items.length > 0 ? String(items[items.length - 1].timestamp) : null;
 
     // Format the audit logs (parse JSON details)
-    const formattedLogs = items.map((log: any) => ({
+    const formattedLogs = items.map((log) => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,
@@ -175,7 +187,7 @@ auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async (c
       .bind(resourceType, resourceId)
       .all();
 
-    const logs = (results.results || []).map((log: any) => ({
+    const logs = ((results.results || []) as unknown as AuditLogRow[]).map((log) => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,
@@ -250,7 +262,7 @@ auditRouter.get('/user/:user_id', requireAuth(), async (c) => {
       .bind(userId, limit)
       .all();
 
-    const logs = (results.results || []).map((log: any) => ({
+    const logs = ((results.results || []) as unknown as AuditLogRow[]).map((log) => ({
       id: log.id,
       operation: log.operation,
       resource_type: log.resource_type,

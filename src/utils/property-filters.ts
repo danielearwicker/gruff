@@ -20,7 +20,7 @@ export interface PropertyFilterResult {
   /** The SQL WHERE clause fragment */
   sql: string;
   /** The bindings for the SQL clause */
-  bindings: any[];
+  bindings: unknown[];
 }
 
 /**
