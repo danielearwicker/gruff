@@ -633,7 +633,7 @@ A minimal, low-level administrative interface served directly by the Workers app
 - No fancy UI framework - just HTML forms and tables
 - Mobile-friendly responsive layout (CSS media queries)
 
-### 🟦 Home Page / Dashboard
+### ✅ Home Page / Dashboard
 
 **Route:** `GET /ui` or `GET /ui/`
 

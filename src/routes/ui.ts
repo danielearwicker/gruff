@@ -27,6 +27,50 @@ ui.use('*', optionalAuth());
 ui.get('/', async c => {
   const user = c.get('user');
 
+  // Get filter parameters
+  const filterUserId = c.req.query('user_id') || '';
+  const filterTypeId = c.req.query('type_id') || '';
+  const filterTimeRange = c.req.query('time_range') || 'all';
+  const filterStartDate = c.req.query('start_date') || '';
+  const filterEndDate = c.req.query('end_date') || '';
+
+  // Calculate timestamp for time range filters
+  let timeRangeFilter = '';
+  const now = Date.now();
+  if (filterTimeRange !== 'all' && filterTimeRange !== 'custom') {
+    let since = now;
+    switch (filterTimeRange) {
+      case 'hour':
+        since = now - 60 * 60 * 1000;
+        break;
+      case 'day':
+        since = now - 24 * 60 * 60 * 1000;
+        break;
+      case 'week':
+        since = now - 7 * 24 * 60 * 60 * 1000;
+        break;
+      case 'month':
+        since = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+    }
+    timeRangeFilter = `AND e.created_at >= ${since}`;
+  } else if (filterTimeRange === 'custom' && filterStartDate) {
+    const startTimestamp = new Date(filterStartDate).getTime();
+    if (!isNaN(startTimestamp)) {
+      timeRangeFilter = `AND e.created_at >= ${startTimestamp}`;
+    }
+    if (filterEndDate) {
+      const endTimestamp = new Date(filterEndDate).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+      if (!isNaN(endTimestamp)) {
+        timeRangeFilter += ` AND e.created_at <= ${endTimestamp}`;
+      }
+    }
+  }
+
+  // Build WHERE clause for filters
+  const userFilter = filterUserId ? `AND e.created_by = ?` : '';
+  const typeFilter = filterTypeId ? `AND e.type_id = ?` : '';
+
   // Fetch quick stats
   const statsPromises = [
     c.env.DB.prepare(
@@ -47,9 +91,18 @@ ui.get('/', async c => {
 
   const [entityCount, linkCount, typeCount, userCount] = await Promise.all(statsPromises);
 
-  // Fetch recently created entities (last 20)
-  const recentEntities = await c.env.DB.prepare(
-    `
+  // Fetch users for filter dropdown
+  const allUsers = await c.env.DB.prepare(
+    'SELECT id, email, display_name FROM users ORDER BY email'
+  ).all<{ id: string; email: string; display_name?: string }>();
+
+  // Fetch types for filter dropdown (entity types only)
+  const allTypes = await c.env.DB.prepare(
+    "SELECT id, name FROM types WHERE category = 'entity' ORDER BY name"
+  ).all<{ id: string; name: string }>();
+
+  // Build query for recently created entities with filters
+  const createdQuery = `
     SELECT
       e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
       t.name as type_name,
@@ -57,21 +110,138 @@ ui.get('/', async c => {
     FROM entities e
     JOIN types t ON e.type_id = t.id
     LEFT JOIN users u ON e.created_by = u.id
-    WHERE e.is_latest = 1 AND e.is_deleted = 0
+    WHERE e.is_latest = 1 AND e.is_deleted = 0 ${timeRangeFilter} ${userFilter} ${typeFilter}
     ORDER BY e.created_at DESC
     LIMIT 20
-  `
-  ).all<{
-    id: string;
-    type_id: string;
-    properties: string;
-    version: number;
-    created_at: number;
-    created_by: string;
-    type_name: string;
-    display_name?: string;
-    email: string;
-  }>();
+  `;
+
+  const createdParams: string[] = [];
+  if (filterUserId) createdParams.push(filterUserId);
+  if (filterTypeId) createdParams.push(filterTypeId);
+
+  const recentEntities = await c.env.DB.prepare(createdQuery)
+    .bind(...createdParams)
+    .all<{
+      id: string;
+      type_id: string;
+      properties: string;
+      version: number;
+      created_at: number;
+      created_by: string;
+      type_name: string;
+      display_name?: string;
+      email: string;
+    }>();
+
+  // Build query for recently updated entities (version > 1) with filters
+  const updatedQuery = `
+    SELECT
+      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+      t.name as type_name,
+      u.display_name, u.email
+    FROM entities e
+    JOIN types t ON e.type_id = t.id
+    LEFT JOIN users u ON e.created_by = u.id
+    WHERE e.is_latest = 1 AND e.is_deleted = 0 AND e.version > 1 ${timeRangeFilter.replace('created_at', 'created_at')} ${userFilter} ${typeFilter}
+    ORDER BY e.created_at DESC
+    LIMIT 20
+  `;
+
+  const updatedParams: string[] = [];
+  if (filterUserId) updatedParams.push(filterUserId);
+  if (filterTypeId) updatedParams.push(filterTypeId);
+
+  const recentUpdates = await c.env.DB.prepare(updatedQuery)
+    .bind(...updatedParams)
+    .all<{
+      id: string;
+      type_id: string;
+      properties: string;
+      version: number;
+      created_at: number;
+      created_by: string;
+      type_name: string;
+      display_name?: string;
+      email: string;
+    }>();
+
+  // Render filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="user_id">User:</label>
+            <select id="user_id" name="user_id">
+              <option value="">All users</option>
+              ${allUsers.results
+                .map(
+                  u => `
+                <option value="${u.id}" ${filterUserId === u.id ? 'selected' : ''}>
+                  ${escapeHtml(u.display_name || u.email)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="type_id">Entity Type:</label>
+            <select id="type_id" name="type_id">
+              <option value="">All types</option>
+              ${allTypes.results
+                .map(
+                  t => `
+                <option value="${t.id}" ${filterTypeId === t.id ? 'selected' : ''}>
+                  ${escapeHtml(t.name)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="time_range">Time Range:</label>
+            <select id="time_range" name="time_range" onchange="toggleCustomDates()">
+              <option value="all" ${filterTimeRange === 'all' ? 'selected' : ''}>All time</option>
+              <option value="hour" ${filterTimeRange === 'hour' ? 'selected' : ''}>Last hour</option>
+              <option value="day" ${filterTimeRange === 'day' ? 'selected' : ''}>Last day</option>
+              <option value="week" ${filterTimeRange === 'week' ? 'selected' : ''}>Last week</option>
+              <option value="month" ${filterTimeRange === 'month' ? 'selected' : ''}>Last month</option>
+              <option value="custom" ${filterTimeRange === 'custom' ? 'selected' : ''}>Custom range</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" id="custom-dates" style="display: ${filterTimeRange === 'custom' ? 'flex' : 'none'}">
+          <div class="form-group">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" name="start_date" value="${escapeHtml(filterStartDate)}">
+          </div>
+
+          <div class="form-group">
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" name="end_date" value="${escapeHtml(filterEndDate)}">
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Apply Filters</button>
+          <a href="/ui" class="button secondary">Clear Filters</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      function toggleCustomDates() {
+        const timeRange = document.getElementById('time_range').value;
+        const customDates = document.getElementById('custom-dates');
+        customDates.style.display = timeRange === 'custom' ? 'flex' : 'none';
+      }
+    </script>
+  `;
 
   const content = `
     <h2>Dashboard</h2>
@@ -96,7 +266,10 @@ ui.get('/', async c => {
       </div>
     </div>
 
-    <h3>Recent Entities</h3>
+    <h3>Filters</h3>
+    ${filterForm}
+
+    <h3>Recently Created Entities</h3>
     ${
       recentEntities.results.length > 0
         ? `
@@ -123,7 +296,37 @@ ui.get('/', async c => {
           .join('')}
       </ul>
     `
-        : '<p>No entities found. <a href="/ui/entities/new">Create your first entity</a>.</p>'
+        : '<p>No entities found matching the filters.</p>'
+    }
+
+    <h3>Recently Updated Entities</h3>
+    ${
+      recentUpdates.results.length > 0
+        ? `
+      <ul class="entity-list">
+        ${recentUpdates.results
+          .map(entity => {
+            const props = JSON.parse(entity.properties);
+            const displayName =
+              props.name || props.title || props.label || entity.id.substring(0, 8);
+
+            return `
+          <li>
+            <div class="entity-title">
+              <a href="/ui/entities/${entity.id}">${escapeHtml(displayName)}</a>
+              <span class="badge muted">${escapeHtml(entity.type_name)}</span>
+            </div>
+            <div class="entity-meta">
+              Version ${entity.version} |
+              Updated ${formatTimestamp(entity.created_at)} by ${escapeHtml(entity.display_name || entity.email)}
+            </div>
+          </li>
+        `;
+          })
+          .join('')}
+      </ul>
+    `
+        : '<p>No recently updated entities found.</p>'
     }
 
     <div class="button-group">
