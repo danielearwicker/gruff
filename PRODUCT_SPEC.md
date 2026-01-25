@@ -532,6 +532,372 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - YAML spec available at `/docs/openapi.yaml`
 - Covers all API endpoints: auth, users, types, entities, links, graph, search, bulk, export/import, and audit
 
+## Built-In Web User Interface
+
+A minimal, low-level administrative interface served directly by the Workers application for browsing and managing the graph database. This provides a built-in tool for developers and administrators to explore data without requiring external clients.
+
+### 🟦 UI Architecture
+
+#### Server-Side Rendering
+- HTML pages served via new GET routes (e.g., `/ui`, `/ui/entities/:id`)
+- Lightweight, embedded HTML templates (no separate build process)
+- Progressive enhancement: works without JavaScript, enhanced with JS
+- Embedded CSS (no external stylesheets to deploy)
+- Minimal JavaScript for interactive features (vanilla JS, no framework dependencies)
+
+#### Route Structure
+- `/ui` or `/ui/` - Main dashboard/home page
+- `/ui/entities` - Entity list view with filters
+- `/ui/entities/:id` - Entity detail view
+- `/ui/entities/:id/edit` - Edit entity form
+- `/ui/entities/:id/versions` - Version history view
+- `/ui/entities/new` - Create new entity form
+- `/ui/links/:id` - Link detail view
+- `/ui/links/:id/edit` - Edit link form
+- `/ui/links/new` - Create new link form (with source/target selection)
+- `/ui/types` - Type registry browser
+- `/ui/auth/login` - Login page (if not authenticated)
+
+#### Design Principles
+- Simple, functional, form-based interface
+- Tables for listing data (entities, links, versions)
+- Forms for CRUD operations
+- Breadcrumb navigation
+- No fancy UI framework - just HTML forms and tables
+- Mobile-friendly responsive layout (CSS media queries)
+
+### 🟦 Home Page / Dashboard
+
+**Route:** `GET /ui` or `GET /ui/`
+
+#### Features
+- Welcome message and quick stats (total entities, links, types, users)
+- List of recently created entities (last 20)
+- List of recently updated entities (last 20)
+- Quick links to common actions (create entity, create link, browse types)
+
+#### Filtering Controls
+- **User filter:** Dropdown to filter by `created_by` or `updated_by` user
+  - Shows all users from database
+  - Option for "All users"
+- **Time range filter:** Quick filters for common ranges
+  - Last hour, Last day, Last week, Last month, All time
+  - Custom date range picker (HTML5 date inputs)
+- **Entity type filter:** Dropdown to filter by `type_id`
+  - Shows all entity types from types table
+  - Option for "All types"
+
+#### Entity Display
+Each entity in the list shows:
+- Entity ID (linked to detail page)
+- Type name (linked to type filter)
+- Preview of key properties (e.g., name, title if present)
+- Created by (user display name or email)
+- Created at (human-readable timestamp)
+- Updated at (if different from created_at)
+- Version number
+
+### 🟦 Entity List View
+
+**Route:** `GET /ui/entities`
+
+#### Features
+- Paginated list of all entities (cursor-based pagination)
+- Same filtering controls as home page (user, time range, type)
+- Additional filters:
+  - Show deleted entities (checkbox)
+  - Show all versions vs. latest only (radio buttons)
+- Sorting options (by created_at, updated_at, type)
+- Bulk selection for batch operations (future: bulk delete, bulk export)
+
+#### Table Columns
+- Checkbox (for selection)
+- Entity ID (truncated, linked)
+- Type name
+- Properties preview (JSON or extracted key fields)
+- Version
+- Created by
+- Created at
+- Updated at
+- Is latest (badge)
+- Is deleted (badge)
+- Actions (View, Edit, Delete buttons)
+
+### 🟦 Entity Detail View
+
+**Route:** `GET /ui/entities/:id`
+
+#### Entity Information Section
+- Full entity details in a definition list or card:
+  - ID, Type (linked to type browser), Properties (formatted JSON)
+  - Version, Previous version (linked if exists)
+  - Created by, Created at, Updated by, Updated at
+  - Is latest, Is deleted status badges
+
+#### Properties Display
+- Pretty-printed JSON with syntax highlighting
+- Editable via "Edit Entity" button
+- Shows JSON schema validation rules if type has schema
+
+#### Outgoing Links Section
+- Table of all links where this entity is the source
+- Columns: Link ID, Link Type, Target Entity (linked), Properties preview, Created at
+- "Create new link from this entity" button
+- Each link row has View/Edit/Delete actions
+
+#### Incoming Links Section
+- Table of all links where this entity is the target
+- Columns: Link ID, Link Type, Source Entity (linked), Properties preview, Created at
+- Each link row has View/Edit/Delete actions
+
+#### Version History Section
+- Timeline of all versions of this entity
+- Each version shows:
+  - Version number (linked to that version's detail view)
+  - Modified by user
+  - Modified at timestamp
+  - Diff preview (properties changed)
+  - "View this version" button
+- Highlight current version being viewed
+- If viewing an old version, show banner: "You are viewing version X. View latest version"
+
+#### Actions
+- Edit Entity button (navigates to edit form)
+- Delete Entity button (soft delete with confirmation)
+- Create New Version button
+- Create Link from this Entity button
+- Export Entity (JSON download)
+
+### 🟦 Entity Create/Edit Forms
+
+**Routes:**
+- `GET /ui/entities/new` - Create form
+- `GET /ui/entities/:id/edit` - Edit form
+
+#### Form Structure
+- Type selection (dropdown, required) - only on create form
+- Properties editor:
+  - Option 1: Large textarea with JSON editor
+  - Option 2: Dynamic form fields based on type's JSON schema (if available)
+- Display name preview (if properties include name/title field)
+- Form validation (client-side and server-side)
+- Cancel and Save buttons
+
+#### Behavior
+- **Create:** POST to `/api/entities`, redirects to new entity detail page
+- **Edit:** Creates new version via POST to `/api/entities/:id/versions`
+- Shows validation errors inline
+- Preserves form data on validation errors
+
+### 🟦 Link Detail View
+
+**Route:** `GET /ui/links/:id`
+
+#### Link Information
+- Full link details:
+  - ID, Type (linked to type browser)
+  - Source Entity (linked to entity detail page)
+  - Target Entity (linked to entity detail page)
+  - Properties (formatted JSON)
+  - Version, Previous version (linked if exists)
+  - Created by, Created at, Updated by, Updated at
+  - Is latest, Is deleted status badges
+
+#### Visual Representation
+- Simple diagram showing: [Source Entity] --[Link Type]--> [Target Entity]
+- Both entities clickable to navigate
+
+#### Version History
+- Similar to entity version history
+- Timeline of all versions of this link
+
+#### Actions
+- Edit Link button
+- Delete Link button (soft delete with confirmation)
+- Create New Version button
+
+### 🟦 Link Create/Edit Forms
+
+**Routes:**
+- `GET /ui/links/new` - Create form
+- `GET /ui/links/new?source=:entityId` - Create with pre-selected source
+- `GET /ui/links/:id/edit` - Edit form
+
+#### Form Structure
+- Link type selection (dropdown, required)
+- Source entity selection:
+  - Entity ID input with autocomplete/search
+  - Or entity browser/picker
+- Target entity selection:
+  - Entity ID input with autocomplete/search
+  - Or entity browser/picker
+- Properties editor (JSON textarea or dynamic fields)
+- Cancel and Save buttons
+
+#### Behavior
+- **Create:** POST to `/api/links`, redirects to new link detail page
+- **Edit:** Creates new version via POST to `/api/links/:id/versions`
+
+### 🟦 Type Browser
+
+**Route:** `GET /ui/types`
+
+#### Features
+- List of all registered types (entities and links)
+- Filter by category (entity/link)
+- Each type shows:
+  - Name, Category, Description
+  - JSON Schema (if defined)
+  - Usage count (number of entities/links using this type)
+  - Created by, Created at
+- Click to see all entities/links of that type
+- "Create new type" button (admin feature)
+
+### 🟦 Version Comparison View
+
+**Route:** `GET /ui/entities/:id/versions/:v1/compare/:v2`
+
+#### Features
+- Side-by-side comparison of two versions
+- Highlighted differences in properties
+- Show what changed (added, removed, modified fields)
+- Metadata comparison (created_by, created_at)
+
+### 🟦 Search Interface
+
+**Route:** `GET /ui/search`
+
+#### Features
+- Simple search form with property filters
+- Uses `/api/search/entities` and `/api/search/links` endpoints
+- Filter builder UI for complex queries
+- Results displayed in table format (similar to entity list)
+- Export search results button
+
+### 🟦 Authentication Integration
+
+#### Login Page
+- If user accesses `/ui/*` without authentication, redirect to `/ui/auth/login`
+- Simple login form (email/password)
+- OAuth provider buttons (Google, GitHub)
+- "Register new account" link
+
+#### User Context
+- Show logged-in user in header/navbar
+- Logout button
+- Created/updated records automatically attributed to current user
+
+#### Permission Levels (Future)
+- All authenticated users can read
+- Only specific users can create/edit/delete
+- Admin-only features (user management, type creation)
+
+### 🟦 Technical Implementation
+
+#### Routing Strategy
+- New Hono router mounted at `/ui`
+- Separate from `/api` routes but in same Worker
+- Returns HTML responses with `Content-Type: text/html`
+
+#### HTML Templating
+- Simple template literal functions (no template engine needed)
+- Example:
+  ```typescript
+  function renderEntityDetail(entity: Entity) {
+    return `<!DOCTYPE html>
+    <html>...entity details...</html>`;
+  }
+  ```
+- Reusable components (header, footer, navigation)
+- Escape user content to prevent XSS
+
+#### Styling Approach
+- Embedded CSS in `<style>` tags or inline
+- Simple, clean design (inspired by GitHub, Linear, or system defaults)
+- CSS variables for theming
+- Responsive grid/flexbox layouts
+- No external CSS framework (keep it lightweight)
+
+#### Client-Side JavaScript
+- Minimal vanilla JavaScript for:
+  - Form validation and enhancement
+  - AJAX requests for autocomplete
+  - Confirmation dialogs
+  - Dynamic filter updates
+- No build step required
+- Progressive enhancement (works without JS)
+
+#### Data Fetching
+- UI routes call internal API functions directly (no HTTP round-trip)
+- Reuse existing route handlers and utilities
+- Share validation, auth, and business logic with API
+
+#### Asset Serving
+- No separate static assets
+- All HTML/CSS/JS embedded in route responses
+- Potential small embedded icons (SVG inline or data URIs)
+
+### 🟦 UI Feature Checklist
+
+#### Navigation and Layout
+- Header with app title, user menu, logout
+- Main navigation menu (Home, Entities, Links, Types, Search)
+- Breadcrumb trail for current location
+- Footer with version info and API docs link
+
+#### Entity Management
+- Create entity form with type selection
+- Edit entity form (creates new version)
+- Delete entity (soft delete with confirmation)
+- View entity with all details
+- Browse entity version history
+- Navigate via outgoing/incoming links
+- Filter and search entities
+
+#### Link Management
+- Create link form with source/target selection
+- Edit link form (creates new version)
+- Delete link (soft delete with confirmation)
+- View link with source/target context
+- Browse link version history
+
+#### User Experience
+- Responsive design (mobile and desktop)
+- Loading states for async operations
+- Success/error notifications (toast or inline)
+- Form validation with helpful error messages
+- Keyboard shortcuts (optional enhancement)
+- Dark mode support (optional, using CSS prefers-color-scheme)
+
+#### Performance
+- Server-side pagination for large lists
+- Lazy loading for version history
+- Minimal JavaScript bundle size
+- Fast page loads (< 100ms server-side render)
+
+### 🟦 UI Routes Summary
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/ui` | GET | Dashboard with recent entities |
+| `/ui/entities` | GET | Entity list with filters |
+| `/ui/entities/new` | GET | Create entity form |
+| `/ui/entities/:id` | GET | Entity detail view |
+| `/ui/entities/:id/edit` | GET | Edit entity form |
+| `/ui/entities/:id/versions` | GET | Version history list |
+| `/ui/entities/:id/versions/:version` | GET | Specific version detail |
+| `/ui/links` | GET | Link list with filters |
+| `/ui/links/new` | GET | Create link form |
+| `/ui/links/:id` | GET | Link detail view |
+| `/ui/links/:id/edit` | GET | Edit link form |
+| `/ui/links/:id/versions` | GET | Link version history |
+| `/ui/types` | GET | Type browser |
+| `/ui/types/:id` | GET | Type detail with usage stats |
+| `/ui/search` | GET | Search interface |
+| `/ui/auth/login` | GET | Login page |
+
+Note: Form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success.
+
 ## Technical Architecture
 
 ### Project Setup

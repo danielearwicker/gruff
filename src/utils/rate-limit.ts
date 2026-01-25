@@ -19,9 +19,9 @@ export interface RateLimitConfig {
 }
 
 /**
- * Default rate limit configurations by endpoint category
+ * Production rate limit configurations by endpoint category
  */
-export const DEFAULT_RATE_LIMITS: Record<string, RateLimitConfig> = {
+const PRODUCTION_RATE_LIMITS: Record<string, RateLimitConfig> = {
   // Authentication endpoints - more restrictive to prevent brute force
   auth: {
     maxRequests: 20,
@@ -58,6 +58,59 @@ export const DEFAULT_RATE_LIMITS: Record<string, RateLimitConfig> = {
     windowSeconds: 60, // 60 requests per minute
   },
 };
+
+/**
+ * Development rate limit configurations - more lenient for local testing
+ */
+const DEVELOPMENT_RATE_LIMITS: Record<string, RateLimitConfig> = {
+  auth: {
+    maxRequests: 1000,
+    windowSeconds: 60, // Very lenient for testing
+  },
+  read: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+  write: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+  bulk: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+  search: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+  graph: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+  default: {
+    maxRequests: 1000,
+    windowSeconds: 60,
+  },
+};
+
+/**
+ * Default rate limit configurations by endpoint category
+ * Uses production limits by default, can be overridden for development
+ */
+export const DEFAULT_RATE_LIMITS: Record<string, RateLimitConfig> = PRODUCTION_RATE_LIMITS;
+
+/**
+ * Get rate limit configuration based on environment
+ *
+ * @param environment - Environment name (e.g., 'development', 'production')
+ * @returns Rate limit configuration for the environment
+ */
+export function getRateLimitsForEnvironment(environment?: string): Record<string, RateLimitConfig> {
+  if (environment === 'development') {
+    return DEVELOPMENT_RATE_LIMITS;
+  }
+  return PRODUCTION_RATE_LIMITS;
+}
 
 /**
  * Rate limit tracking data stored in KV
@@ -117,16 +170,20 @@ function getRateLimitKey(
  * @param identifier - User ID or IP address
  * @param category - Endpoint category
  * @param config - Rate limit configuration (defaults to category config or default)
+ * @param environment - Environment name for selecting appropriate limits
  * @returns Rate limit result with allowed status and metadata
  */
 export async function checkRateLimit(
   kv: KVNamespace,
   identifier: string,
   category: string,
-  config?: Partial<RateLimitConfig>
+  config?: Partial<RateLimitConfig>,
+  environment?: string
 ): Promise<RateLimitResult> {
-  // Merge with default config for category
-  const categoryConfig = DEFAULT_RATE_LIMITS[category] || DEFAULT_RATE_LIMITS.default;
+  // Get environment-specific rate limits
+  const envLimits = getRateLimitsForEnvironment(environment);
+  const categoryConfig = envLimits[category] || envLimits.default;
+
   const mergedConfig: RateLimitConfig = {
     ...categoryConfig,
     ...config,
@@ -186,8 +243,9 @@ export async function checkRateLimit(
     const ttl = Math.ceil((resetAt - now) / 1000) + 5;
 
     // Store updated data
+    // Cloudflare KV requires minimum 60 second TTL
     await kv.put(key, JSON.stringify(data), {
-      expirationTtl: Math.max(ttl, 1), // Minimum 1 second TTL
+      expirationTtl: Math.max(ttl, 60),
     });
   }
 

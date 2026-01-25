@@ -128,8 +128,8 @@ export function rateLimit(options: RateLimitMiddlewareOptions = {}) {
     // Determine endpoint category
     const category = options.category || getEndpointCategory(c.req.method, c.req.path);
 
-    // Check rate limit
-    const result = await checkRateLimit(c.env.KV, identifier, category, options.config);
+    // Check rate limit with environment-aware limits
+    const result = await checkRateLimit(c.env.KV, identifier, category, options.config, c.env.ENVIRONMENT);
 
     // Set rate limit headers on all responses
     setRateLimitHeaders(c, result);

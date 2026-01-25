@@ -247,10 +247,20 @@ export async function executeQueryPlan(
   db: D1Database,
   sql: string
 ): Promise<QueryPlanStep[]> {
+  // Replace parameter placeholders with dummy values for EXPLAIN QUERY PLAN
+  // SQLite cannot execute EXPLAIN with unbound parameters
+  let analyzableSQL = sql;
+  let paramCount = 0;
+  analyzableSQL = analyzableSQL.replace(/\?/g, () => {
+    paramCount++;
+    // Use different dummy values to avoid any caching issues
+    return `'dummy-param-${paramCount}'`;
+  });
+
   // Ensure the query starts with EXPLAIN QUERY PLAN
-  const explainSQL = sql.trim().toLowerCase().startsWith('explain')
-    ? sql
-    : `EXPLAIN QUERY PLAN ${sql}`;
+  const explainSQL = analyzableSQL.trim().toLowerCase().startsWith('explain')
+    ? analyzableSQL
+    : `EXPLAIN QUERY PLAN ${analyzableSQL}`;
 
   const result = await db.prepare(explainSQL).all();
 
