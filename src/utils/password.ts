@@ -97,7 +97,7 @@ export async function verifyPassword(
 
     // Constant-time comparison to prevent timing attacks
     return timingSafeEqual(computedHashBase64, hashBase64);
-  } catch (error) {
+  } catch {
     // If any error occurs during verification, return false
     return false;
   }

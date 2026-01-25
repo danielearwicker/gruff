@@ -13,7 +13,6 @@ import type { Context, Next } from 'hono';
 import type { AnalyticsEngineDataset } from '../utils/error-tracking.js';
 import {
   createResponseTimeTracker,
-  ResponseTimeTracker,
   ResponseTimeTrackerConfig,
 } from '../utils/response-time-tracking.js';
 import { getRequestId } from './request-context.js';

@@ -5,7 +5,7 @@
  */
 
 import { Context } from 'hono';
-import { AuditOperation, AuditResourceType, CreateAuditLog } from '../schemas/index.js';
+import { AuditOperation, CreateAuditLog } from '../schemas/index.js';
 
 /**
  * Create an audit log entry

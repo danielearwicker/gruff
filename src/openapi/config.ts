@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { z } from '@hono/zod-openapi';
 
 // OpenAPI document info
 export const openApiInfo = {

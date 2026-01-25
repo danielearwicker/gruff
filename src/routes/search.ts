@@ -162,6 +162,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
 
     // Remove type fields from root level
     const cleanedEntities = parsedEntities.map((entity: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { type_name, type_category, ...rest } = entity;
       return rest;
     });

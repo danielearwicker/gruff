@@ -125,7 +125,6 @@ usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async (
 
     // Calculate pagination metadata
     const page = Math.floor(offset / limit) + 1;
-    const totalPages = Math.ceil(total / limit);
     const hasMore = offset + limit < total;
 
     return c.json(

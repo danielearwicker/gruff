@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema, jsonPropertiesSchema, paginationQuerySchema } from './common.js';
+import { uuidSchema } from './common.js';
 
 /**
  * Property filter schema with comparison operators

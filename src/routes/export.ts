@@ -3,8 +3,6 @@ import { validateJson, validateQuery } from '../middleware/validation.js';
 import {
   exportQuerySchema,
   importRequestSchema,
-  MAX_EXPORT_ITEMS,
-  MAX_IMPORT_ITEMS,
   type ExportQuery,
   type ImportRequest,
   type ImportResultItem,

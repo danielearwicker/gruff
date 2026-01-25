@@ -222,7 +222,7 @@ entities.get('/', validateQuery(entityQuerySchema), async (c) => {
           sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
           bindings.push(timestamp, timestamp, cursorId);
         }
-      } catch (e) {
+      } catch {
         // Invalid cursor format, ignore and continue without cursor
         getLogger(c).child({ module: 'entities' }).warn('Invalid cursor format', { cursor: query.cursor });
       }

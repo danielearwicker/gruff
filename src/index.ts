@@ -18,7 +18,6 @@ import { createLogger, LogLevel } from './utils/logger.js';
 import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
 import {
   createErrorTracker,
-  ErrorTracker,
   AnalyticsEngineDataset,
 } from './utils/error-tracking.js';
 import { z } from 'zod';

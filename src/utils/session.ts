@@ -173,7 +173,7 @@ export async function getSession(
     }
 
     return sessionData;
-  } catch (error) {
+  } catch {
     // Invalid JSON, delete the corrupted session
     await invalidateSession(kv, userId, config);
     return null;

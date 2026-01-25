@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   storeRefreshToken,
   getSession,
@@ -9,7 +9,6 @@ import {
   cleanupExpiredSessions,
   type SessionData,
 } from '../../src/utils/session.js';
-import { hashToken } from '../../src/utils/sensitive-data.js';
 
 // Mock KV namespace
 class MockKVNamespace implements KVNamespace {

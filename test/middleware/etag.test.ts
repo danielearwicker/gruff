@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { Hono, Context } from 'hono';
+import { describe, it, expect } from 'vitest';
+import { Hono } from 'hono';
 import { etag } from '../../src/middleware/etag.js';
 
 describe('ETag Middleware', () => {
@@ -312,7 +312,6 @@ describe('ETag Middleware', () => {
       app.get('/test', (c) => c.json({ message: 'hello' }));
 
       const res = await app.request('/test', { method: 'HEAD' });
-      const etagHeader = res.headers.get('ETag');
 
       // HEAD requests may or may not include ETag depending on framework behavior
       // The middleware should at least not cause errors

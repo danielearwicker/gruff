@@ -7,10 +7,10 @@
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema, oauthCallbackQuerySchema } from '../schemas/index.js';
+import { createUserSchema, loginSchema, refreshTokenSchema, logoutSchema } from '../schemas/index.js';
 import { hashPassword } from '../utils/password.js';
 import { createTokenPair, verifyRefreshToken, createAccessToken } from '../utils/jwt.js';
-import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, rotateRefreshToken, invalidateSession } from '../utils/session.js';
+import { storeRefreshToken, validateRefreshToken as validateStoredRefreshToken, invalidateSession } from '../utils/session.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
@@ -851,7 +851,7 @@ authRouter.get('/github/callback', async (c) => {
     }
 
     // Parse stored state
-    const storedState = JSON.parse(storedStateJson);
+    JSON.parse(storedStateJson);
     const parsedState = parseGitHubOAuthState(state);
 
     if (!parsedState) {

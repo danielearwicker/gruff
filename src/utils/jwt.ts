@@ -89,7 +89,7 @@ async function getSigningKey(secret: string): Promise<CryptoKey> {
 async function createToken(
   payload: JwtPayloadInternal,
   secret: string,
-  expiresIn: number
+  _expiresIn: number
 ): Promise<string> {
   // Create header
   const header = {
@@ -167,7 +167,7 @@ async function verifyToken(
 
     // Return the full internal payload (including refresh flag)
     return payload;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -276,6 +276,7 @@ export async function verifyAccessToken(
 
   // Remove the refresh flag before returning
   if (payload) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { refresh, ...publicPayload } = payload;
     return publicPayload as JwtPayload;
   }
@@ -302,6 +303,7 @@ export async function verifyRefreshToken(
   }
 
   // Remove the refresh flag before returning
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { refresh, ...publicPayload } = payload;
   return publicPayload as JwtPayload;
 }
@@ -324,9 +326,10 @@ export function decodeToken(token: string): JwtPayload | null {
     const payloadJson = new TextDecoder().decode(payloadData);
     const payload = JSON.parse(payloadJson) as JwtPayloadInternal;
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { refresh, ...publicPayload } = payload;
     return publicPayload as JwtPayload;
-  } catch (error) {
+  } catch {
     return null;
   }
 }

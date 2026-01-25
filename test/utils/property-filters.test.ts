@@ -4,7 +4,6 @@ import {
   buildPropertyFilter,
   buildPropertyFilters,
   buildFilterExpression,
-  type ParsedJsonPath,
 } from '../../src/utils/property-filters.js';
 
 describe('parseJsonPath', () => {

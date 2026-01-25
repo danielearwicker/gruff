@@ -155,7 +155,7 @@ types.get('/', validateQuery(typeQuerySchema), async (c) => {
           sql += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
           bindings.push(timestamp, timestamp, cursorId);
         }
-      } catch (e) {
+      } catch {
         // Invalid cursor format, ignore and continue without cursor
         const logger = getLogger(c).child({ module: 'types' });
         logger.warn('Invalid cursor format', { cursor: query.cursor });

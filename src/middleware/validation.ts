@@ -1,5 +1,5 @@
 import { Context, MiddlewareHandler } from 'hono';
-import { z, ZodError } from 'zod';
+import { z } from 'zod';
 
 /**
  * Validation middleware factory for Hono

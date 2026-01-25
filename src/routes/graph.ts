@@ -381,7 +381,7 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
 
           // Fetch full entity and link details for the path
           const pathWithDetails = await Promise.all(
-            fullPath.map(async (step, index) => {
+            fullPath.map(async (step) => {
               const entity = await db.prepare('SELECT * FROM entities WHERE id = ? AND is_latest = 1')
                 .bind(step.entityId)
                 .first();

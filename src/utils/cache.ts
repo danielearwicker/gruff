@@ -173,7 +173,7 @@ export async function getCache<T>(
     }
 
     return cached.data;
-  } catch (error) {
+  } catch {
     // Invalid JSON, delete the corrupted cache entry
     await kv.delete(key);
     return null;

@@ -11,7 +11,7 @@ docs.get('/openapi.json', (c) => {
 });
 
 // Serve the OpenAPI spec as YAML (for compatibility)
-docs.get('/openapi.yaml', (c) => {
+docs.get('/openapi.yaml', () => {
   const spec = generateOpenApiSpec();
   // Simple JSON to YAML conversion for the spec
   const yamlContent = jsonToYaml(spec);
