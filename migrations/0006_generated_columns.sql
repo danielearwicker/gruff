@@ -12,6 +12,9 @@
 -- Note: SQLite has limitations on ALTER TABLE for adding generated columns after table creation.
 -- The workaround is to create new tables and migrate data, which is what this migration does.
 
+-- Disable foreign key constraints during migration to avoid constraint violations
+PRAGMA foreign_keys = OFF;
+
 -- ============================================================================
 -- Metadata table to track generated columns
 -- ============================================================================
@@ -197,3 +200,6 @@ VALUES
   ('gc-entities-email', 'entities', 'prop_email', '$.email', 'TEXT', 1, strftime('%s', 'now'), NULL, 'Entity email property - commonly used for user lookup'),
   ('gc-links-role', 'links', 'prop_role', '$.role', 'TEXT', 1, strftime('%s', 'now'), NULL, 'Link role property - commonly used for relationship filtering'),
   ('gc-links-weight', 'links', 'prop_weight', '$.weight', 'REAL', 1, strftime('%s', 'now'), NULL, 'Link weight property - commonly used for weighted graph operations');
+
+-- Re-enable foreign key constraints
+PRAGMA foreign_keys = ON;
