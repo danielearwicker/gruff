@@ -332,12 +332,12 @@ links.get('/:id', async (c) => {
   try {
     // Try to get from cache first
     const cacheKey = getLinkCacheKey(id);
-    const cached = await getCache<unknown>(kv, cacheKey);
+    const cached = await getCache<{ data?: Record<string, unknown> }>(kv, cacheKey);
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
         const fieldSelection = applyFieldSelection(
-          cached.data as Record<string, unknown>,
+          cached.data,
           fieldsParam,
           LINK_ALLOWED_FIELDS
         );

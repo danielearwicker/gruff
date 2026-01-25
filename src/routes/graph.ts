@@ -89,17 +89,17 @@ graph.post('/traverse', async (c) => {
     }
 
     const queue: QueueItem[] = [
-      { entityId: startEntity.id, depth: 0, path: [{ entityId: startEntity.id, linkId: null }] }
+      { entityId: startEntity.id as string, depth: 0, path: [{ entityId: startEntity.id as string, linkId: null }] }
     ];
 
     const visited = new Set<string>();
-    visited.add(startEntity.id);
+    visited.add(startEntity.id as string);
 
     // Store entities with their paths (if requested)
     const foundEntities = new Map<string, { entity: Record<string, unknown>; paths: PathNode[][] }>();
 
     // Add the starting entity
-    foundEntities.set(startEntity.id, {
+    foundEntities.set(startEntity.id as string, {
       entity: {
         id: startEntity.id,
         type_id: startEntity.type_id,
@@ -108,7 +108,7 @@ graph.post('/traverse', async (c) => {
         created_at: startEntity.created_at,
         is_deleted: startEntity.is_deleted === 1,
       },
-      paths: [[{ entityId: startEntity.id, linkId: null }]],
+      paths: [[{ entityId: startEntity.id as string, linkId: null }]],
     });
 
     while (queue.length > 0) {
@@ -330,10 +330,10 @@ graph.get('/path', validateQuery(shortestPathSchema), async (c) => {
 
     // BFS to find shortest path
     const queue: Array<{ entityId: string, path: Array<{ entityId: string, linkId: string | null }> }> = [
-      { entityId: fromEntity.id, path: [{ entityId: fromEntity.id, linkId: null }] }
+      { entityId: fromEntity.id as string, path: [{ entityId: fromEntity.id as string, linkId: null }] }
     ];
     const visited = new Set<string>();
-    visited.add(fromEntity.id);
+    visited.add(fromEntity.id as string);
 
     while (queue.length > 0) {
       const current = queue.shift()!;

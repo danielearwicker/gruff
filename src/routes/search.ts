@@ -19,7 +19,7 @@ const search = new Hono<{ Bindings: Bindings }>();
  * Search for entities based on criteria
  */
 search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
-  const criteria = c.get('validated_json') as Record<string, unknown>;
+  const criteria = c.get('validated_json') as z.infer<typeof searchEntitiesSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -151,7 +151,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
     // Parse properties for each entity
     const parsedEntities = entities.map((entity: Record<string, unknown>) => ({
       ...entity,
-      properties: entity.properties ? JSON.parse(entity.properties) : {},
+      properties: entity.properties ? JSON.parse(entity.properties as string) : {},
       is_deleted: Boolean(entity.is_deleted),
       is_latest: Boolean(entity.is_latest),
       type: {
@@ -186,7 +186,7 @@ search.post('/entities', validateJson(searchEntitiesSchema), async (c) => {
  * Search for links based on criteria
  */
 search.post('/links', validateJson(searchLinksSchema), async (c) => {
-  const criteria = c.get('validated_json') as Record<string, unknown>;
+  const criteria = c.get('validated_json') as z.infer<typeof searchLinksSchema>;
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -343,7 +343,7 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
       type_id: link.type_id,
       source_entity_id: link.source_entity_id,
       target_entity_id: link.target_entity_id,
-      properties: link.properties ? JSON.parse(link.properties) : {},
+      properties: link.properties ? JSON.parse(link.properties as string) : {},
       version: link.version,
       previous_version_id: link.previous_version_id,
       created_at: link.created_at,
@@ -359,13 +359,13 @@ search.post('/links', validateJson(searchLinksSchema), async (c) => {
         id: link.source_id,
         type_id: link.source_type_id,
         type_name: link.source_type_name,
-        properties: link.source_properties ? JSON.parse(link.source_properties) : {},
+        properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
       } : null,
       target_entity: link.target_id ? {
         id: link.target_id,
         type_id: link.target_type_id,
         type_name: link.target_type_name,
-        properties: link.target_properties ? JSON.parse(link.target_properties) : {},
+        properties: link.target_properties ? JSON.parse(link.target_properties as string) : {},
       } : null,
     }));
 
@@ -450,7 +450,7 @@ search.get('/suggest', validateQuery(suggestionsSchema), async (c) => {
       matched_value: row.matched_value,
       property_path: propertyPath,
       // Optionally include full properties for additional context
-      properties: row.properties ? JSON.parse(row.properties) : {},
+      properties: row.properties ? JSON.parse(row.properties as string) : {},
     }));
 
     logger.info('Type-ahead suggestions generated', {
