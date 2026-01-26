@@ -768,7 +768,7 @@ Each entity in the list shows:
 - Preserves form data on validation errors
 - Disabled entities cannot be edited until restored
 
-### 🟦 Link Detail View
+### ✅ Link Detail View
 
 **Route:** `GET /ui/links/:id`
 

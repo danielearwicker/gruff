@@ -1925,37 +1925,580 @@ ui.get('/links', async c => {
 });
 
 /**
- * Link detail view (placeholder)
+ * Link detail view
  * GET /ui/links/:id
  */
 ui.get('/links/:id', async c => {
   const user = c.get('user');
   const linkId = c.req.param('id');
 
-  const content = `
-    <h2>Link: ${escapeHtml(linkId)}</h2>
-    <p>Link detail view coming soon.</p>
-    <div class="button-group">
-      <a href="/ui/links" class="button secondary">Back to Links</a>
-    </div>
-  `;
+  try {
+    // Fetch the link with type and entity information
+    const link = await c.env.DB.prepare(
+      `
+      SELECT
+        l.id, l.type_id, l.source_entity_id, l.target_entity_id,
+        l.properties, l.version, l.created_at, l.created_by,
+        l.is_latest, l.is_deleted, l.previous_version_id,
+        t.name as type_name, t.description as type_description, t.json_schema as type_json_schema,
+        u.display_name as created_by_name, u.email as created_by_email
+      FROM links l
+      JOIN types t ON l.type_id = t.id
+      LEFT JOIN users u ON l.created_by = u.id
+      WHERE l.id = ?
+    `
+    )
+      .bind(linkId)
+      .first<{
+        id: string;
+        type_id: string;
+        source_entity_id: string;
+        target_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        type_name: string;
+        type_description: string | null;
+        type_json_schema: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+      }>();
 
-  const html = renderPage(
-    {
-      title: `Link ${linkId}`,
-      user,
-      activePath: '/ui/links',
-      breadcrumbs: [
-        { label: 'Home', href: '/ui' },
-        { label: 'Links', href: '/ui/links' },
-        { label: linkId.substring(0, 8) },
-      ],
-    },
-    content
-  );
+    if (!link) {
+      const content = `
+        <div class="error-message">
+          <h2>Link Not Found</h2>
+          <p>The link with ID "${escapeHtml(linkId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/links" class="button secondary">Back to Links</a>
+        </div>
+      `;
 
-  return c.html(html);
+      return c.html(
+        renderPage(
+          {
+            title: 'Link Not Found',
+            user,
+            activePath: '/ui/links',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Links', href: '/ui/links' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Fetch source entity
+    const sourceEntity = await c.env.DB.prepare(
+      `
+      SELECT e.id, e.properties, e.is_deleted, t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(link.source_entity_id)
+      .first<{
+        id: string;
+        properties: string;
+        is_deleted: number;
+        type_name: string;
+      }>();
+
+    // Fetch target entity
+    const targetEntity = await c.env.DB.prepare(
+      `
+      SELECT e.id, e.properties, e.is_deleted, t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(link.target_entity_id)
+      .first<{
+        id: string;
+        properties: string;
+        is_deleted: number;
+        type_name: string;
+      }>();
+
+    // Parse properties
+    const props = JSON.parse(link.properties);
+
+    // Check if viewing an old version and find latest version ID if so
+    let latestVersionId: string | null = null;
+    if (!link.is_latest) {
+      const latest = await c.env.DB.prepare(
+        `
+        WITH RECURSIVE version_chain AS (
+          SELECT id, is_latest FROM links WHERE id = ?
+          UNION ALL
+          SELECT l.id, l.is_latest FROM links l
+          INNER JOIN version_chain vc ON l.previous_version_id = vc.id
+        )
+        SELECT id FROM version_chain WHERE is_latest = 1 LIMIT 1
+      `
+      )
+        .bind(linkId)
+        .first<{ id: string }>();
+      latestVersionId = latest?.id || null;
+    }
+
+    // Fetch version history (all versions of this link chain)
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, source_entity_id, target_entity_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM links WHERE id = ?
+        UNION ALL
+        SELECT l.id, l.type_id, l.source_entity_id, l.target_entity_id, l.properties, l.version, l.created_at, l.created_by, l.is_latest, l.is_deleted, l.previous_version_id
+        FROM links l
+        INNER JOIN version_chain_back vc ON l.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, source_entity_id, target_entity_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM links WHERE id = ?
+        UNION ALL
+        SELECT l.id, l.type_id, l.source_entity_id, l.target_entity_id, l.properties, l.version, l.created_at, l.created_by, l.is_latest, l.is_deleted, l.previous_version_id
+        FROM links l
+        INNER JOIN version_chain_forward vc ON l.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*, u.display_name as created_by_name, u.email as created_by_email
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(linkId, linkId)
+      .all<{
+        id: string;
+        type_id: string;
+        source_entity_id: string;
+        target_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+      }>();
+
+    // Helper to get entity display name
+    const getEntityDisplayName = (entityProps: string | undefined, entityId: string) => {
+      if (!entityProps) return entityId.substring(0, 8) + '...';
+      try {
+        const parsed = JSON.parse(entityProps);
+        return parsed.name || parsed.title || parsed.label || entityId.substring(0, 8) + '...';
+      } catch {
+        return entityId.substring(0, 8) + '...';
+      }
+    };
+
+    const sourceDisplayName = getEntityDisplayName(sourceEntity?.properties, link.source_entity_id);
+    const targetDisplayName = getEntityDisplayName(targetEntity?.properties, link.target_entity_id);
+
+    // Build visual representation
+    const visualRepresentation = `
+      <div class="link-diagram">
+        <div class="link-node source ${sourceEntity?.is_deleted ? 'deleted' : ''}">
+          <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+          <div class="node-type">${escapeHtml(sourceEntity?.type_name || 'Unknown')}</div>
+        </div>
+        <div class="link-arrow">
+          <div class="arrow-line"></div>
+          <div class="arrow-label">${escapeHtml(link.type_name)}</div>
+          <div class="arrow-head"></div>
+        </div>
+        <div class="link-node target ${targetEntity?.is_deleted ? 'deleted' : ''}">
+          <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+          <div class="node-type">${escapeHtml(targetEntity?.type_name || 'Unknown')}</div>
+        </div>
+      </div>
+      <style>
+        .link-diagram {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0;
+          padding: 2rem;
+          background-color: var(--color-muted);
+          border-radius: 0.5rem;
+          margin: 1rem 0;
+          overflow-x: auto;
+        }
+
+        .link-node {
+          background-color: var(--color-bg);
+          border: 2px solid var(--color-primary);
+          border-radius: 0.5rem;
+          padding: 1rem 1.5rem;
+          text-align: center;
+          min-width: 120px;
+        }
+
+        .link-node.deleted {
+          border-color: var(--color-error);
+          opacity: 0.7;
+        }
+
+        .link-node a {
+          color: var(--color-fg);
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 1rem;
+        }
+
+        .link-node a:hover {
+          color: var(--color-primary);
+        }
+
+        .node-type {
+          font-size: 0.75rem;
+          color: var(--color-secondary);
+          margin-top: 0.25rem;
+        }
+
+        .link-arrow {
+          display: flex;
+          align-items: center;
+          position: relative;
+          min-width: 120px;
+        }
+
+        .arrow-line {
+          flex: 1;
+          height: 2px;
+          background-color: var(--color-secondary);
+        }
+
+        .arrow-label {
+          position: absolute;
+          top: -1.5rem;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: var(--color-muted);
+          padding: 0.25rem 0.5rem;
+          font-size: 0.75rem;
+          color: var(--color-secondary);
+          white-space: nowrap;
+        }
+
+        .arrow-head {
+          width: 0;
+          height: 0;
+          border-left: 8px solid var(--color-secondary);
+          border-top: 6px solid transparent;
+          border-bottom: 6px solid transparent;
+        }
+
+        @media (max-width: 768px) {
+          .link-diagram {
+            flex-direction: column;
+            gap: 0.5rem;
+          }
+
+          .link-arrow {
+            transform: rotate(90deg);
+            min-width: 60px;
+          }
+
+          .arrow-label {
+            transform: translateX(-50%) rotate(-90deg);
+            top: auto;
+            left: -2rem;
+          }
+        }
+      </style>
+    `;
+
+    // Build link info section
+    const linkInfoSection = `
+      <div class="card detail-card">
+        <h3>Link Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(link.id)}</code></dd>
+
+          <dt>Type</dt>
+          <dd>
+            <span class="badge">${escapeHtml(link.type_name)}</span>
+            ${link.type_description ? `<span class="muted small">${escapeHtml(link.type_description)}</span>` : ''}
+          </dd>
+
+          <dt>Source Entity</dt>
+          <dd>
+            <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+            <span class="muted small">(${escapeHtml(sourceEntity?.type_name || 'Unknown')})</span>
+            ${sourceEntity?.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+          </dd>
+
+          <dt>Target Entity</dt>
+          <dd>
+            <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+            <span class="muted small">(${escapeHtml(targetEntity?.type_name || 'Unknown')})</span>
+            ${targetEntity?.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+          </dd>
+
+          <dt>Version</dt>
+          <dd>${link.version}${link.previous_version_id ? ` <span class="muted">(previous: <a href="/ui/links/${link.previous_version_id}">${link.previous_version_id.substring(0, 8)}...</a>)</span>` : ''}</dd>
+
+          <dt>Created By</dt>
+          <dd>${escapeHtml(link.created_by_name || link.created_by_email)}</dd>
+
+          <dt>Created At</dt>
+          <dd>${formatTimestamp(link.created_at)}</dd>
+
+          <dt>Status</dt>
+          <dd>
+            ${link.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old Version</span>'}
+            ${link.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+          </dd>
+        </dl>
+      </div>
+    `;
+
+    // Build properties section
+    const propertiesSection = `
+      <div class="card">
+        <h3>Properties</h3>
+        ${link.type_json_schema ? '<p class="muted small">This type has JSON schema validation. <a href="/ui/types">View type details</a></p>' : ''}
+        <pre><code>${escapeHtml(JSON.stringify(props, null, 2))}</code></pre>
+      </div>
+    `;
+
+    // Build version history section
+    const versionHistorySection = `
+      <div class="card">
+        <h3>Version History (${versionHistory.results.length} versions)</h3>
+        <div class="version-timeline">
+          ${versionHistory.results
+            .map(version => {
+              const isCurrentView = version.id === linkId;
+              const changePreview = getLinkChangePreview(version, versionHistory.results);
+
+              return `
+              <div class="version-item ${isCurrentView ? 'current' : ''}">
+                <div class="version-header">
+                  <span class="version-number">
+                    ${isCurrentView ? `<strong>Version ${version.version}</strong> (viewing)` : `<a href="/ui/links/${version.id}">Version ${version.version}</a>`}
+                  </span>
+                  ${version.is_latest ? '<span class="badge success small">Latest</span>' : ''}
+                  ${version.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+                </div>
+                <div class="version-meta">
+                  Modified by ${escapeHtml(version.created_by_name || version.created_by_email)} on ${formatTimestamp(version.created_at)}
+                </div>
+                ${changePreview ? `<div class="version-changes">${changePreview}</div>` : ''}
+              </div>
+            `;
+            })
+            .join('')}
+        </div>
+      </div>
+    `;
+
+    // Build actions section
+    const actionsSection = `
+      <div class="card">
+        <h3>Actions</h3>
+        <div class="button-group">
+          ${!link.is_deleted && link.is_latest ? `<a href="/ui/links/${link.id}/edit" class="button">Edit Link</a>` : ''}
+          ${!link.is_deleted && link.is_latest ? `<button class="button danger" onclick="confirmDeleteLink('${link.id}')">Delete Link</button>` : ''}
+          ${link.is_deleted && link.is_latest ? `<button class="button" onclick="confirmRestoreLink('${link.id}')">Restore Link</button>` : ''}
+          <a href="/api/links/${link.id}" class="button secondary" target="_blank">Export as JSON</a>
+        </div>
+      </div>
+
+      <script>
+        function confirmDeleteLink(linkId) {
+          if (confirm('Are you sure you want to delete this link? This action creates a new deleted version.')) {
+            fetch('/api/links/' + linkId, { method: 'DELETE' })
+              .then(res => {
+                if (res.ok) {
+                  window.location.reload();
+                } else {
+                  return res.json().then(data => {
+                    alert('Error: ' + (data.error || 'Failed to delete link'));
+                  });
+                }
+              })
+              .catch(err => {
+                alert('Error: ' + err.message);
+              });
+          }
+        }
+
+        function confirmRestoreLink(linkId) {
+          if (confirm('Are you sure you want to restore this link?')) {
+            fetch('/api/links/' + linkId + '/restore', { method: 'POST' })
+              .then(res => {
+                if (res.ok) {
+                  window.location.reload();
+                } else {
+                  return res.json().then(data => {
+                    alert('Error: ' + (data.error || 'Failed to restore link'));
+                  });
+                }
+              })
+              .catch(err => {
+                alert('Error: ' + err.message);
+              });
+          }
+        }
+      </script>
+    `;
+
+    // Build the banner for old versions
+    const oldVersionBanner = !link.is_latest
+      ? `
+      <div class="warning-message">
+        <strong>Viewing old version</strong> - You are viewing version ${link.version} of this link.
+        ${latestVersionId ? `<a href="/ui/links/${latestVersionId}">View latest version</a>` : ''}
+      </div>
+    `
+      : '';
+
+    const content = `
+      <h2>Link: ${escapeHtml(link.type_name)}</h2>
+      ${oldVersionBanner}
+      ${visualRepresentation}
+      ${linkInfoSection}
+      ${propertiesSection}
+      ${versionHistorySection}
+      ${actionsSection}
+
+      <div class="button-group">
+        <a href="/ui/links" class="button secondary">Back to Links</a>
+        <a href="/ui/entities/${link.source_entity_id}" class="button secondary">View Source Entity</a>
+        <a href="/ui/entities/${link.target_entity_id}" class="button secondary">View Target Entity</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `${link.type_name} Link - Detail`,
+        user,
+        activePath: '/ui/links',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Links', href: '/ui/links' },
+          { label: link.id.substring(0, 8) + '...' },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching link:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the link. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/links" class="button secondary">Back to Links</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/links',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Links', href: '/ui/links' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
 });
+
+/**
+ * Helper function to get a change preview for link version history
+ */
+function getLinkChangePreview(
+  version: {
+    version: number;
+    properties: string;
+    is_deleted: number;
+    previous_version_id: string | null;
+  },
+  allVersions: Array<{
+    id: string;
+    version: number;
+    properties: string;
+    is_deleted: number;
+    previous_version_id: string | null;
+  }>
+): string {
+  if (version.version === 1) {
+    return '<span class="muted">Initial version</span>';
+  }
+
+  // Find the previous version
+  const prevVersion = allVersions.find(v => v.version === version.version - 1);
+  if (!prevVersion) {
+    return '';
+  }
+
+  const prevProps = JSON.parse(prevVersion.properties);
+  const currProps = JSON.parse(version.properties);
+
+  const changes: string[] = [];
+
+  // Check for status change
+  if (version.is_deleted && !prevVersion.is_deleted) {
+    changes.push('Deleted');
+  } else if (!version.is_deleted && prevVersion.is_deleted) {
+    changes.push('Restored');
+  }
+
+  // Check for property changes
+  const allKeys = new Set([...Object.keys(prevProps), ...Object.keys(currProps)]);
+  for (const key of allKeys) {
+    if (!(key in prevProps)) {
+      changes.push(`Added "${key}"`);
+    } else if (!(key in currProps)) {
+      changes.push(`Removed "${key}"`);
+    } else if (JSON.stringify(prevProps[key]) !== JSON.stringify(currProps[key])) {
+      changes.push(`Changed "${key}"`);
+    }
+  }
+
+  if (changes.length === 0) {
+    return '<span class="muted">No property changes</span>';
+  }
+
+  return (
+    '<span class="muted">' +
+    changes.slice(0, 3).join(', ') +
+    (changes.length > 3 ? '...' : '') +
+    '</span>'
+  );
+}
 
 /**
  * Type browser (placeholder)
