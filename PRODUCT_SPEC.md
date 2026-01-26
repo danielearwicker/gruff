@@ -799,7 +799,7 @@ Each entity in the list shows:
 - Delete Link button (soft delete with confirmation)
 - Create New Version button
 
-### 🟦 Link Create/Edit Forms
+### ✅ Link Create/Edit Forms
 
 **Routes:**
 
@@ -822,7 +822,7 @@ Each entity in the list shows:
 #### Behavior
 
 - **Create:** POST to `/api/links`, redirects to new link detail page
-- **Edit:** Creates new version via POST to `/api/links/:id/versions`
+- **Edit:** PUT to `/api/links/:id`, creates new version, redirects to new link version
 
 ### 🟦 Type Browser
 

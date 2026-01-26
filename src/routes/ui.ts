@@ -1925,6 +1925,972 @@ ui.get('/links', async c => {
 });
 
 /**
+ * Create link form
+ * GET /ui/links/new
+ * IMPORTANT: This route must be defined BEFORE /links/:id to avoid matching "new" as an ID
+ */
+ui.get('/links/new', async c => {
+  const user = c.get('user');
+
+  // Get optional pre-selected source entity from query parameter
+  const preselectedSourceId = c.req.query('source') || '';
+
+  // Fetch all link types for the dropdown
+  const allTypes = await c.env.DB.prepare(
+    "SELECT id, name, description, json_schema FROM types WHERE category = 'link' ORDER BY name"
+  ).all<{ id: string; name: string; description: string | null; json_schema: string | null }>();
+
+  // Fetch preselected source entity if provided
+  let preselectedSource: { id: string; properties: string; type_name: string } | null = null;
+  if (preselectedSourceId) {
+    preselectedSource = await c.env.DB.prepare(
+      `
+      SELECT e.id, e.properties, t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1 AND e.is_deleted = 0
+    `
+    )
+      .bind(preselectedSourceId)
+      .first<{ id: string; properties: string; type_name: string }>();
+  }
+
+  // Helper function to get display name from properties
+  const getDisplayName = (properties: string | undefined, id: string) => {
+    if (!properties) return id.substring(0, 8) + '...';
+    try {
+      const parsed = JSON.parse(properties);
+      return parsed.name || parsed.title || parsed.label || id.substring(0, 8) + '...';
+    } catch {
+      return id.substring(0, 8) + '...';
+    }
+  };
+
+  // Get any error message and preserved form data from query params (for validation errors)
+  const errorMessage = c.req.query('error') || '';
+  const preservedTypeId = c.req.query('preserved_type_id') || '';
+  const preservedSourceId = c.req.query('preserved_source_id') || preselectedSourceId;
+  const preservedTargetId = c.req.query('preserved_target_id') || '';
+  const preservedProperties = c.req.query('preserved_properties') || '{}';
+
+  // Format the preserved properties nicely for display
+  let formattedProperties = '{}';
+  try {
+    const parsed = JSON.parse(preservedProperties);
+    formattedProperties = JSON.stringify(parsed, null, 2);
+  } catch {
+    formattedProperties = preservedProperties;
+  }
+
+  // Build the form
+  const formHtml = `
+    <h2>Create New Link</h2>
+
+    ${
+      errorMessage
+        ? `
+      <div class="error-message">
+        <strong>Error:</strong> ${escapeHtml(decodeURIComponent(errorMessage))}
+      </div>
+    `
+        : ''
+    }
+
+    <div class="card">
+      <form id="create-link-form" class="link-form">
+        <div class="form-group">
+          <label for="type_id">Link Type <span class="required">*</span></label>
+          <select id="type_id" name="type_id" required onchange="updateSchemaHint()">
+            <option value="">Select a link type...</option>
+            ${allTypes.results
+              .map(
+                t => `
+              <option value="${t.id}"
+                      ${preservedTypeId === t.id ? 'selected' : ''}
+                      data-schema="${t.json_schema ? escapeHtml(t.json_schema) : ''}"
+                      data-description="${t.description ? escapeHtml(t.description) : ''}">
+                ${escapeHtml(t.name)}
+              </option>
+            `
+              )
+              .join('')}
+          </select>
+          <div id="type-description" class="form-hint"></div>
+        </div>
+
+        <div id="schema-hint" class="schema-hint" style="display: none;">
+          <h4>Property Schema</h4>
+          <pre><code id="schema-content"></code></pre>
+        </div>
+
+        <div class="form-group">
+          <label for="source_entity_id">Source Entity <span class="required">*</span></label>
+          <div class="entity-picker">
+            <input type="text" id="source_entity_search" placeholder="Search entities by name..."
+                   autocomplete="off" onkeyup="searchEntities('source')">
+            <input type="hidden" id="source_entity_id" name="source_entity_id" value="${escapeHtml(preservedSourceId)}" required>
+            <div id="source_entity_results" class="entity-results" style="display: none;"></div>
+            <div id="source_entity_selected" class="entity-selected ${preservedSourceId || preselectedSource ? '' : 'hidden'}">
+              ${
+                preselectedSource
+                  ? `
+                <span class="selected-entity">
+                  <a href="/ui/entities/${preselectedSource.id}">${escapeHtml(getDisplayName(preselectedSource.properties, preselectedSource.id))}</a>
+                  <span class="muted">(${escapeHtml(preselectedSource.type_name)})</span>
+                </span>
+                <button type="button" class="button small secondary" onclick="clearEntitySelection('source')">Clear</button>
+              `
+                  : preservedSourceId
+                    ? `
+                <span class="selected-entity">
+                  <span class="muted">ID: ${escapeHtml(preservedSourceId.substring(0, 8))}...</span>
+                </span>
+                <button type="button" class="button small secondary" onclick="clearEntitySelection('source')">Clear</button>
+              `
+                    : ''
+              }
+            </div>
+          </div>
+          <div class="form-hint">Search for an entity to use as the source (from).</div>
+        </div>
+
+        <div class="link-direction">
+          <div class="direction-arrow">→</div>
+        </div>
+
+        <div class="form-group">
+          <label for="target_entity_id">Target Entity <span class="required">*</span></label>
+          <div class="entity-picker">
+            <input type="text" id="target_entity_search" placeholder="Search entities by name..."
+                   autocomplete="off" onkeyup="searchEntities('target')">
+            <input type="hidden" id="target_entity_id" name="target_entity_id" value="${escapeHtml(preservedTargetId)}" required>
+            <div id="target_entity_results" class="entity-results" style="display: none;"></div>
+            <div id="target_entity_selected" class="entity-selected ${preservedTargetId ? '' : 'hidden'}">
+              ${
+                preservedTargetId
+                  ? `
+                <span class="selected-entity">
+                  <span class="muted">ID: ${escapeHtml(preservedTargetId.substring(0, 8))}...</span>
+                </span>
+                <button type="button" class="button small secondary" onclick="clearEntitySelection('target')">Clear</button>
+              `
+                  : ''
+              }
+            </div>
+          </div>
+          <div class="form-hint">Search for an entity to use as the target (to).</div>
+        </div>
+
+        <div class="form-group">
+          <label for="properties">Properties (JSON)</label>
+          <textarea id="properties" name="properties" rows="10"
+                    placeholder='{"role": "example", "weight": 1.0}'>${escapeHtml(formattedProperties)}</textarea>
+          <div class="form-hint">Optional: Enter valid JSON object with the link properties.</div>
+        </div>
+
+        <div id="json-error" class="error-message" style="display: none;"></div>
+
+        <div class="button-group">
+          <button type="submit" class="button" id="submit-btn">Create Link</button>
+          <a href="/ui/links" class="button secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      let searchTimeout;
+
+      // Update schema hint when type is selected
+      function updateSchemaHint() {
+        const select = document.getElementById('type_id');
+        const selectedOption = select.options[select.selectedIndex];
+        const schema = selectedOption.getAttribute('data-schema');
+        const description = selectedOption.getAttribute('data-description');
+        const schemaHint = document.getElementById('schema-hint');
+        const schemaContent = document.getElementById('schema-content');
+        const typeDescription = document.getElementById('type-description');
+
+        if (description) {
+          typeDescription.textContent = description;
+        } else {
+          typeDescription.textContent = '';
+        }
+
+        if (schema) {
+          try {
+            const parsed = JSON.parse(schema);
+            schemaContent.textContent = JSON.stringify(parsed, null, 2);
+            schemaHint.style.display = 'block';
+          } catch {
+            schemaHint.style.display = 'none';
+          }
+        } else {
+          schemaHint.style.display = 'none';
+        }
+      }
+
+      // Validate JSON on input
+      document.getElementById('properties').addEventListener('input', function() {
+        const errorDiv = document.getElementById('json-error');
+        if (!this.value || this.value.trim() === '') {
+          errorDiv.style.display = 'none';
+          this.style.borderColor = '';
+          return;
+        }
+        try {
+          JSON.parse(this.value);
+          errorDiv.style.display = 'none';
+          this.style.borderColor = '';
+        } catch (e) {
+          errorDiv.textContent = 'Invalid JSON: ' + e.message;
+          errorDiv.style.display = 'block';
+          this.style.borderColor = 'var(--color-error)';
+        }
+      });
+
+      // Search entities with debounce
+      function searchEntities(direction) {
+        clearTimeout(searchTimeout);
+        const searchInput = document.getElementById(direction + '_entity_search');
+        const query = searchInput.value.trim();
+        const resultsDiv = document.getElementById(direction + '_entity_results');
+
+        if (query.length < 2) {
+          resultsDiv.style.display = 'none';
+          return;
+        }
+
+        searchTimeout = setTimeout(async () => {
+          try {
+            const response = await fetch('/api/search/suggest?q=' + encodeURIComponent(query) + '&limit=10');
+            const data = await response.json();
+
+            if (data.data && data.data.length > 0) {
+              resultsDiv.innerHTML = data.data.map(entity => {
+                const displayName = entity.name || entity.title || entity.label || entity.id.substring(0, 8);
+                return '<div class="entity-result" onclick="selectEntity(\\'' + direction + '\\', \\'' + entity.id + '\\', \\'' + escapeForJs(displayName) + '\\', \\'' + escapeForJs(entity.type_name) + '\\')">' +
+                       '<span class="entity-name">' + escapeHtmlJs(displayName) + '</span> ' +
+                       '<span class="muted">(' + escapeHtmlJs(entity.type_name) + ')</span>' +
+                       '</div>';
+              }).join('');
+              resultsDiv.style.display = 'block';
+            } else {
+              resultsDiv.innerHTML = '<div class="entity-result muted">No entities found</div>';
+              resultsDiv.style.display = 'block';
+            }
+          } catch (error) {
+            console.error('Search error:', error);
+            resultsDiv.innerHTML = '<div class="entity-result muted">Error searching entities</div>';
+            resultsDiv.style.display = 'block';
+          }
+        }, 300);
+      }
+
+      function escapeForJs(str) {
+        return str.replace(/'/g, "\\\\'").replace(/"/g, '\\\\"');
+      }
+
+      function escapeHtmlJs(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      // Select an entity from search results
+      function selectEntity(direction, id, displayName, typeName) {
+        const hiddenInput = document.getElementById(direction + '_entity_id');
+        const resultsDiv = document.getElementById(direction + '_entity_results');
+        const selectedDiv = document.getElementById(direction + '_entity_selected');
+        const searchInput = document.getElementById(direction + '_entity_search');
+
+        hiddenInput.value = id;
+        resultsDiv.style.display = 'none';
+        searchInput.value = '';
+
+        selectedDiv.innerHTML = '<span class="selected-entity"><a href="/ui/entities/' + id + '">' +
+                                escapeHtmlJs(displayName) + '</a> ' +
+                                '<span class="muted">(' + escapeHtmlJs(typeName) + ')</span></span>' +
+                                '<button type="button" class="button small secondary" onclick="clearEntitySelection(\\'' + direction + '\\')">Clear</button>';
+        selectedDiv.classList.remove('hidden');
+      }
+
+      // Clear entity selection
+      function clearEntitySelection(direction) {
+        const hiddenInput = document.getElementById(direction + '_entity_id');
+        const selectedDiv = document.getElementById(direction + '_entity_selected');
+
+        hiddenInput.value = '';
+        selectedDiv.innerHTML = '';
+        selectedDiv.classList.add('hidden');
+      }
+
+      // Close search results when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.entity-picker')) {
+          document.querySelectorAll('.entity-results').forEach(el => el.style.display = 'none');
+        }
+      });
+
+      // Handle form submission
+      document.getElementById('create-link-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const typeId = document.getElementById('type_id').value;
+        const sourceEntityId = document.getElementById('source_entity_id').value;
+        const targetEntityId = document.getElementById('target_entity_id').value;
+        const propertiesText = document.getElementById('properties').value;
+        const submitBtn = document.getElementById('submit-btn');
+        const errorDiv = document.getElementById('json-error');
+
+        // Validate type selection
+        if (!typeId) {
+          errorDiv.textContent = 'Please select a link type.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        // Validate source entity
+        if (!sourceEntityId) {
+          errorDiv.textContent = 'Please select a source entity.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        // Validate target entity
+        if (!targetEntityId) {
+          errorDiv.textContent = 'Please select a target entity.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        // Validate JSON if provided
+        let properties = {};
+        if (propertiesText && propertiesText.trim()) {
+          try {
+            properties = JSON.parse(propertiesText);
+          } catch (e) {
+            errorDiv.textContent = 'Invalid JSON: ' + e.message;
+            errorDiv.style.display = 'block';
+            return;
+          }
+        }
+
+        // Disable submit button while processing
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+        errorDiv.style.display = 'none';
+
+        try {
+          const response = await fetch('/api/links', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type_id: typeId,
+              source_entity_id: sourceEntityId,
+              target_entity_id: targetEntityId,
+              properties: properties
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.data && data.data.id) {
+            // Success - redirect to the new link
+            window.location.href = '/ui/links/' + data.data.id;
+          } else {
+            // Error - show message
+            errorDiv.textContent = data.error || data.message || 'Failed to create link';
+            errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Link';
+          }
+        } catch (err) {
+          errorDiv.textContent = 'Network error: ' + err.message;
+          errorDiv.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Link';
+        }
+      });
+
+      // Initialize schema hint on page load
+      updateSchemaHint();
+    </script>
+
+    <style>
+      .link-form .form-group {
+        margin-bottom: 1.5rem;
+      }
+
+      .link-form textarea {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+      }
+
+      .required {
+        color: var(--color-error);
+      }
+
+      .form-hint {
+        font-size: 0.875rem;
+        color: var(--color-secondary);
+        margin-top: 0.25rem;
+      }
+
+      .schema-hint {
+        background-color: var(--color-muted);
+        border: 1px solid var(--color-border);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .schema-hint h4 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--color-secondary);
+      }
+
+      .schema-hint pre {
+        margin: 0;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .entity-picker {
+        position: relative;
+      }
+
+      .entity-results {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 0.375rem;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .entity-result {
+        padding: 0.5rem;
+        cursor: pointer;
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      .entity-result:last-child {
+        border-bottom: none;
+      }
+
+      .entity-result:hover {
+        background-color: var(--color-muted);
+      }
+
+      .entity-name {
+        font-weight: 600;
+      }
+
+      .entity-selected {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background-color: var(--color-muted);
+        border-radius: 0.375rem;
+      }
+
+      .entity-selected.hidden {
+        display: none;
+      }
+
+      .selected-entity {
+        flex: 1;
+      }
+
+      .selected-entity a {
+        color: var(--color-primary);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .selected-entity a:hover {
+        text-decoration: underline;
+      }
+
+      .link-direction {
+        display: flex;
+        justify-content: center;
+        margin: -0.5rem 0;
+      }
+
+      .direction-arrow {
+        font-size: 1.5rem;
+        color: var(--color-secondary);
+        font-weight: bold;
+      }
+    </style>
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Create Link',
+      user,
+      activePath: '/ui/links',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Links', href: '/ui/links' },
+        { label: 'Create' },
+      ],
+    },
+    formHtml
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Edit link form
+ * GET /ui/links/:id/edit
+ * IMPORTANT: This route must be defined BEFORE /links/:id to avoid partial matching issues
+ */
+ui.get('/links/:id/edit', async c => {
+  const user = c.get('user');
+  const linkId = c.req.param('id');
+
+  try {
+    // Fetch the link with type information
+    const link = await c.env.DB.prepare(
+      `
+      SELECT
+        l.id, l.type_id, l.source_entity_id, l.target_entity_id,
+        l.properties, l.version, l.created_at, l.created_by,
+        l.is_latest, l.is_deleted, l.previous_version_id,
+        t.name as type_name, t.description as type_description, t.json_schema as type_json_schema
+      FROM links l
+      JOIN types t ON l.type_id = t.id
+      WHERE l.id = ? AND l.is_latest = 1
+    `
+    )
+      .bind(linkId)
+      .first<{
+        id: string;
+        type_id: string;
+        source_entity_id: string;
+        target_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        type_name: string;
+        type_description: string | null;
+        type_json_schema: string | null;
+      }>();
+
+    if (!link) {
+      const content = `
+        <div class="error-message">
+          <h2>Link Not Found</h2>
+          <p>The link with ID "${escapeHtml(linkId)}" could not be found or is not the latest version.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/links" class="button secondary">Back to Links</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Link Not Found',
+            user,
+            activePath: '/ui/links',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Links', href: '/ui/links' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Check if link is deleted
+    if (link.is_deleted) {
+      const content = `
+        <div class="error-message">
+          <h2>Link Deleted</h2>
+          <p>This link has been deleted. You must restore it before editing.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/links/${escapeHtml(linkId)}" class="button secondary">Back to Link</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Link Deleted',
+            user,
+            activePath: '/ui/links',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Links', href: '/ui/links' },
+              { label: 'Deleted' },
+            ],
+          },
+          content
+        ),
+        409
+      );
+    }
+
+    // Fetch source and target entities
+    const sourceEntity = await c.env.DB.prepare(
+      `
+      SELECT e.id, e.properties, t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(link.source_entity_id)
+      .first<{ id: string; properties: string; type_name: string }>();
+
+    const targetEntity = await c.env.DB.prepare(
+      `
+      SELECT e.id, e.properties, t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(link.target_entity_id)
+      .first<{ id: string; properties: string; type_name: string }>();
+
+    // Helper function to get display name from properties
+    const getDisplayName = (properties: string | undefined, id: string) => {
+      if (!properties) return id.substring(0, 8) + '...';
+      try {
+        const parsed = JSON.parse(properties);
+        return parsed.name || parsed.title || parsed.label || id.substring(0, 8) + '...';
+      } catch {
+        return id.substring(0, 8) + '...';
+      }
+    };
+
+    const sourceDisplayName = getDisplayName(sourceEntity?.properties, link.source_entity_id);
+    const targetDisplayName = getDisplayName(targetEntity?.properties, link.target_entity_id);
+
+    // Parse the properties
+    const props = JSON.parse(link.properties);
+    const formattedProperties = JSON.stringify(props, null, 2);
+
+    // Get any error message from query params (for validation errors)
+    const errorMessage = c.req.query('error') || '';
+    const preservedProperties = c.req.query('preserved_properties') || '';
+
+    // Use preserved properties if available, otherwise use current link properties
+    let displayProperties = formattedProperties;
+    if (preservedProperties) {
+      try {
+        const parsed = JSON.parse(preservedProperties);
+        displayProperties = JSON.stringify(parsed, null, 2);
+      } catch {
+        displayProperties = preservedProperties;
+      }
+    }
+
+    // Build the form
+    const formHtml = `
+      <h2>Edit Link</h2>
+
+      ${
+        errorMessage
+          ? `
+        <div class="error-message">
+          <strong>Error:</strong> ${escapeHtml(decodeURIComponent(errorMessage))}
+        </div>
+      `
+          : ''
+      }
+
+      <div class="card detail-card">
+        <h3>Link Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(link.id)}</code></dd>
+
+          <dt>Type</dt>
+          <dd>
+            <span class="badge">${escapeHtml(link.type_name)}</span>
+            ${link.type_description ? `<span class="muted small">${escapeHtml(link.type_description)}</span>` : ''}
+          </dd>
+
+          <dt>Source Entity</dt>
+          <dd>
+            <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+            <span class="muted small">(${escapeHtml(sourceEntity?.type_name || 'Unknown')})</span>
+          </dd>
+
+          <dt>Target Entity</dt>
+          <dd>
+            <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+            <span class="muted small">(${escapeHtml(targetEntity?.type_name || 'Unknown')})</span>
+          </dd>
+
+          <dt>Current Version</dt>
+          <dd>${link.version}</dd>
+        </dl>
+      </div>
+
+      <div class="link-diagram-preview">
+        <div class="link-node-preview">
+          <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+        </div>
+        <div class="link-arrow-preview">→ ${escapeHtml(link.type_name)} →</div>
+        <div class="link-node-preview">
+          <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+        </div>
+      </div>
+
+      ${
+        link.type_json_schema
+          ? `
+        <div class="schema-hint">
+          <h4>Property Schema</h4>
+          <pre><code>${escapeHtml(JSON.stringify(JSON.parse(link.type_json_schema), null, 2))}</code></pre>
+        </div>
+      `
+          : ''
+      }
+
+      <div class="card">
+        <form id="edit-link-form" class="link-form">
+          <div class="form-group">
+            <label for="properties">Properties (JSON)</label>
+            <textarea id="properties" name="properties" rows="15">${escapeHtml(displayProperties)}</textarea>
+            <div class="form-hint">Enter valid JSON object with the link properties. A new version will be created.</div>
+          </div>
+
+          <div id="json-error" class="error-message" style="display: none;"></div>
+
+          <div class="button-group">
+            <button type="submit" class="button" id="submit-btn">Save Changes (Create Version ${link.version + 1})</button>
+            <a href="/ui/links/${escapeHtml(link.id)}" class="button secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+
+      <script>
+        // Validate JSON on input
+        document.getElementById('properties').addEventListener('input', function() {
+          const errorDiv = document.getElementById('json-error');
+          if (!this.value || this.value.trim() === '') {
+            errorDiv.style.display = 'none';
+            this.style.borderColor = '';
+            return;
+          }
+          try {
+            JSON.parse(this.value);
+            errorDiv.style.display = 'none';
+            this.style.borderColor = '';
+          } catch (e) {
+            errorDiv.textContent = 'Invalid JSON: ' + e.message;
+            errorDiv.style.display = 'block';
+            this.style.borderColor = 'var(--color-error)';
+          }
+        });
+
+        // Handle form submission
+        document.getElementById('edit-link-form').addEventListener('submit', async function(e) {
+          e.preventDefault();
+
+          const propertiesText = document.getElementById('properties').value;
+          const submitBtn = document.getElementById('submit-btn');
+          const errorDiv = document.getElementById('json-error');
+
+          // Validate JSON
+          let properties = {};
+          if (propertiesText && propertiesText.trim()) {
+            try {
+              properties = JSON.parse(propertiesText);
+            } catch (e) {
+              errorDiv.textContent = 'Invalid JSON: ' + e.message;
+              errorDiv.style.display = 'block';
+              return;
+            }
+          }
+
+          // Disable submit button while processing
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Saving...';
+          errorDiv.style.display = 'none';
+
+          try {
+            const response = await fetch('/api/links/${escapeHtml(link.id)}', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                properties: properties
+              })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.data && data.data.id) {
+              // Success - redirect to the new version
+              window.location.href = '/ui/links/' + data.data.id;
+            } else {
+              // Error - show message
+              errorDiv.textContent = data.error || data.message || 'Failed to update link';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Changes (Create Version ${link.version + 1})';
+            }
+          } catch (err) {
+            errorDiv.textContent = 'Network error: ' + err.message;
+            errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Changes (Create Version ${link.version + 1})';
+          }
+        });
+      </script>
+
+      <style>
+        .link-form .form-group {
+          margin-bottom: 1.5rem;
+        }
+
+        .link-form textarea {
+          font-family: var(--font-mono);
+          font-size: 0.875rem;
+        }
+
+        .schema-hint {
+          background-color: var(--color-muted);
+          border: 1px solid var(--color-border);
+          border-radius: 0.5rem;
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .schema-hint h4 {
+          margin-top: 0;
+          margin-bottom: 0.5rem;
+          font-size: 0.875rem;
+          color: var(--color-secondary);
+        }
+
+        .schema-hint pre {
+          margin: 0;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+
+        .link-diagram-preview {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          padding: 1rem;
+          background-color: var(--color-muted);
+          border-radius: 0.5rem;
+          margin: 1rem 0;
+        }
+
+        .link-node-preview {
+          padding: 0.5rem 1rem;
+          background-color: var(--color-bg);
+          border: 1px solid var(--color-border);
+          border-radius: 0.375rem;
+        }
+
+        .link-node-preview a {
+          color: var(--color-primary);
+          text-decoration: none;
+          font-weight: 600;
+        }
+
+        .link-node-preview a:hover {
+          text-decoration: underline;
+        }
+
+        .link-arrow-preview {
+          color: var(--color-secondary);
+          font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+          .link-diagram-preview {
+            flex-direction: column;
+            gap: 0.5rem;
+          }
+
+          .link-arrow-preview {
+            transform: rotate(90deg);
+          }
+        }
+      </style>
+    `;
+
+    const html = renderPage(
+      {
+        title: `Edit Link`,
+        user,
+        activePath: '/ui/links',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Links', href: '/ui/links' },
+          { label: link.id.substring(0, 8) + '...', href: `/ui/links/${link.id}` },
+          { label: 'Edit' },
+        ],
+      },
+      formHtml
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching link for edit:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the link. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/links" class="button secondary">Back to Links</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/links',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Links', href: '/ui/links' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
  * Link detail view
  * GET /ui/links/:id
  */
