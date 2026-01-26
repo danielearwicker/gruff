@@ -4487,17 +4487,810 @@ ui.get('/types/:id', async c => {
 });
 
 /**
- * Search interface (placeholder)
+ * Search interface
  * GET /ui/search
  */
 ui.get('/search', async c => {
   const user = c.get('user');
 
+  // Get search parameters from query string
+  const searchTarget = c.req.query('target') || 'entities'; // 'entities' or 'links'
+  const typeId = c.req.query('type_id') || '';
+  const createdBy = c.req.query('created_by') || '';
+  const createdAfter = c.req.query('created_after') || '';
+  const createdBefore = c.req.query('created_before') || '';
+  const includeDeleted = c.req.query('include_deleted') === 'true';
+
+  // Property filters - up to 5 filters
+  const propertyFilters: Array<{ path: string; operator: string; value: string }> = [];
+  for (let i = 0; i < 5; i++) {
+    const path = c.req.query(`filter_path_${i}`) || '';
+    const operator = c.req.query(`filter_op_${i}`) || 'eq';
+    const value = c.req.query(`filter_value_${i}`) || '';
+    if (path && value) {
+      propertyFilters.push({ path, operator, value });
+    }
+  }
+
+  // Link-specific filters
+  const sourceEntityId = c.req.query('source_entity_id') || '';
+  const targetEntityId = c.req.query('target_entity_id') || '';
+
+  // Pagination
+  const cursor = c.req.query('cursor') || '';
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+
+  // Fetch users for filter dropdown
+  const allUsers = await c.env.DB.prepare(
+    'SELECT id, email, display_name FROM users ORDER BY email'
+  ).all<{ id: string; email: string; display_name?: string }>();
+
+  // Fetch types for filter dropdown
+  const typesCategory = searchTarget === 'entities' ? 'entity' : 'link';
+  const allTypes = await c.env.DB.prepare(
+    'SELECT id, name FROM types WHERE category = ? ORDER BY name'
+  )
+    .bind(typesCategory)
+    .all<{ id: string; name: string }>();
+
+  // Determine if we should perform search (any filter applied)
+  const hasFilters =
+    typeId ||
+    createdBy ||
+    createdAfter ||
+    createdBefore ||
+    includeDeleted ||
+    propertyFilters.length > 0 ||
+    (searchTarget === 'links' && (sourceEntityId || targetEntityId));
+
+  let searchResults: Array<Record<string, unknown>> = [];
+  let hasMore = false;
+  let nextCursor: string | null = null;
+  let searchError: string | null = null;
+
+  // Perform search if filters are applied
+  if (hasFilters) {
+    try {
+      // Build search request body
+      const searchBody: Record<string, unknown> = {
+        limit: limit + 1, // Fetch one extra to determine if there are more
+      };
+
+      if (typeId) searchBody.type_id = typeId;
+      if (createdBy) searchBody.created_by = createdBy;
+      if (createdAfter) {
+        const timestamp = new Date(createdAfter).getTime();
+        if (!isNaN(timestamp)) searchBody.created_after = timestamp;
+      }
+      if (createdBefore) {
+        const timestamp = new Date(createdBefore).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+        if (!isNaN(timestamp)) searchBody.created_before = timestamp;
+      }
+      if (includeDeleted) searchBody.include_deleted = true;
+      if (cursor) searchBody.cursor = cursor;
+
+      // Add property filters
+      if (propertyFilters.length > 0) {
+        searchBody.property_filters = propertyFilters.map(f => {
+          // Try to parse the value as JSON for numbers and booleans
+          let parsedValue: unknown = f.value;
+          if (f.value === 'true') parsedValue = true;
+          else if (f.value === 'false') parsedValue = false;
+          else if (!isNaN(Number(f.value)) && f.value.trim() !== '') parsedValue = Number(f.value);
+
+          // Handle 'in' and 'not_in' operators - expect comma-separated values
+          if ((f.operator === 'in' || f.operator === 'not_in') && typeof parsedValue === 'string') {
+            parsedValue = parsedValue.split(',').map(v => {
+              const trimmed = v.trim();
+              if (trimmed === 'true') return true;
+              if (trimmed === 'false') return false;
+              if (!isNaN(Number(trimmed)) && trimmed !== '') return Number(trimmed);
+              return trimmed;
+            });
+          }
+
+          return {
+            path: f.path,
+            operator: f.operator,
+            value: parsedValue,
+          };
+        });
+      }
+
+      // Add link-specific filters
+      if (searchTarget === 'links') {
+        if (sourceEntityId) searchBody.source_entity_id = sourceEntityId;
+        if (targetEntityId) searchBody.target_entity_id = targetEntityId;
+      }
+
+      // Build WHERE clause dynamically based on criteria
+      const whereClauses: string[] = [];
+      const bindings: (string | number | boolean)[] = [];
+
+      if (searchTarget === 'entities') {
+        whereClauses.push('e.is_latest = 1');
+        if (typeId) {
+          whereClauses.push('e.type_id = ?');
+          bindings.push(typeId);
+        }
+        if (createdBy) {
+          whereClauses.push('e.created_by = ?');
+          bindings.push(createdBy);
+        }
+        if (searchBody.created_after) {
+          whereClauses.push('e.created_at >= ?');
+          bindings.push(searchBody.created_after as number);
+        }
+        if (searchBody.created_before) {
+          whereClauses.push('e.created_at <= ?');
+          bindings.push(searchBody.created_before as number);
+        }
+        if (!includeDeleted) {
+          whereClauses.push('e.is_deleted = 0');
+        }
+
+        // Add property filters to SQL
+        if (propertyFilters.length > 0) {
+          for (const filter of propertyFilters) {
+            const jsonPath = `json_extract(e.properties, '$.${filter.path}')`;
+            let parsedValue: unknown = filter.value;
+            if (filter.value === 'true') parsedValue = true;
+            else if (filter.value === 'false') parsedValue = false;
+            else if (!isNaN(Number(filter.value)) && filter.value.trim() !== '')
+              parsedValue = Number(filter.value);
+
+            switch (filter.operator) {
+              case 'eq':
+                if (typeof parsedValue === 'boolean') {
+                  whereClauses.push(`CAST(${jsonPath} AS INTEGER) = ?`);
+                  bindings.push(parsedValue ? 1 : 0);
+                } else if (typeof parsedValue === 'number') {
+                  whereClauses.push(`CAST(${jsonPath} AS REAL) = ?`);
+                  bindings.push(parsedValue);
+                } else {
+                  whereClauses.push(`${jsonPath} = ?`);
+                  bindings.push(String(parsedValue));
+                }
+                break;
+              case 'ne':
+                if (typeof parsedValue === 'boolean') {
+                  whereClauses.push(`CAST(${jsonPath} AS INTEGER) != ?`);
+                  bindings.push(parsedValue ? 1 : 0);
+                } else if (typeof parsedValue === 'number') {
+                  whereClauses.push(`CAST(${jsonPath} AS REAL) != ?`);
+                  bindings.push(parsedValue);
+                } else {
+                  whereClauses.push(`${jsonPath} != ?`);
+                  bindings.push(String(parsedValue));
+                }
+                break;
+              case 'gt':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) > ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'lt':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) < ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'gte':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) >= ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'lte':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) <= ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'like':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(String(parsedValue));
+                break;
+              case 'ilike':
+                whereClauses.push(`LOWER(${jsonPath}) LIKE LOWER(?)`);
+                bindings.push(String(parsedValue));
+                break;
+              case 'starts_with':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(`${parsedValue}%`);
+                break;
+              case 'ends_with':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(`%${parsedValue}`);
+                break;
+              case 'contains':
+                whereClauses.push(`LOWER(${jsonPath}) LIKE LOWER(?)`);
+                bindings.push(`%${parsedValue}%`);
+                break;
+              case 'exists':
+                whereClauses.push(`${jsonPath} IS NOT NULL`);
+                break;
+              case 'not_exists':
+                whereClauses.push(`${jsonPath} IS NULL`);
+                break;
+              // 'in' and 'not_in' would need array handling - simplified for UI
+            }
+          }
+        }
+
+        // Cursor pagination
+        let cursorClause = '';
+        if (cursor) {
+          const parts = cursor.split(':');
+          if (parts.length >= 2) {
+            const cursorTimestamp = parts[0];
+            const cursorId = parts.slice(1).join(':');
+            cursorClause = ` AND (e.created_at < ? OR (e.created_at = ? AND e.id < ?))`;
+            bindings.push(parseInt(cursorTimestamp), parseInt(cursorTimestamp), cursorId);
+          }
+        }
+
+        const whereClause = whereClauses.join(' AND ');
+        const query = `
+          SELECT e.*, t.name as type_name, u.display_name, u.email
+          FROM entities e
+          LEFT JOIN types t ON e.type_id = t.id
+          LEFT JOIN users u ON e.created_by = u.id
+          WHERE ${whereClause}${cursorClause}
+          ORDER BY e.created_at DESC, e.id DESC
+          LIMIT ?
+        `;
+        bindings.push(limit + 1);
+
+        const results = await c.env.DB.prepare(query)
+          .bind(...bindings)
+          .all();
+
+        hasMore = results.results.length > limit;
+        searchResults = results.results.slice(0, limit);
+
+        if (hasMore && searchResults.length > 0) {
+          const lastResult = searchResults[searchResults.length - 1] as {
+            created_at: number;
+            id: string;
+          };
+          nextCursor = `${lastResult.created_at}:${lastResult.id}`;
+        }
+      } else {
+        // Link search
+        whereClauses.push('l.is_latest = 1');
+        if (typeId) {
+          whereClauses.push('l.type_id = ?');
+          bindings.push(typeId);
+        }
+        if (sourceEntityId) {
+          whereClauses.push('l.source_entity_id = ?');
+          bindings.push(sourceEntityId);
+        }
+        if (targetEntityId) {
+          whereClauses.push('l.target_entity_id = ?');
+          bindings.push(targetEntityId);
+        }
+        if (createdBy) {
+          whereClauses.push('l.created_by = ?');
+          bindings.push(createdBy);
+        }
+        if (searchBody.created_after) {
+          whereClauses.push('l.created_at >= ?');
+          bindings.push(searchBody.created_after as number);
+        }
+        if (searchBody.created_before) {
+          whereClauses.push('l.created_at <= ?');
+          bindings.push(searchBody.created_before as number);
+        }
+        if (!includeDeleted) {
+          whereClauses.push('l.is_deleted = 0');
+        }
+
+        // Add property filters to SQL
+        if (propertyFilters.length > 0) {
+          for (const filter of propertyFilters) {
+            const jsonPath = `json_extract(l.properties, '$.${filter.path}')`;
+            let parsedValue: unknown = filter.value;
+            if (filter.value === 'true') parsedValue = true;
+            else if (filter.value === 'false') parsedValue = false;
+            else if (!isNaN(Number(filter.value)) && filter.value.trim() !== '')
+              parsedValue = Number(filter.value);
+
+            switch (filter.operator) {
+              case 'eq':
+                if (typeof parsedValue === 'boolean') {
+                  whereClauses.push(`CAST(${jsonPath} AS INTEGER) = ?`);
+                  bindings.push(parsedValue ? 1 : 0);
+                } else if (typeof parsedValue === 'number') {
+                  whereClauses.push(`CAST(${jsonPath} AS REAL) = ?`);
+                  bindings.push(parsedValue);
+                } else {
+                  whereClauses.push(`${jsonPath} = ?`);
+                  bindings.push(String(parsedValue));
+                }
+                break;
+              case 'ne':
+                if (typeof parsedValue === 'boolean') {
+                  whereClauses.push(`CAST(${jsonPath} AS INTEGER) != ?`);
+                  bindings.push(parsedValue ? 1 : 0);
+                } else if (typeof parsedValue === 'number') {
+                  whereClauses.push(`CAST(${jsonPath} AS REAL) != ?`);
+                  bindings.push(parsedValue);
+                } else {
+                  whereClauses.push(`${jsonPath} != ?`);
+                  bindings.push(String(parsedValue));
+                }
+                break;
+              case 'gt':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) > ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'lt':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) < ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'gte':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) >= ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'lte':
+                whereClauses.push(`CAST(${jsonPath} AS REAL) <= ?`);
+                bindings.push(Number(parsedValue));
+                break;
+              case 'like':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(String(parsedValue));
+                break;
+              case 'ilike':
+                whereClauses.push(`LOWER(${jsonPath}) LIKE LOWER(?)`);
+                bindings.push(String(parsedValue));
+                break;
+              case 'starts_with':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(`${parsedValue}%`);
+                break;
+              case 'ends_with':
+                whereClauses.push(`${jsonPath} LIKE ?`);
+                bindings.push(`%${parsedValue}`);
+                break;
+              case 'contains':
+                whereClauses.push(`LOWER(${jsonPath}) LIKE LOWER(?)`);
+                bindings.push(`%${parsedValue}%`);
+                break;
+              case 'exists':
+                whereClauses.push(`${jsonPath} IS NOT NULL`);
+                break;
+              case 'not_exists':
+                whereClauses.push(`${jsonPath} IS NULL`);
+                break;
+            }
+          }
+        }
+
+        // Cursor pagination
+        let cursorClause = '';
+        if (cursor) {
+          const parts = cursor.split(':');
+          if (parts.length >= 2) {
+            const cursorTimestamp = parts[0];
+            const cursorId = parts.slice(1).join(':');
+            cursorClause = ` AND (l.created_at < ? OR (l.created_at = ? AND l.id < ?))`;
+            bindings.push(parseInt(cursorTimestamp), parseInt(cursorTimestamp), cursorId);
+          }
+        }
+
+        const whereClause = whereClauses.join(' AND ');
+        const query = `
+          SELECT
+            l.*,
+            t.name as type_name,
+            se.properties as source_properties,
+            st.name as source_type_name,
+            te.properties as target_properties,
+            tt.name as target_type_name,
+            u.display_name, u.email
+          FROM links l
+          LEFT JOIN types t ON l.type_id = t.id
+          LEFT JOIN entities se ON l.source_entity_id = se.id AND se.is_latest = 1
+          LEFT JOIN types st ON se.type_id = st.id
+          LEFT JOIN entities te ON l.target_entity_id = te.id AND te.is_latest = 1
+          LEFT JOIN types tt ON te.type_id = tt.id
+          LEFT JOIN users u ON l.created_by = u.id
+          WHERE ${whereClause}${cursorClause}
+          ORDER BY l.created_at DESC, l.id DESC
+          LIMIT ?
+        `;
+        bindings.push(limit + 1);
+
+        const results = await c.env.DB.prepare(query)
+          .bind(...bindings)
+          .all();
+
+        hasMore = results.results.length > limit;
+        searchResults = results.results.slice(0, limit);
+
+        if (hasMore && searchResults.length > 0) {
+          const lastResult = searchResults[searchResults.length - 1] as {
+            created_at: number;
+            id: string;
+          };
+          nextCursor = `${lastResult.created_at}:${lastResult.id}`;
+        }
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      searchError = error instanceof Error ? error.message : 'An error occurred during search';
+    }
+  }
+
+  // Build URL with current parameters for pagination and export
+  const buildSearchUrl = (newCursor?: string, asExport?: boolean) => {
+    const params = new URLSearchParams();
+    params.set('target', searchTarget);
+    if (typeId) params.set('type_id', typeId);
+    if (createdBy) params.set('created_by', createdBy);
+    if (createdAfter) params.set('created_after', createdAfter);
+    if (createdBefore) params.set('created_before', createdBefore);
+    if (includeDeleted) params.set('include_deleted', 'true');
+    if (sourceEntityId) params.set('source_entity_id', sourceEntityId);
+    if (targetEntityId) params.set('target_entity_id', targetEntityId);
+    propertyFilters.forEach((f, i) => {
+      params.set(`filter_path_${i}`, f.path);
+      params.set(`filter_op_${i}`, f.operator);
+      params.set(`filter_value_${i}`, f.value);
+    });
+    if (newCursor) params.set('cursor', newCursor);
+    if (asExport) {
+      // Build API export URL
+      const apiParams = new URLSearchParams();
+      if (typeId) apiParams.set('type_ids', typeId);
+      if (createdAfter) {
+        const timestamp = new Date(createdAfter).getTime();
+        if (!isNaN(timestamp)) apiParams.set('created_after', timestamp.toString());
+      }
+      if (createdBefore) {
+        const timestamp = new Date(createdBefore).getTime() + 24 * 60 * 60 * 1000 - 1;
+        if (!isNaN(timestamp)) apiParams.set('created_before', timestamp.toString());
+      }
+      if (includeDeleted) apiParams.set('include_deleted', 'true');
+      return `/api/export?${apiParams.toString()}`;
+    }
+    return `/ui/search?${params.toString()}`;
+  };
+
+  // Operators for the filter builder
+  const operators = [
+    { value: 'eq', label: 'equals' },
+    { value: 'ne', label: 'not equals' },
+    { value: 'gt', label: 'greater than' },
+    { value: 'lt', label: 'less than' },
+    { value: 'gte', label: 'greater or equal' },
+    { value: 'lte', label: 'less or equal' },
+    { value: 'like', label: 'like (pattern)' },
+    { value: 'ilike', label: 'like (case-insensitive)' },
+    { value: 'starts_with', label: 'starts with' },
+    { value: 'ends_with', label: 'ends with' },
+    { value: 'contains', label: 'contains' },
+    { value: 'exists', label: 'exists' },
+    { value: 'not_exists', label: 'does not exist' },
+  ];
+
+  // Render search form
+  const searchForm = `
+    <div class="card">
+      <form method="GET" action="/ui/search" class="filter-form" id="search-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="target">Search Target:</label>
+            <select id="target" name="target" onchange="this.form.submit()">
+              <option value="entities" ${searchTarget === 'entities' ? 'selected' : ''}>Entities</option>
+              <option value="links" ${searchTarget === 'links' ? 'selected' : ''}>Links</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="type_id">${searchTarget === 'entities' ? 'Entity' : 'Link'} Type:</label>
+            <select id="type_id" name="type_id">
+              <option value="">All types</option>
+              ${allTypes.results
+                .map(
+                  t => `
+                <option value="${t.id}" ${typeId === t.id ? 'selected' : ''}>
+                  ${escapeHtml(t.name)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="created_by">Created By:</label>
+            <select id="created_by" name="created_by">
+              <option value="">All users</option>
+              ${allUsers.results
+                .map(
+                  u => `
+                <option value="${u.id}" ${createdBy === u.id ? 'selected' : ''}>
+                  ${escapeHtml(u.display_name || u.email)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="created_after">Created After:</label>
+            <input type="date" id="created_after" name="created_after" value="${escapeHtml(createdAfter)}">
+          </div>
+
+          <div class="form-group">
+            <label for="created_before">Created Before:</label>
+            <input type="date" id="created_before" name="created_before" value="${escapeHtml(createdBefore)}">
+          </div>
+
+          <div class="form-group">
+            <label for="include_deleted">
+              <input type="checkbox" id="include_deleted" name="include_deleted" value="true" ${includeDeleted ? 'checked' : ''}>
+              Include deleted
+            </label>
+          </div>
+        </div>
+
+        ${
+          searchTarget === 'links'
+            ? `
+        <div class="form-row">
+          <div class="form-group">
+            <label for="source_entity_id">Source Entity ID:</label>
+            <input type="text" id="source_entity_id" name="source_entity_id" value="${escapeHtml(sourceEntityId)}" placeholder="UUID of source entity">
+          </div>
+
+          <div class="form-group">
+            <label for="target_entity_id">Target Entity ID:</label>
+            <input type="text" id="target_entity_id" name="target_entity_id" value="${escapeHtml(targetEntityId)}" placeholder="UUID of target entity">
+          </div>
+        </div>
+        `
+            : ''
+        }
+
+        <h4>Property Filters</h4>
+        <p class="small muted">Filter by JSON properties. Use dot notation for nested paths (e.g., address.city).</p>
+
+        <div id="property-filters">
+          ${[0, 1, 2, 3, 4]
+            .map(i => {
+              const filter = propertyFilters[i] || { path: '', operator: 'eq', value: '' };
+              return `
+            <div class="form-row filter-row" id="filter-row-${i}" style="display: ${i === 0 || filter.path ? 'flex' : 'none'}">
+              <div class="form-group" style="flex: 2">
+                <input type="text" name="filter_path_${i}" placeholder="Property path (e.g., name, status)" value="${escapeHtml(filter.path)}">
+              </div>
+              <div class="form-group" style="flex: 2">
+                <select name="filter_op_${i}">
+                  ${operators
+                    .map(
+                      op => `
+                    <option value="${op.value}" ${filter.operator === op.value ? 'selected' : ''}>${escapeHtml(op.label)}</option>
+                  `
+                    )
+                    .join('')}
+                </select>
+              </div>
+              <div class="form-group" style="flex: 2">
+                <input type="text" name="filter_value_${i}" placeholder="Value" value="${escapeHtml(filter.value)}">
+              </div>
+              ${
+                i > 0
+                  ? `
+              <button type="button" class="button small secondary" onclick="removeFilter(${i})">Remove</button>
+              `
+                  : ''
+              }
+            </div>
+          `;
+            })
+            .join('')}
+        </div>
+
+        <div class="button-group">
+          <button type="button" class="button secondary small" onclick="addFilter()">+ Add Filter</button>
+        </div>
+
+        <div class="button-group" style="margin-top: 1.5rem">
+          <button type="submit" class="button">Search</button>
+          <a href="/ui/search" class="button secondary">Clear All</a>
+          ${hasFilters && searchResults.length > 0 ? `<a href="${buildSearchUrl(undefined, true)}" class="button secondary" target="_blank">Export Results (JSON)</a>` : ''}
+        </div>
+      </form>
+    </div>
+
+    <script>
+      let filterCount = ${Math.max(1, propertyFilters.length)};
+
+      function addFilter() {
+        if (filterCount >= 5) return;
+        const row = document.getElementById('filter-row-' + filterCount);
+        if (row) {
+          row.style.display = 'flex';
+          filterCount++;
+        }
+      }
+
+      function removeFilter(index) {
+        const row = document.getElementById('filter-row-' + index);
+        if (row) {
+          row.style.display = 'none';
+          // Clear the inputs
+          row.querySelectorAll('input').forEach(input => input.value = '');
+        }
+      }
+    </script>
+  `;
+
+  // Render search results
+  let resultsHtml = '';
+  if (searchError) {
+    resultsHtml = `
+      <div class="error-message">
+        <strong>Search Error:</strong> ${escapeHtml(searchError)}
+      </div>
+    `;
+  } else if (hasFilters) {
+    if (searchResults.length === 0) {
+      resultsHtml = '<p class="muted">No results found matching your search criteria.</p>';
+    } else {
+      if (searchTarget === 'entities') {
+        resultsHtml = `
+          <p>Found ${searchResults.length}${hasMore ? '+' : ''} results.</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Entity</th>
+                <th>Type</th>
+                <th>Properties</th>
+                <th>Version</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${searchResults
+                .map(entity => {
+                  const props = entity.properties ? JSON.parse(entity.properties as string) : {};
+                  const displayName =
+                    props.name || props.title || props.label || (entity.id as string).substring(0, 8);
+                  const propsPreview = JSON.stringify(props);
+                  const truncatedProps =
+                    propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
+
+                  return `
+                <tr>
+                  <td>
+                    <a href="/ui/entities/${entity.id}"><strong>${escapeHtml(String(displayName))}</strong></a>
+                    <div class="small muted">${escapeHtml((entity.id as string).substring(0, 8))}...</div>
+                  </td>
+                  <td>
+                    <a href="/ui/search?target=entities&type_id=${entity.type_id}">${escapeHtml(String(entity.type_name || 'Unknown'))}</a>
+                  </td>
+                  <td class="small"><code>${escapeHtml(truncatedProps)}</code></td>
+                  <td>${entity.version}</td>
+                  <td>${escapeHtml(String(entity.display_name || entity.email || 'Unknown'))}</td>
+                  <td>${formatTimestamp(entity.created_at as number)}</td>
+                  <td>
+                    ${entity.is_latest ? '<span class="badge success small">Latest</span>' : '<span class="badge muted small">Old</span>'}
+                    ${entity.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+                  </td>
+                  <td>
+                    <a href="/ui/entities/${entity.id}" class="button small">View</a>
+                  </td>
+                </tr>
+              `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        `;
+      } else {
+        resultsHtml = `
+          <p>Found ${searchResults.length}${hasMore ? '+' : ''} results.</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Link</th>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Target</th>
+                <th>Version</th>
+                <th>Created At</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${searchResults
+                .map(link => {
+                  const sourceProps = link.source_properties
+                    ? JSON.parse(link.source_properties as string)
+                    : {};
+                  const targetProps = link.target_properties
+                    ? JSON.parse(link.target_properties as string)
+                    : {};
+                  const sourceDisplayName =
+                    sourceProps.name ||
+                    sourceProps.title ||
+                    sourceProps.label ||
+                    (link.source_entity_id as string).substring(0, 8);
+                  const targetDisplayName =
+                    targetProps.name ||
+                    targetProps.title ||
+                    targetProps.label ||
+                    (link.target_entity_id as string).substring(0, 8);
+
+                  return `
+                <tr>
+                  <td>
+                    <a href="/ui/links/${link.id}">${(link.id as string).substring(0, 8)}...</a>
+                  </td>
+                  <td>
+                    <a href="/ui/search?target=links&type_id=${link.type_id}">${escapeHtml(String(link.type_name || 'Unknown'))}</a>
+                  </td>
+                  <td>
+                    <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(String(sourceDisplayName))}</a>
+                    <div class="small muted">${escapeHtml(String(link.source_type_name || 'Unknown'))}</div>
+                  </td>
+                  <td>
+                    <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(String(targetDisplayName))}</a>
+                    <div class="small muted">${escapeHtml(String(link.target_type_name || 'Unknown'))}</div>
+                  </td>
+                  <td>${link.version}</td>
+                  <td>${formatTimestamp(link.created_at as number)}</td>
+                  <td>
+                    ${link.is_latest ? '<span class="badge success small">Latest</span>' : '<span class="badge muted small">Old</span>'}
+                    ${link.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+                  </td>
+                  <td>
+                    <a href="/ui/links/${link.id}" class="button small">View</a>
+                  </td>
+                </tr>
+              `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        `;
+      }
+
+      // Pagination
+      if (hasMore || cursor) {
+        resultsHtml += `
+          <div class="pagination">
+            ${cursor ? `<a href="${buildSearchUrl()}" class="button secondary">First Page</a>` : ''}
+            ${hasMore && nextCursor ? `<a href="${buildSearchUrl(nextCursor)}" class="button">Next Page</a>` : ''}
+          </div>
+        `;
+      }
+    }
+  } else {
+    resultsHtml = `
+      <p class="muted">Use the filters above to search for ${searchTarget}. At least one filter is required to perform a search.</p>
+    `;
+  }
+
   const content = `
     <h2>Search</h2>
-    <p>Search interface coming soon.</p>
+    <p>Search for entities and links by type, properties, creator, and date range.</p>
+
+    <h3>Search Filters</h3>
+    ${searchForm}
+
+    <h3>Results</h3>
+    ${resultsHtml}
+
     <div class="button-group">
       <a href="/ui" class="button secondary">Back to Dashboard</a>
+      <a href="/ui/entities" class="button secondary">Browse Entities</a>
+      <a href="/ui/links" class="button secondary">Browse Links</a>
     </div>
   `;
 
