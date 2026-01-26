@@ -9630,6 +9630,263 @@ async function testUIEntityListEmptyState() {
   );
 }
 
+async function testUIEntityDetailBasic() {
+  logTest('UI - Entity Detail Page - Basic View');
+
+  // Create a type and entity for testing
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'EntityDetailTestType',
+    category: 'entity',
+    description: 'Type for entity detail testing',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Detail Test Entity', description: 'Testing detail view' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(
+    response.headers.get('content-type'),
+    'text/html; charset=UTF-8',
+    'Should return HTML'
+  );
+  assert(html.includes('Detail Test Entity'), 'Should display entity name in heading');
+  assert(html.includes('Entity Information'), 'Should have entity information section');
+  assert(html.includes('Properties'), 'Should have properties section');
+  assert(html.includes('Outgoing Links'), 'Should have outgoing links section');
+  assert(html.includes('Incoming Links'), 'Should have incoming links section');
+  assert(html.includes('Version History'), 'Should have version history section');
+  assert(html.includes('Actions'), 'Should have actions section');
+  assert(html.includes(entityId), 'Should display entity ID');
+  assert(html.includes('EntityDetailTestType'), 'Should display entity type');
+  assert(html.includes('class="badge success">Latest</span>'), 'Should show latest badge');
+  assert(html.includes('Edit Entity'), 'Should have edit button');
+  assert(html.includes('Delete Entity'), 'Should have delete button');
+}
+
+async function testUIEntityDetailNotFound() {
+  logTest('UI - Entity Detail Page - Not Found');
+
+  const fakeId = '00000000-0000-0000-0000-000000000000';
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${fakeId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(html.includes('Entity Not Found'), 'Should show not found message');
+  assert(html.includes(fakeId), 'Should display the entity ID that was not found');
+  assert(html.includes('Back to Entities'), 'Should have back link');
+}
+
+async function testUIEntityDetailWithLinks() {
+  logTest('UI - Entity Detail Page - With Outbound and Inbound Links');
+
+  // Create types
+  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'LinkedEntityType',
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+    name: 'TestLinkType',
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create source, target, and main entity
+  const sourceEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Source Entity' },
+  });
+  const sourceId = sourceEntity.data.data.id;
+
+  const mainEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Main Entity' },
+  });
+  const mainId = mainEntity.data.data.id;
+
+  const targetEntity = await makeRequest('POST', '/api/entities', {
+    type_id: entityTypeId,
+    properties: { name: 'Target Entity' },
+  });
+  const targetId = targetEntity.data.data.id;
+
+  // Create an outbound link from main to target
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: mainId,
+    target_entity_id: targetId,
+    properties: { role: 'references' },
+  });
+
+  // Create an inbound link from source to main
+  await makeRequest('POST', '/api/links', {
+    type_id: linkTypeId,
+    source_entity_id: sourceId,
+    target_entity_id: mainId,
+    properties: { role: 'mentions' },
+  });
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${mainId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Outgoing Links (1)'), 'Should show one outgoing link');
+  assert(html.includes('Incoming Links (1)'), 'Should show one incoming link');
+  assert(html.includes('Target Entity'), 'Should display target entity name');
+  assert(html.includes('Source Entity'), 'Should display source entity name');
+  assert(html.includes('TestLinkType'), 'Should display link type');
+}
+
+async function testUIEntityDetailVersionHistory() {
+  logTest('UI - Entity Detail Page - Version History');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'VersionedEntityType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Original Name', status: 'draft' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Update the entity to create a new version
+  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+    properties: { name: 'Updated Name', status: 'published' },
+  });
+  const newEntityId = updateResponse.data.data.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${newEntityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Version History (2 versions)'), 'Should show 2 versions');
+  assert(html.includes('Version 1'), 'Should show version 1');
+  assert(html.includes('Version 2'), 'Should show version 2');
+  assert(html.includes('Initial version'), 'Should indicate initial version');
+  assert(
+    html.includes('Changed "name"') || html.includes('Changed "status"'),
+    'Should show property changes'
+  );
+}
+
+async function testUIEntityDetailDeletedEntity() {
+  logTest('UI - Entity Detail Page - Deleted Entity');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'DeletedEntityType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'To Be Deleted' },
+  });
+  const entityId = createResponse.data.data.id;
+
+  // Delete the entity
+  await makeRequest('DELETE', `/api/entities/${entityId}`);
+
+  // Get the deleted version
+  const listResponse = await makeRequest(
+    'GET',
+    `/api/entities?include_deleted=true&type_id=${typeId}`
+  );
+  const deletedEntity = listResponse.data.data.find(e => e.is_deleted);
+  const deletedEntityId = deletedEntity.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${deletedEntityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('class="badge danger">Deleted</span>'), 'Should show deleted badge');
+  assert(html.includes('Restore Entity'), 'Should show restore button');
+  assert(!html.includes('Edit Entity</a>'), 'Should not show edit button for deleted entity');
+  assert(
+    !html.includes('Delete Entity</button>'),
+    'Should not show delete button for deleted entity'
+  );
+}
+
+async function testUIEntityDetailOldVersion() {
+  logTest('UI - Entity Detail Page - Old Version View');
+
+  // Create a type and entity
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'OldVersionEntityType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const createResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: { name: 'Version 1' },
+  });
+  const version1Id = createResponse.data.data.id;
+
+  // Update to create version 2
+  await makeRequest('PUT', `/api/entities/${version1Id}`, {
+    properties: { name: 'Version 2' },
+  });
+
+  // View version 1 (old version)
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${version1Id}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Viewing old version'), 'Should show old version warning');
+  assert(html.includes('You are viewing version 1'), 'Should indicate version number');
+  assert(html.includes('View latest version'), 'Should have link to latest version');
+  assert(html.includes('class="badge muted">Old Version</span>'), 'Should show old version badge');
+}
+
+async function testUIEntityDetailPropertiesDisplay() {
+  logTest('UI - Entity Detail Page - Properties JSON Display');
+
+  // Create a type and entity with complex properties
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: 'ComplexPropsEntityType',
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  const entityResponse = await makeRequest('POST', '/api/entities', {
+    type_id: typeId,
+    properties: {
+      name: 'Complex Entity',
+      count: 42,
+      active: true,
+      tags: ['tag1', 'tag2'],
+      metadata: { key: 'value' },
+    },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Properties'), 'Should have properties section');
+  assert(html.includes('"name": "Complex Entity"'), 'Should display name property');
+  assert(html.includes('"count": 42'), 'Should display number property');
+  assert(html.includes('"active": true'), 'Should display boolean property');
+  assert(html.includes('"tag1"'), 'Should display array elements');
+  assert(html.includes('"metadata"'), 'Should display nested object');
+}
+
 // ============================================================================
 // Caching Tests
 // ============================================================================
@@ -11577,6 +11834,13 @@ async function runTests() {
     testUIEntityListTimeRangeFilter,
     testUIEntityListCustomDateRange,
     testUIEntityListEmptyState,
+    testUIEntityDetailBasic,
+    testUIEntityDetailNotFound,
+    testUIEntityDetailWithLinks,
+    testUIEntityDetailVersionHistory,
+    testUIEntityDetailDeletedEntity,
+    testUIEntityDetailOldVersion,
+    testUIEntityDetailPropertiesDisplay,
 
     // Caching tests
     testCachingTypeGet,

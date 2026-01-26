@@ -693,7 +693,7 @@ Each entity in the list shows:
 - Status badges (Latest/Old, Deleted if applicable)
 - Actions (View, Edit buttons - Edit only for latest non-deleted)
 
-### 🟦 Entity Detail View
+### ✅ Entity Detail View
 
 **Route:** `GET /ui/entities/:id`
 

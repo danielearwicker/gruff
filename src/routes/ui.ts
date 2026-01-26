@@ -710,37 +710,596 @@ ui.get('/entities', async c => {
 });
 
 /**
- * Entity detail view (placeholder)
+ * Entity detail view
  * GET /ui/entities/:id
  */
 ui.get('/entities/:id', async c => {
   const user = c.get('user');
   const entityId = c.req.param('id');
 
-  const content = `
-    <h2>Entity: ${escapeHtml(entityId)}</h2>
-    <p>Entity detail view coming soon.</p>
-    <div class="button-group">
-      <a href="/ui/entities" class="button secondary">Back to Entities</a>
-    </div>
-  `;
+  try {
+    // Fetch the entity with type information
+    const entity = await c.env.DB.prepare(
+      `
+      SELECT
+        e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+        e.is_latest, e.is_deleted, e.previous_version_id,
+        t.name as type_name, t.description as type_description, t.json_schema as type_json_schema,
+        u.display_name as created_by_name, u.email as created_by_email
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      LEFT JOIN users u ON e.created_by = u.id
+      WHERE e.id = ?
+    `
+    )
+      .bind(entityId)
+      .first<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        type_name: string;
+        type_description: string | null;
+        type_json_schema: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+      }>();
 
-  const html = renderPage(
-    {
-      title: `Entity ${entityId}`,
-      user,
-      activePath: '/ui/entities',
-      breadcrumbs: [
-        { label: 'Home', href: '/ui' },
-        { label: 'Entities', href: '/ui/entities' },
-        { label: entityId.substring(0, 8) },
-      ],
-    },
-    content
-  );
+    if (!entity) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Not Found</h2>
+          <p>The entity with ID "${escapeHtml(entityId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
 
-  return c.html(html);
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Parse the properties
+    const props = JSON.parse(entity.properties);
+    const displayName = props.name || props.title || props.label || entity.id.substring(0, 8);
+
+    // Check if viewing an old version and find latest version ID if so
+    let latestVersionId: string | null = null;
+    if (!entity.is_latest) {
+      const latest = await c.env.DB.prepare(
+        `
+        WITH RECURSIVE version_chain AS (
+          SELECT id, is_latest FROM entities WHERE id = ?
+          UNION ALL
+          SELECT e.id, e.is_latest FROM entities e
+          INNER JOIN version_chain vc ON e.previous_version_id = vc.id
+        )
+        SELECT id FROM version_chain WHERE is_latest = 1 LIMIT 1
+      `
+      )
+        .bind(entityId)
+        .first<{ id: string }>();
+      latestVersionId = latest?.id || null;
+    }
+
+    // Fetch outbound links (where this entity is the source)
+    const outboundLinks = await c.env.DB.prepare(
+      `
+      SELECT
+        l.id, l.type_id, l.target_entity_id, l.properties, l.version, l.created_at,
+        l.is_deleted,
+        t.name as link_type_name,
+        e.properties as target_properties,
+        et.name as target_type_name
+      FROM links l
+      JOIN types t ON l.type_id = t.id
+      JOIN entities e ON l.target_entity_id = e.id
+      JOIN types et ON e.type_id = et.id
+      WHERE l.source_entity_id = ?
+        AND l.is_latest = 1 AND l.is_deleted = 0
+        AND e.is_latest = 1 AND e.is_deleted = 0
+      ORDER BY l.created_at DESC
+    `
+    )
+      .bind(entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        target_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        is_deleted: number;
+        link_type_name: string;
+        target_properties: string;
+        target_type_name: string;
+      }>();
+
+    // Fetch inbound links (where this entity is the target)
+    const inboundLinks = await c.env.DB.prepare(
+      `
+      SELECT
+        l.id, l.type_id, l.source_entity_id, l.properties, l.version, l.created_at,
+        l.is_deleted,
+        t.name as link_type_name,
+        e.properties as source_properties,
+        et.name as source_type_name
+      FROM links l
+      JOIN types t ON l.type_id = t.id
+      JOIN entities e ON l.source_entity_id = e.id
+      JOIN types et ON e.type_id = et.id
+      WHERE l.target_entity_id = ?
+        AND l.is_latest = 1 AND l.is_deleted = 0
+        AND e.is_latest = 1 AND e.is_deleted = 0
+      ORDER BY l.created_at DESC
+    `
+    )
+      .bind(entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        source_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        is_deleted: number;
+        link_type_name: string;
+        source_properties: string;
+        source_type_name: string;
+      }>();
+
+    // Fetch version history (all versions of this entity chain)
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_back vc ON e.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_forward vc ON e.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*, u.display_name as created_by_name, u.email as created_by_email
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(entityId, entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+      }>();
+
+    // Build entity info section
+    const entityInfoSection = `
+      <div class="card detail-card">
+        <h3>Entity Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(entity.id)}</code></dd>
+
+          <dt>Type</dt>
+          <dd>
+            <a href="/ui/entities?type_id=${entity.type_id}" class="badge">${escapeHtml(entity.type_name)}</a>
+            ${entity.type_description ? `<span class="muted small">${escapeHtml(entity.type_description)}</span>` : ''}
+          </dd>
+
+          <dt>Version</dt>
+          <dd>${entity.version}${entity.previous_version_id ? ` <span class="muted">(previous: <a href="/ui/entities/${entity.previous_version_id}">${entity.previous_version_id.substring(0, 8)}...</a>)</span>` : ''}</dd>
+
+          <dt>Created By</dt>
+          <dd>${escapeHtml(entity.created_by_name || entity.created_by_email)}</dd>
+
+          <dt>Created At</dt>
+          <dd>${formatTimestamp(entity.created_at)}</dd>
+
+          <dt>Status</dt>
+          <dd>
+            ${entity.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old Version</span>'}
+            ${entity.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+          </dd>
+        </dl>
+      </div>
+    `;
+
+    // Build properties section
+    const propertiesSection = `
+      <div class="card">
+        <h3>Properties</h3>
+        ${entity.type_json_schema ? '<p class="muted small">This type has JSON schema validation. <a href="/ui/types">View type details</a></p>' : ''}
+        <pre><code>${escapeHtml(JSON.stringify(props, null, 2))}</code></pre>
+      </div>
+    `;
+
+    // Build outbound links section
+    const outboundLinksSection = `
+      <div class="card">
+        <h3>Outgoing Links (${outboundLinks.results.length})</h3>
+        ${
+          outboundLinks.results.length > 0
+            ? `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Link ID</th>
+                <th>Link Type</th>
+                <th>Target Entity</th>
+                <th>Properties</th>
+                <th>Created At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${outboundLinks.results
+                .map(link => {
+                  const targetProps = JSON.parse(link.target_properties);
+                  const targetDisplayName =
+                    targetProps.name ||
+                    targetProps.title ||
+                    targetProps.label ||
+                    link.target_entity_id.substring(0, 8);
+                  const linkProps = JSON.parse(link.properties);
+                  const linkPropsPreview = JSON.stringify(linkProps);
+                  const truncatedLinkProps =
+                    linkPropsPreview.length > 50
+                      ? linkPropsPreview.substring(0, 50) + '...'
+                      : linkPropsPreview;
+
+                  return `
+                  <tr>
+                    <td><a href="/ui/links/${link.id}">${link.id.substring(0, 8)}...</a></td>
+                    <td><span class="badge muted">${escapeHtml(link.link_type_name)}</span></td>
+                    <td>
+                      <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+                      <span class="muted small">(${escapeHtml(link.target_type_name)})</span>
+                    </td>
+                    <td><code class="small">${escapeHtml(truncatedLinkProps)}</code></td>
+                    <td>${formatTimestamp(link.created_at)}</td>
+                    <td>
+                      <div class="button-group compact">
+                        <a href="/ui/links/${link.id}" class="button small">View</a>
+                        <a href="/ui/links/${link.id}/edit" class="button small secondary">Edit</a>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        `
+            : '<p class="muted">No outgoing links from this entity.</p>'
+        }
+        <div class="button-group">
+          <a href="/ui/links/new?source=${entity.id}" class="button secondary">Create Link from This Entity</a>
+        </div>
+      </div>
+    `;
+
+    // Build inbound links section
+    const inboundLinksSection = `
+      <div class="card">
+        <h3>Incoming Links (${inboundLinks.results.length})</h3>
+        ${
+          inboundLinks.results.length > 0
+            ? `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Link ID</th>
+                <th>Link Type</th>
+                <th>Source Entity</th>
+                <th>Properties</th>
+                <th>Created At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${inboundLinks.results
+                .map(link => {
+                  const sourceProps = JSON.parse(link.source_properties);
+                  const sourceDisplayName =
+                    sourceProps.name ||
+                    sourceProps.title ||
+                    sourceProps.label ||
+                    link.source_entity_id.substring(0, 8);
+                  const linkProps = JSON.parse(link.properties);
+                  const linkPropsPreview = JSON.stringify(linkProps);
+                  const truncatedLinkProps =
+                    linkPropsPreview.length > 50
+                      ? linkPropsPreview.substring(0, 50) + '...'
+                      : linkPropsPreview;
+
+                  return `
+                  <tr>
+                    <td><a href="/ui/links/${link.id}">${link.id.substring(0, 8)}...</a></td>
+                    <td><span class="badge muted">${escapeHtml(link.link_type_name)}</span></td>
+                    <td>
+                      <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+                      <span class="muted small">(${escapeHtml(link.source_type_name)})</span>
+                    </td>
+                    <td><code class="small">${escapeHtml(truncatedLinkProps)}</code></td>
+                    <td>${formatTimestamp(link.created_at)}</td>
+                    <td>
+                      <div class="button-group compact">
+                        <a href="/ui/links/${link.id}" class="button small">View</a>
+                        <a href="/ui/links/${link.id}/edit" class="button small secondary">Edit</a>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        `
+            : '<p class="muted">No incoming links to this entity.</p>'
+        }
+      </div>
+    `;
+
+    // Build version history section
+    const versionHistorySection = `
+      <div class="card">
+        <h3>Version History (${versionHistory.results.length} versions)</h3>
+        <div class="version-timeline">
+          ${versionHistory.results
+            .map(version => {
+              const isCurrentView = version.id === entityId;
+              const changePreview = getChangePreview(version, versionHistory.results);
+
+              return `
+              <div class="version-item ${isCurrentView ? 'current' : ''}">
+                <div class="version-header">
+                  <span class="version-number">
+                    ${isCurrentView ? `<strong>Version ${version.version}</strong> (viewing)` : `<a href="/ui/entities/${version.id}">Version ${version.version}</a>`}
+                  </span>
+                  ${version.is_latest ? '<span class="badge success small">Latest</span>' : ''}
+                  ${version.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+                </div>
+                <div class="version-meta">
+                  Modified by ${escapeHtml(version.created_by_name || version.created_by_email)} on ${formatTimestamp(version.created_at)}
+                </div>
+                ${changePreview ? `<div class="version-changes">${changePreview}</div>` : ''}
+              </div>
+            `;
+            })
+            .join('')}
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities/${entityId}/versions" class="button secondary">View Full History</a>
+        </div>
+      </div>
+    `;
+
+    // Build actions section
+    const actionsSection = `
+      <div class="card">
+        <h3>Actions</h3>
+        <div class="button-group">
+          ${!entity.is_deleted && entity.is_latest ? `<a href="/ui/entities/${entity.id}/edit" class="button">Edit Entity</a>` : ''}
+          ${!entity.is_deleted && entity.is_latest ? `<button class="button danger" onclick="confirmDelete('${entity.id}')">Delete Entity</button>` : ''}
+          ${entity.is_deleted && entity.is_latest ? `<button class="button" onclick="confirmRestore('${entity.id}')">Restore Entity</button>` : ''}
+          <a href="/ui/links/new?source=${entity.id}" class="button secondary">Create Link from This Entity</a>
+          <a href="/api/entities/${entity.id}" class="button secondary" target="_blank">Export as JSON</a>
+        </div>
+      </div>
+
+      <script>
+        function confirmDelete(entityId) {
+          if (confirm('Are you sure you want to delete this entity? This action creates a new deleted version.')) {
+            fetch('/api/entities/' + entityId, { method: 'DELETE' })
+              .then(res => {
+                if (res.ok) {
+                  window.location.reload();
+                } else {
+                  return res.json().then(data => {
+                    alert('Error: ' + (data.error || 'Failed to delete entity'));
+                  });
+                }
+              })
+              .catch(err => {
+                alert('Error: ' + err.message);
+              });
+          }
+        }
+
+        function confirmRestore(entityId) {
+          if (confirm('Are you sure you want to restore this entity?')) {
+            fetch('/api/entities/' + entityId + '/restore', { method: 'POST' })
+              .then(res => {
+                if (res.ok) {
+                  window.location.reload();
+                } else {
+                  return res.json().then(data => {
+                    alert('Error: ' + (data.error || 'Failed to restore entity'));
+                  });
+                }
+              })
+              .catch(err => {
+                alert('Error: ' + err.message);
+              });
+          }
+        }
+      </script>
+    `;
+
+    // Build the banner for old versions
+    const oldVersionBanner = !entity.is_latest
+      ? `
+      <div class="warning-message">
+        <strong>Viewing old version</strong> - You are viewing version ${entity.version} of this entity.
+        ${latestVersionId ? `<a href="/ui/entities/${latestVersionId}">View latest version</a>` : ''}
+      </div>
+    `
+      : '';
+
+    const content = `
+      <h2>${escapeHtml(displayName)}</h2>
+      ${oldVersionBanner}
+      ${entityInfoSection}
+      ${propertiesSection}
+      ${outboundLinksSection}
+      ${inboundLinksSection}
+      ${versionHistorySection}
+      ${actionsSection}
+
+      <div class="button-group">
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `${displayName} - Entity`,
+        user,
+        activePath: '/ui/entities',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Entities', href: '/ui/entities' },
+          { label: displayName },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching entity:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the entity. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
 });
+
+/**
+ * Helper function to get a change preview for version history
+ */
+function getChangePreview(
+  version: {
+    version: number;
+    properties: string;
+    is_deleted: number;
+    previous_version_id: string | null;
+  },
+  allVersions: Array<{
+    id: string;
+    version: number;
+    properties: string;
+    is_deleted: number;
+    previous_version_id: string | null;
+  }>
+): string {
+  if (version.version === 1) {
+    return '<span class="muted">Initial version</span>';
+  }
+
+  // Find the previous version
+  const prevVersion = allVersions.find(v => v.version === version.version - 1);
+  if (!prevVersion) {
+    return '';
+  }
+
+  const prevProps = JSON.parse(prevVersion.properties);
+  const currProps = JSON.parse(version.properties);
+
+  const changes: string[] = [];
+
+  // Check for status change
+  if (version.is_deleted && !prevVersion.is_deleted) {
+    changes.push('Deleted');
+  } else if (!version.is_deleted && prevVersion.is_deleted) {
+    changes.push('Restored');
+  }
+
+  // Check for property changes
+  const allKeys = new Set([...Object.keys(prevProps), ...Object.keys(currProps)]);
+  for (const key of allKeys) {
+    if (!(key in prevProps)) {
+      changes.push(`Added "${key}"`);
+    } else if (!(key in currProps)) {
+      changes.push(`Removed "${key}"`);
+    } else if (JSON.stringify(prevProps[key]) !== JSON.stringify(currProps[key])) {
+      changes.push(`Changed "${key}"`);
+    }
+  }
+
+  if (changes.length === 0) {
+    return '<span class="muted">No property changes</span>';
+  }
+
+  return (
+    '<span class="muted">' +
+    changes.slice(0, 3).join(', ') +
+    (changes.length > 3 ? '...' : '') +
+    '</span>'
+  );
+}
 
 /**
  * Link list view (placeholder)

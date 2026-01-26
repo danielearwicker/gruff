@@ -485,6 +485,123 @@ export const commonStyles = `
     resize: vertical;
   }
 
+  /* Detail list (definition list) styles */
+  .detail-list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem 1.5rem;
+  }
+
+  .detail-list dt {
+    font-weight: 600;
+    color: var(--color-secondary);
+  }
+
+  .detail-list dd {
+    margin: 0;
+  }
+
+  .detail-card {
+    margin-bottom: 1rem;
+  }
+
+  /* Version timeline styles */
+  .version-timeline {
+    border-left: 2px solid var(--color-border);
+    padding-left: 1.5rem;
+    margin: 1rem 0;
+  }
+
+  .version-item {
+    position: relative;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--color-muted);
+  }
+
+  .version-item:last-child {
+    border-bottom: none;
+  }
+
+  .version-item::before {
+    content: '';
+    position: absolute;
+    left: -1.75rem;
+    top: 1rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    background-color: var(--color-secondary);
+    border-radius: 50%;
+  }
+
+  .version-item.current::before {
+    background-color: var(--color-primary);
+    width: 0.75rem;
+    height: 0.75rem;
+    left: -1.875rem;
+  }
+
+  .version-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .version-number {
+    font-weight: 600;
+  }
+
+  .version-number a {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  .version-number a:hover {
+    text-decoration: underline;
+  }
+
+  .version-meta {
+    font-size: 0.875rem;
+    color: var(--color-secondary);
+  }
+
+  .version-changes {
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+
+  /* Warning message styles */
+  .warning-message {
+    background-color: #fef3cd;
+    border: 1px solid var(--color-warning);
+    color: #856404;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+  }
+
+  .warning-message a {
+    color: #533f03;
+    font-weight: 600;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .warning-message {
+      background-color: #332701;
+      color: #ffc107;
+    }
+
+    .warning-message a {
+      color: #ffda6a;
+    }
+  }
+
+  /* Small badge variant */
+  .badge.small {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+  }
+
   @media (max-width: 768px) {
     .stats-grid {
       grid-template-columns: 1fr;
@@ -514,6 +631,26 @@ export const commonStyles = `
 
     .form-group {
       min-width: 100%;
+    }
+
+    .detail-list {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-list dt {
+      margin-top: 0.5rem;
+    }
+
+    .version-timeline {
+      padding-left: 1rem;
+    }
+
+    .version-item::before {
+      left: -1.25rem;
+    }
+
+    .version-item.current::before {
+      left: -1.375rem;
     }
   }
 `;
