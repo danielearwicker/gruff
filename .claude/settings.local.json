@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run test:*)",
+      "Bash(npm ls:*)",
+      "Bash(timeout 10 npx wrangler dev:*)",
+      "Bash(npm pkg:*)",
+      "Bash(timeout 15 bash -c 'npm run dev 2>&1 &\nsleep 5\ncurl -s http://localhost:8787/health\necho \"\"\"\"\ncurl -s http://localhost:8787/api/version\n')",
+      "Bash(npx wrangler:*)",
+      "Bash(npm run migrate:local:*)",
+      "Bash(npm run seed:local:*)",
+      "Bash(lsof:*)",
+      "Bash(pkill:*)",
+      "Bash(xargs:*)",
+      "Bash(chmod:*)",
+      "Bash(/home/dearwicker/gruff/scripts/cleanup-workers.sh:*)"
+    ]
+  }
+}
