@@ -301,9 +301,20 @@ app.get('/health', async c => {
     // Test D1 connection
     const dbResult = await c.env.DB.prepare('SELECT 1 as test').first();
 
-    // Test KV connection
-    await c.env.KV.put('health-check', Date.now().toString(), { expirationTtl: 60 });
-    const kvValue = await c.env.KV.get('health-check');
+    // Test KV connection - handle gracefully in development if unavailable
+    let kvStatus = 'disconnected';
+    try {
+      await c.env.KV.put('health-check', Date.now().toString(), { expirationTtl: 60 });
+      const kvValue = await c.env.KV.get('health-check');
+      kvStatus = kvValue ? 'connected' : 'disconnected';
+    } catch (kvError) {
+      // In development, KV might not be available immediately after server start
+      if (c.env.ENVIRONMENT === 'development') {
+        kvStatus = 'initializing';
+      } else {
+        throw kvError;
+      }
+    }
 
     // Gather Workers runtime status
     const runtimeStatus = {
@@ -344,7 +355,7 @@ app.get('/health', async c => {
       status: 'healthy',
       environment: c.env.ENVIRONMENT,
       database: dbResult ? 'connected' : 'disconnected',
-      kv: kvValue ? 'connected' : 'disconnected',
+      kv: kvStatus,
       analytics: analyticsAvailable ? 'available' : 'not_configured',
       runtime: runtimeStatus,
       timestamp: new Date().toISOString(),

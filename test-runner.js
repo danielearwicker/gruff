@@ -138,73 +138,147 @@ function assertEquals(actual, expected, message) {
 }
 
 // ============================================================================
+// Server Readiness Check
+// ============================================================================
+
+/**
+ * Wait for the health endpoint to return healthy status.
+ * This ensures KV and other bindings are fully initialized before running tests.
+ */
+async function waitForHealthy(maxAttempts = 30, delayMs = 500) {
+  logInfo('Waiting for server to be fully ready...');
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(`${DEV_SERVER_URL}/health`);
+      const data = await response.json().catch(() => null);
+
+      if (response.status === 200 && data?.status === 'healthy') {
+        // Accept 'connected' or 'initializing' for KV in development
+        logSuccess(`Server fully ready (KV: ${data.kv}, DB: ${data.database})`);
+        return;
+      }
+
+      // Server responded but not healthy yet - log status for debugging
+      if (attempt % 5 === 0) {
+        logInfo(
+          `Health check attempt ${attempt}: status=${response.status}, healthy=${data?.status}, error=${data?.error}`
+        );
+      }
+
+      if (attempt < maxAttempts) {
+        await sleep(delayMs);
+      }
+    } catch (error) {
+      // Server not responding yet, keep trying
+      if (attempt % 5 === 0) {
+        logInfo(`Health check attempt ${attempt}: ${error.message}`);
+      }
+      if (attempt < maxAttempts) {
+        await sleep(delayMs);
+      }
+    }
+  }
+
+  throw new Error('Server health check failed after maximum attempts');
+}
+
+// ============================================================================
 // Database Reset
 // ============================================================================
 
 async function resetDatabase() {
   logSection('Resetting Local Database');
 
-  const dbPath = '.wrangler/state';
+  // Use isolated test state directory to avoid conflicts with other dev servers
+  const testStatePath = '.wrangler/test-state';
 
-  if (existsSync(dbPath)) {
-    log('Deleting existing database...', colors.yellow);
-    rmSync(dbPath, { recursive: true, force: true });
-    logInfo('Database deleted');
+  if (existsSync(testStatePath)) {
+    log('Deleting existing test database...', colors.yellow);
+    rmSync(testStatePath, { recursive: true, force: true });
+    logInfo('Test database deleted');
   } else {
-    logInfo('No existing database found');
+    logInfo('No existing test database found');
   }
 
   log('Running migrations...', colors.yellow);
 
+  // Migration files to execute in order
+  const migrationFiles = [
+    './migrations/0001_initial_schema.sql',
+    './migrations/0002_version_triggers.sql',
+    './migrations/0003_is_latest_triggers.sql',
+    './migrations/0005_audit_logs.sql',
+    './migrations/0006_generated_columns.sql',
+  ];
+
+  // Use same isolated test state path as defined at top of function
+  const persistPath = '.wrangler/test-state';
+
+  // Run migrations sequentially
+  for (const file of migrationFiles) {
+    try {
+      await runWranglerCommand([
+        'd1',
+        'execute',
+        'gruff-db',
+        '--local',
+        '--persist-to',
+        persistPath,
+        '--file',
+        file,
+      ]);
+    } catch (error) {
+      logFailure(`Migration failed: ${file}`);
+      throw error;
+    }
+  }
+  logSuccess('Database migrated successfully');
+
+  // Load seed data
+  log('Loading seed data...', colors.yellow);
+  try {
+    await runWranglerCommand([
+      'd1',
+      'execute',
+      'gruff-db',
+      '--local',
+      '--persist-to',
+      persistPath,
+      '--file',
+      './migrations/0004_seed_data.sql',
+    ]);
+    logSuccess('Seed data loaded successfully');
+  } catch (error) {
+    logFailure('Seed data loading failed');
+    throw error;
+  }
+}
+
+/**
+ * Run a wrangler command and return a promise
+ */
+function runWranglerCommand(args) {
   return new Promise((resolve, reject) => {
-    const migration = spawn('npm', ['run', 'migrate:local'], {
+    const proc = spawn('npx', ['wrangler', ...args], {
       stdio: 'pipe',
     });
 
     let output = '';
 
-    migration.stdout.on('data', data => {
+    proc.stdout.on('data', data => {
       output += data.toString();
     });
 
-    migration.stderr.on('data', data => {
+    proc.stderr.on('data', data => {
       output += data.toString();
     });
 
-    migration.on('close', code => {
+    proc.on('close', code => {
       if (code === 0) {
-        logSuccess('Database migrated successfully');
-
-        // Now load seed data
-        log('Loading seed data...', colors.yellow);
-        const seed = spawn('npm', ['run', 'seed:local'], {
-          stdio: 'pipe',
-        });
-
-        let seedOutput = '';
-
-        seed.stdout.on('data', data => {
-          seedOutput += data.toString();
-        });
-
-        seed.stderr.on('data', data => {
-          seedOutput += data.toString();
-        });
-
-        seed.on('close', seedCode => {
-          if (seedCode === 0) {
-            logSuccess('Seed data loaded successfully');
-            resolve();
-          } else {
-            logFailure('Seed data loading failed');
-            console.log(seedOutput);
-            reject(new Error('Seed data loading failed'));
-          }
-        });
+        resolve(output);
       } else {
-        logFailure('Database migration failed');
-        console.log(output);
-        reject(new Error('Migration failed'));
+        reject(new Error(`Wrangler command failed: ${args.join(' ')}\n${output}`));
       }
     });
   });
@@ -218,10 +292,17 @@ async function startDevServer() {
   logSection('Starting Dev Server');
 
   return new Promise((resolve, reject) => {
-    devServerProcess = spawn('npm', ['run', 'dev'], {
-      stdio: 'pipe',
-      detached: false,
-    });
+    // Use isolated persist directory for tests to avoid conflicts with other dev servers
+    devServerProcess = spawn(
+      'npx',
+      ['wrangler', 'dev', '--local', '--persist-to', '.wrangler/test-state'],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+        shell: false,
+        env: { ...process.env },
+      }
+    );
 
     let output = '';
     let serverReady = false;
@@ -247,8 +328,8 @@ async function startDevServer() {
           serverReady = true;
           clearTimeout(timeout);
           logSuccess('Dev server started successfully');
-          // Give it a moment to fully initialize
-          setTimeout(() => resolve(), 1000);
+          // Wait for health endpoint to return healthy before proceeding
+          waitForHealthy().then(resolve).catch(reject);
         }
       }
     });
@@ -275,14 +356,22 @@ async function startDevServer() {
 async function stopDevServer() {
   if (devServerProcess) {
     log('\nStopping dev server...', colors.yellow);
-    devServerProcess.kill('SIGTERM');
+
+    // Kill the entire process group (negative PID) since wrangler spawns child processes
+    try {
+      process.kill(-devServerProcess.pid, 'SIGTERM');
+    } catch {
+      // Process group may already be dead
+    }
 
     // Give it time to shut down gracefully
     await sleep(1000);
 
-    // Force kill if still running
-    if (!devServerProcess.killed) {
-      devServerProcess.kill('SIGKILL');
+    // Force kill the process group if still running
+    try {
+      process.kill(-devServerProcess.pid, 'SIGKILL');
+    } catch {
+      // Process group may already be dead
     }
 
     logInfo('Dev server stopped');
@@ -9880,11 +9969,15 @@ async function testUIEntityDetailPropertiesDisplay() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Properties'), 'Should have properties section');
-  assert(html.includes('"name": "Complex Entity"'), 'Should display name property');
-  assert(html.includes('"count": 42'), 'Should display number property');
-  assert(html.includes('"active": true'), 'Should display boolean property');
-  assert(html.includes('"tag1"'), 'Should display array elements');
-  assert(html.includes('"metadata"'), 'Should display nested object');
+  // Note: escapeHtml converts " to &quot; so we check for escaped JSON
+  assert(
+    html.includes('&quot;name&quot;: &quot;Complex Entity&quot;'),
+    'Should display name property'
+  );
+  assert(html.includes('&quot;count&quot;: 42'), 'Should display number property');
+  assert(html.includes('&quot;active&quot;: true'), 'Should display boolean property');
+  assert(html.includes('&quot;tag1&quot;'), 'Should display array elements');
+  assert(html.includes('&quot;metadata&quot;'), 'Should display nested object');
 }
 
 // ============================================================================

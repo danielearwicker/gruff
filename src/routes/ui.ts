@@ -5159,7 +5159,10 @@ ui.get('/search', async c => {
                 .map(entity => {
                   const props = entity.properties ? JSON.parse(entity.properties as string) : {};
                   const displayName =
-                    props.name || props.title || props.label || (entity.id as string).substring(0, 8);
+                    props.name ||
+                    props.title ||
+                    props.label ||
+                    (entity.id as string).substring(0, 8);
                   const propsPreview = JSON.stringify(props);
                   const truncatedProps =
                     propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;

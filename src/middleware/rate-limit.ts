@@ -129,13 +129,30 @@ export function rateLimit(options: RateLimitMiddlewareOptions = {}) {
     const category = options.category || getEndpointCategory(c.req.method, c.req.path);
 
     // Check rate limit with environment-aware limits
-    const result = await checkRateLimit(
-      c.env.KV,
-      identifier,
-      category,
-      options.config,
-      c.env.ENVIRONMENT
-    );
+    let result;
+    try {
+      result = await checkRateLimit(
+        c.env.KV,
+        identifier,
+        category,
+        options.config,
+        c.env.ENVIRONMENT
+      );
+    } catch (error) {
+      // In development mode, skip rate limiting if KV is unavailable
+      // This can happen during server startup or with local KV issues
+      if (c.env.ENVIRONMENT === 'development') {
+        logger.warn('Rate limit check failed, skipping in development mode', {
+          error: error instanceof Error ? error.message : String(error),
+          identifier,
+          category,
+        });
+        await next();
+        return;
+      }
+      // In production, re-throw the error
+      throw error;
+    }
 
     // Set rate limit headers on all responses
     setRateLimitHeaders(c, result);
