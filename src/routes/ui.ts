@@ -710,6 +710,600 @@ ui.get('/entities', async c => {
 });
 
 /**
+ * Create entity form
+ * GET /ui/entities/new
+ * IMPORTANT: This route must be defined BEFORE /entities/:id to avoid matching "new" as an ID
+ */
+ui.get('/entities/new', async c => {
+  const user = c.get('user');
+
+  // Get optional pre-selected type from query parameter
+  const preselectedTypeId = c.req.query('type_id') || '';
+
+  // Fetch all entity types for the dropdown
+  const allTypes = await c.env.DB.prepare(
+    "SELECT id, name, description, json_schema FROM types WHERE category = 'entity' ORDER BY name"
+  ).all<{ id: string; name: string; description: string | null; json_schema: string | null }>();
+
+  // Get any error message and preserved form data from query params (for validation errors)
+  const errorMessage = c.req.query('error') || '';
+  const preservedTypeId = c.req.query('preserved_type_id') || preselectedTypeId;
+  const preservedProperties = c.req.query('preserved_properties') || '{}';
+
+  // Format the preserved properties nicely for display
+  let formattedProperties = '{}';
+  try {
+    const parsed = JSON.parse(preservedProperties);
+    formattedProperties = JSON.stringify(parsed, null, 2);
+  } catch {
+    formattedProperties = preservedProperties;
+  }
+
+  // Build the form
+  const formHtml = `
+    <h2>Create New Entity</h2>
+
+    ${
+      errorMessage
+        ? `
+      <div class="error-message">
+        <strong>Error:</strong> ${escapeHtml(decodeURIComponent(errorMessage))}
+      </div>
+    `
+        : ''
+    }
+
+    <div class="card">
+      <form id="create-entity-form" class="entity-form">
+        <div class="form-group">
+          <label for="type_id">Entity Type <span class="required">*</span></label>
+          <select id="type_id" name="type_id" required onchange="updateSchemaHint()">
+            <option value="">Select a type...</option>
+            ${allTypes.results
+              .map(
+                t => `
+              <option value="${t.id}"
+                      ${preservedTypeId === t.id ? 'selected' : ''}
+                      data-schema="${t.json_schema ? escapeHtml(t.json_schema) : ''}"
+                      data-description="${t.description ? escapeHtml(t.description) : ''}">
+                ${escapeHtml(t.name)}
+              </option>
+            `
+              )
+              .join('')}
+          </select>
+          <div id="type-description" class="form-hint"></div>
+        </div>
+
+        <div id="schema-hint" class="schema-hint" style="display: none;">
+          <h4>Property Schema</h4>
+          <pre><code id="schema-content"></code></pre>
+        </div>
+
+        <div class="form-group">
+          <label for="properties">Properties (JSON) <span class="required">*</span></label>
+          <textarea id="properties" name="properties" rows="15" required
+                    placeholder='{"name": "Example", "description": "Enter properties as JSON"}'>${escapeHtml(formattedProperties)}</textarea>
+          <div class="form-hint">Enter valid JSON object with the entity properties.</div>
+        </div>
+
+        <div id="json-error" class="error-message" style="display: none;"></div>
+
+        <div class="button-group">
+          <button type="submit" class="button" id="submit-btn">Create Entity</button>
+          <a href="/ui/entities" class="button secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      // Update schema hint when type is selected
+      function updateSchemaHint() {
+        const select = document.getElementById('type_id');
+        const selectedOption = select.options[select.selectedIndex];
+        const schema = selectedOption.getAttribute('data-schema');
+        const description = selectedOption.getAttribute('data-description');
+        const schemaHint = document.getElementById('schema-hint');
+        const schemaContent = document.getElementById('schema-content');
+        const typeDescription = document.getElementById('type-description');
+
+        if (description) {
+          typeDescription.textContent = description;
+        } else {
+          typeDescription.textContent = '';
+        }
+
+        if (schema) {
+          try {
+            const parsed = JSON.parse(schema);
+            schemaContent.textContent = JSON.stringify(parsed, null, 2);
+            schemaHint.style.display = 'block';
+          } catch {
+            schemaHint.style.display = 'none';
+          }
+        } else {
+          schemaHint.style.display = 'none';
+        }
+      }
+
+      // Validate JSON on input
+      document.getElementById('properties').addEventListener('input', function() {
+        const errorDiv = document.getElementById('json-error');
+        try {
+          JSON.parse(this.value);
+          errorDiv.style.display = 'none';
+          this.style.borderColor = '';
+        } catch (e) {
+          errorDiv.textContent = 'Invalid JSON: ' + e.message;
+          errorDiv.style.display = 'block';
+          this.style.borderColor = 'var(--color-error)';
+        }
+      });
+
+      // Handle form submission
+      document.getElementById('create-entity-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const typeId = document.getElementById('type_id').value;
+        const propertiesText = document.getElementById('properties').value;
+        const submitBtn = document.getElementById('submit-btn');
+        const errorDiv = document.getElementById('json-error');
+
+        // Validate type selection
+        if (!typeId) {
+          errorDiv.textContent = 'Please select an entity type.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        // Validate JSON
+        let properties;
+        try {
+          properties = JSON.parse(propertiesText);
+        } catch (e) {
+          errorDiv.textContent = 'Invalid JSON: ' + e.message;
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        // Disable submit button while processing
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+        errorDiv.style.display = 'none';
+
+        try {
+          const response = await fetch('/api/entities', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type_id: typeId,
+              properties: properties
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.data && data.data.id) {
+            // Success - redirect to the new entity
+            window.location.href = '/ui/entities/' + data.data.id;
+          } else {
+            // Error - show message
+            errorDiv.textContent = data.error || data.message || 'Failed to create entity';
+            errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Entity';
+          }
+        } catch (err) {
+          errorDiv.textContent = 'Network error: ' + err.message;
+          errorDiv.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Entity';
+        }
+      });
+
+      // Initialize schema hint on page load
+      updateSchemaHint();
+    </script>
+
+    <style>
+      .entity-form .form-group {
+        margin-bottom: 1.5rem;
+      }
+
+      .entity-form textarea {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+      }
+
+      .required {
+        color: var(--color-error);
+      }
+
+      .form-hint {
+        font-size: 0.875rem;
+        color: var(--color-secondary);
+        margin-top: 0.25rem;
+      }
+
+      .schema-hint {
+        background-color: var(--color-muted);
+        border: 1px solid var(--color-border);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .schema-hint h4 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--color-secondary);
+      }
+
+      .schema-hint pre {
+        margin: 0;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+    </style>
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Create Entity',
+      user,
+      activePath: '/ui/entities',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Entities', href: '/ui/entities' },
+        { label: 'Create' },
+      ],
+    },
+    formHtml
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Edit entity form
+ * GET /ui/entities/:id/edit
+ * IMPORTANT: This route must be defined BEFORE /entities/:id to avoid partial matching issues
+ */
+ui.get('/entities/:id/edit', async c => {
+  const user = c.get('user');
+  const entityId = c.req.param('id');
+
+  try {
+    // Fetch the entity with type information
+    const entity = await c.env.DB.prepare(
+      `
+      SELECT
+        e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+        e.is_latest, e.is_deleted, e.previous_version_id,
+        t.name as type_name, t.description as type_description, t.json_schema as type_json_schema
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(entityId)
+      .first<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        type_name: string;
+        type_description: string | null;
+        type_json_schema: string | null;
+      }>();
+
+    if (!entity) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Not Found</h2>
+          <p>The entity with ID "${escapeHtml(entityId)}" could not be found or is not the latest version.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Check if entity is deleted
+    if (entity.is_deleted) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Deleted</h2>
+          <p>This entity has been deleted. You must restore it before editing.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Deleted',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Deleted' },
+            ],
+          },
+          content
+        ),
+        409
+      );
+    }
+
+    // Parse the properties
+    const props = JSON.parse(entity.properties);
+    const displayName = props.name || props.title || props.label || entity.id.substring(0, 8);
+    const formattedProperties = JSON.stringify(props, null, 2);
+
+    // Get any error message from query params (for validation errors)
+    const errorMessage = c.req.query('error') || '';
+    const preservedProperties = c.req.query('preserved_properties') || '';
+
+    // Use preserved properties if available, otherwise use current entity properties
+    let displayProperties = formattedProperties;
+    if (preservedProperties) {
+      try {
+        const parsed = JSON.parse(preservedProperties);
+        displayProperties = JSON.stringify(parsed, null, 2);
+      } catch {
+        displayProperties = preservedProperties;
+      }
+    }
+
+    // Build the form
+    const formHtml = `
+      <h2>Edit Entity: ${escapeHtml(displayName)}</h2>
+
+      ${
+        errorMessage
+          ? `
+        <div class="error-message">
+          <strong>Error:</strong> ${escapeHtml(decodeURIComponent(errorMessage))}
+        </div>
+      `
+          : ''
+      }
+
+      <div class="card detail-card">
+        <h3>Entity Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(entity.id)}</code></dd>
+
+          <dt>Type</dt>
+          <dd>
+            <span class="badge">${escapeHtml(entity.type_name)}</span>
+            ${entity.type_description ? `<span class="muted small">${escapeHtml(entity.type_description)}</span>` : ''}
+          </dd>
+
+          <dt>Current Version</dt>
+          <dd>${entity.version}</dd>
+        </dl>
+      </div>
+
+      ${
+        entity.type_json_schema
+          ? `
+        <div class="schema-hint">
+          <h4>Property Schema</h4>
+          <pre><code>${escapeHtml(JSON.stringify(JSON.parse(entity.type_json_schema), null, 2))}</code></pre>
+        </div>
+      `
+          : ''
+      }
+
+      <div class="card">
+        <form id="edit-entity-form" class="entity-form">
+          <div class="form-group">
+            <label for="properties">Properties (JSON) <span class="required">*</span></label>
+            <textarea id="properties" name="properties" rows="15" required>${escapeHtml(displayProperties)}</textarea>
+            <div class="form-hint">Enter valid JSON object with the entity properties. A new version will be created.</div>
+          </div>
+
+          <div id="json-error" class="error-message" style="display: none;"></div>
+
+          <div class="button-group">
+            <button type="submit" class="button" id="submit-btn">Save Changes (Create Version ${entity.version + 1})</button>
+            <a href="/ui/entities/${escapeHtml(entity.id)}" class="button secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+
+      <script>
+        // Validate JSON on input
+        document.getElementById('properties').addEventListener('input', function() {
+          const errorDiv = document.getElementById('json-error');
+          try {
+            JSON.parse(this.value);
+            errorDiv.style.display = 'none';
+            this.style.borderColor = '';
+          } catch (e) {
+            errorDiv.textContent = 'Invalid JSON: ' + e.message;
+            errorDiv.style.display = 'block';
+            this.style.borderColor = 'var(--color-error)';
+          }
+        });
+
+        // Handle form submission
+        document.getElementById('edit-entity-form').addEventListener('submit', async function(e) {
+          e.preventDefault();
+
+          const propertiesText = document.getElementById('properties').value;
+          const submitBtn = document.getElementById('submit-btn');
+          const errorDiv = document.getElementById('json-error');
+
+          // Validate JSON
+          let properties;
+          try {
+            properties = JSON.parse(propertiesText);
+          } catch (e) {
+            errorDiv.textContent = 'Invalid JSON: ' + e.message;
+            errorDiv.style.display = 'block';
+            return;
+          }
+
+          // Disable submit button while processing
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Saving...';
+          errorDiv.style.display = 'none';
+
+          try {
+            const response = await fetch('/api/entities/${escapeHtml(entity.id)}', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                properties: properties
+              })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.data && data.data.id) {
+              // Success - redirect to the new version
+              window.location.href = '/ui/entities/' + data.data.id;
+            } else {
+              // Error - show message
+              errorDiv.textContent = data.error || data.message || 'Failed to update entity';
+              errorDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Changes (Create Version ${entity.version + 1})';
+            }
+          } catch (err) {
+            errorDiv.textContent = 'Network error: ' + err.message;
+            errorDiv.style.display = 'block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Changes (Create Version ${entity.version + 1})';
+          }
+        });
+      </script>
+
+      <style>
+        .entity-form .form-group {
+          margin-bottom: 1.5rem;
+        }
+
+        .entity-form textarea {
+          font-family: var(--font-mono);
+          font-size: 0.875rem;
+        }
+
+        .required {
+          color: var(--color-error);
+        }
+
+        .form-hint {
+          font-size: 0.875rem;
+          color: var(--color-secondary);
+          margin-top: 0.25rem;
+        }
+
+        .schema-hint {
+          background-color: var(--color-muted);
+          border: 1px solid var(--color-border);
+          border-radius: 0.5rem;
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .schema-hint h4 {
+          margin-top: 0;
+          margin-bottom: 0.5rem;
+          font-size: 0.875rem;
+          color: var(--color-secondary);
+        }
+
+        .schema-hint pre {
+          margin: 0;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+      </style>
+    `;
+
+    const html = renderPage(
+      {
+        title: `Edit ${displayName}`,
+        user,
+        activePath: '/ui/entities',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Entities', href: '/ui/entities' },
+          { label: displayName, href: `/ui/entities/${entity.id}` },
+          { label: 'Edit' },
+        ],
+      },
+      formHtml
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching entity for edit:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the entity. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
  * Entity detail view
  * GET /ui/entities/:id
  */

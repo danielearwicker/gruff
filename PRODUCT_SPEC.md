@@ -744,7 +744,7 @@ Each entity in the list shows:
 - Create Link from this Entity button
 - Export Entity (JSON download)
 
-### 🟦 Entity Create/Edit Forms
+### ✅ Entity Create/Edit Forms
 
 **Routes:**
 
@@ -755,18 +755,18 @@ Each entity in the list shows:
 
 - Type selection (dropdown, required) - only on create form
 - Properties editor:
-  - Option 1: Large textarea with JSON editor
-  - Option 2: Dynamic form fields based on type's JSON schema (if available)
-- Display name preview (if properties include name/title field)
-- Form validation (client-side and server-side)
+  - Large textarea with JSON editor
+  - Schema hint displayed when type has JSON schema defined
+- JSON validation (client-side)
 - Cancel and Save buttons
 
 #### Behavior
 
-- **Create:** POST to `/api/entities`, redirects to new entity detail page
-- **Edit:** Creates new version via POST to `/api/entities/:id/versions`
+- **Create:** POST to `/api/entities`, redirects to new entity detail page on success
+- **Edit:** PUT to `/api/entities/:id`, redirects to new entity version on success
 - Shows validation errors inline
 - Preserves form data on validation errors
+- Disabled entities cannot be edited until restored
 
 ### 🟦 Link Detail View
 
