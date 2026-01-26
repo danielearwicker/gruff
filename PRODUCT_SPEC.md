@@ -824,7 +824,7 @@ Each entity in the list shows:
 - **Create:** POST to `/api/links`, redirects to new link detail page
 - **Edit:** PUT to `/api/links/:id`, creates new version, redirects to new link version
 
-### 🟦 Type Browser
+### ✅ Type Browser
 
 **Route:** `GET /ui/types`
 

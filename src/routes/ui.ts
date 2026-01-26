@@ -3467,17 +3467,154 @@ function getLinkChangePreview(
 }
 
 /**
- * Type browser (placeholder)
+ * Type browser
  * GET /ui/types
  */
 ui.get('/types', async c => {
   const user = c.get('user');
 
+  // Get filter parameters
+  const filterCategory = c.req.query('category') || '';
+
+  // Fetch all types with usage counts
+  const typesQuery = `
+    SELECT
+      t.id, t.name, t.category, t.description, t.json_schema,
+      t.created_at, t.created_by,
+      u.display_name as created_by_name, u.email as created_by_email,
+      CASE t.category
+        WHEN 'entity' THEN (SELECT COUNT(*) FROM entities e WHERE e.type_id = t.id AND e.is_latest = 1 AND e.is_deleted = 0)
+        WHEN 'link' THEN (SELECT COUNT(*) FROM links l WHERE l.type_id = t.id AND l.is_latest = 1 AND l.is_deleted = 0)
+        ELSE 0
+      END as usage_count
+    FROM types t
+    LEFT JOIN users u ON t.created_by = u.id
+    WHERE 1=1 ${filterCategory ? 'AND t.category = ?' : ''}
+    ORDER BY t.name ASC
+  `;
+
+  const typesResult = filterCategory
+    ? await c.env.DB.prepare(typesQuery).bind(filterCategory).all<{
+        id: string;
+        name: string;
+        category: string;
+        description: string | null;
+        json_schema: string | null;
+        created_at: number;
+        created_by: string | null;
+        created_by_name: string | null;
+        created_by_email: string | null;
+        usage_count: number;
+      }>()
+    : await c.env.DB.prepare(typesQuery).all<{
+        id: string;
+        name: string;
+        category: string;
+        description: string | null;
+        json_schema: string | null;
+        created_at: number;
+        created_by: string | null;
+        created_by_name: string | null;
+        created_by_email: string | null;
+        usage_count: number;
+      }>();
+
+  // Render filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/types" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="category">Category:</label>
+            <select id="category" name="category">
+              <option value="">All categories</option>
+              <option value="entity" ${filterCategory === 'entity' ? 'selected' : ''}>Entity types</option>
+              <option value="link" ${filterCategory === 'link' ? 'selected' : ''}>Link types</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Apply Filter</button>
+          <a href="/ui/types" class="button secondary">Clear Filter</a>
+        </div>
+      </form>
+    </div>
+  `;
+
+  // Render types table
+  const typesTable = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Description</th>
+          <th>Schema</th>
+          <th>Usage</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${typesResult.results
+          .map(type => {
+            const hasSchema = type.json_schema !== null;
+            const createdByDisplay = type.created_by_name || type.created_by_email || 'System';
+
+            return `
+          <tr>
+            <td>
+              <a href="/ui/types/${type.id}"><strong>${escapeHtml(type.name)}</strong></a>
+            </td>
+            <td>
+              <span class="badge ${type.category === 'entity' ? 'success' : 'muted'}">${escapeHtml(type.category)}</span>
+            </td>
+            <td>
+              ${type.description ? `<span class="small">${escapeHtml(type.description.length > 100 ? type.description.substring(0, 100) + '...' : type.description)}</span>` : '<span class="muted small">No description</span>'}
+            </td>
+            <td>
+              ${hasSchema ? '<span class="badge success small">Has Schema</span>' : '<span class="muted small">None</span>'}
+            </td>
+            <td>
+              <a href="${type.category === 'entity' ? `/ui/entities?type_id=${type.id}` : `/ui/links?type_id=${type.id}`}">${type.usage_count} ${type.category === 'entity' ? 'entities' : 'links'}</a>
+            </td>
+            <td>
+              ${escapeHtml(createdByDisplay)}
+            </td>
+            <td>
+              ${formatTimestamp(type.created_at)}
+            </td>
+            <td>
+              <div class="button-group compact">
+                <a href="/ui/types/${type.id}" class="button small">View</a>
+              </div>
+            </td>
+          </tr>
+        `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `;
+
   const content = `
     <h2>Types</h2>
-    <p>Type browser coming soon.</p>
+    <p>Browse all registered types for entities and links.</p>
+
+    <h3>Filter</h3>
+    ${filterForm}
+
+    <h3>Results</h3>
+    <p>Showing ${typesResult.results.length} ${typesResult.results.length === 1 ? 'type' : 'types'}.</p>
+
+    ${typesResult.results.length > 0 ? typesTable : '<p class="muted">No types found matching the filter.</p>'}
+
     <div class="button-group">
       <a href="/ui" class="button secondary">Back to Dashboard</a>
+      <a href="/ui/entities/new" class="button secondary">Create Entity</a>
+      <a href="/ui/links/new" class="button secondary">Create Link</a>
     </div>
   `;
 
@@ -3492,6 +3629,347 @@ ui.get('/types', async c => {
   );
 
   return c.html(html);
+});
+
+/**
+ * Type detail view
+ * GET /ui/types/:id
+ */
+ui.get('/types/:id', async c => {
+  const user = c.get('user');
+  const typeId = c.req.param('id');
+
+  try {
+    // Fetch the type with creator information
+    const type = await c.env.DB.prepare(
+      `
+      SELECT
+        t.id, t.name, t.category, t.description, t.json_schema,
+        t.created_at, t.created_by,
+        u.display_name as created_by_name, u.email as created_by_email
+      FROM types t
+      LEFT JOIN users u ON t.created_by = u.id
+      WHERE t.id = ?
+    `
+    )
+      .bind(typeId)
+      .first<{
+        id: string;
+        name: string;
+        category: string;
+        description: string | null;
+        json_schema: string | null;
+        created_at: number;
+        created_by: string | null;
+        created_by_name: string | null;
+        created_by_email: string | null;
+      }>();
+
+    if (!type) {
+      const content = `
+        <div class="error-message">
+          <h2>Type Not Found</h2>
+          <p>The type with ID "${escapeHtml(typeId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/types" class="button secondary">Back to Types</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Type Not Found',
+            user,
+            activePath: '/ui/types',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Types', href: '/ui/types' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Get usage count
+    const usageCountQuery =
+      type.category === 'entity'
+        ? 'SELECT COUNT(*) as count FROM entities WHERE type_id = ? AND is_latest = 1 AND is_deleted = 0'
+        : 'SELECT COUNT(*) as count FROM links WHERE type_id = ? AND is_latest = 1 AND is_deleted = 0';
+
+    const usageResult = await c.env.DB.prepare(usageCountQuery)
+      .bind(typeId)
+      .first<{ count: number }>();
+    const usageCount = usageResult?.count || 0;
+
+    // Get recent items of this type (limit to 10)
+    let recentItemsHtml = '';
+    if (type.category === 'entity') {
+      const recentEntities = await c.env.DB.prepare(
+        `
+        SELECT
+          e.id, e.properties, e.version, e.created_at,
+          u.display_name as created_by_name, u.email as created_by_email
+        FROM entities e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.type_id = ? AND e.is_latest = 1 AND e.is_deleted = 0
+        ORDER BY e.created_at DESC
+        LIMIT 10
+      `
+      )
+        .bind(typeId)
+        .all<{
+          id: string;
+          properties: string;
+          version: number;
+          created_at: number;
+          created_by_name: string | null;
+          created_by_email: string | null;
+        }>();
+
+      if (recentEntities.results.length > 0) {
+        recentItemsHtml = `
+          <h3>Recent Entities (${Math.min(usageCount, 10)} of ${usageCount})</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Entity</th>
+                <th>Version</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentEntities.results
+                .map(entity => {
+                  const props = JSON.parse(entity.properties);
+                  const displayName =
+                    props.name || props.title || props.label || entity.id.substring(0, 8);
+                  const createdByDisplay =
+                    entity.created_by_name || entity.created_by_email || 'Unknown';
+
+                  return `
+                <tr>
+                  <td><a href="/ui/entities/${entity.id}">${escapeHtml(displayName)}</a></td>
+                  <td>${entity.version}</td>
+                  <td>${escapeHtml(createdByDisplay)}</td>
+                  <td>${formatTimestamp(entity.created_at)}</td>
+                  <td>
+                    <a href="/ui/entities/${entity.id}" class="button small">View</a>
+                  </td>
+                </tr>
+              `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+          ${usageCount > 10 ? `<p><a href="/ui/entities?type_id=${typeId}">View all ${usageCount} entities of this type &rarr;</a></p>` : ''}
+        `;
+      }
+    } else {
+      const recentLinks = await c.env.DB.prepare(
+        `
+        SELECT
+          l.id, l.properties, l.version, l.created_at,
+          l.source_entity_id, l.target_entity_id,
+          se.properties as source_properties,
+          te.properties as target_properties,
+          st.name as source_type_name,
+          tt.name as target_type_name,
+          u.display_name as created_by_name, u.email as created_by_email
+        FROM links l
+        LEFT JOIN users u ON l.created_by = u.id
+        LEFT JOIN entities se ON l.source_entity_id = se.id
+        LEFT JOIN entities te ON l.target_entity_id = te.id
+        LEFT JOIN types st ON se.type_id = st.id
+        LEFT JOIN types tt ON te.type_id = tt.id
+        WHERE l.type_id = ? AND l.is_latest = 1 AND l.is_deleted = 0
+        ORDER BY l.created_at DESC
+        LIMIT 10
+      `
+      )
+        .bind(typeId)
+        .all<{
+          id: string;
+          properties: string;
+          version: number;
+          created_at: number;
+          source_entity_id: string;
+          target_entity_id: string;
+          source_properties: string;
+          target_properties: string;
+          source_type_name: string;
+          target_type_name: string;
+          created_by_name: string | null;
+          created_by_email: string | null;
+        }>();
+
+      if (recentLinks.results.length > 0) {
+        recentItemsHtml = `
+          <h3>Recent Links (${Math.min(usageCount, 10)} of ${usageCount})</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Link</th>
+                <th>Source</th>
+                <th>Target</th>
+                <th>Version</th>
+                <th>Created At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentLinks.results
+                .map(link => {
+                  const sourceProps = JSON.parse(link.source_properties || '{}');
+                  const targetProps = JSON.parse(link.target_properties || '{}');
+                  const sourceDisplayName =
+                    sourceProps.name ||
+                    sourceProps.title ||
+                    sourceProps.label ||
+                    link.source_entity_id.substring(0, 8);
+                  const targetDisplayName =
+                    targetProps.name ||
+                    targetProps.title ||
+                    targetProps.label ||
+                    link.target_entity_id.substring(0, 8);
+
+                  return `
+                <tr>
+                  <td><a href="/ui/links/${link.id}">${link.id.substring(0, 8)}...</a></td>
+                  <td>
+                    <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+                    <span class="muted small">(${escapeHtml(link.source_type_name || 'Unknown')})</span>
+                  </td>
+                  <td>
+                    <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+                    <span class="muted small">(${escapeHtml(link.target_type_name || 'Unknown')})</span>
+                  </td>
+                  <td>${link.version}</td>
+                  <td>${formatTimestamp(link.created_at)}</td>
+                  <td>
+                    <a href="/ui/links/${link.id}" class="button small">View</a>
+                  </td>
+                </tr>
+              `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+          ${usageCount > 10 ? `<p><a href="/ui/links?type_id=${typeId}">View all ${usageCount} links of this type &rarr;</a></p>` : ''}
+        `;
+      }
+    }
+
+    // Parse JSON schema for display if present
+    let schemaHtml = '<p class="muted">No JSON schema defined for this type.</p>';
+    if (type.json_schema) {
+      try {
+        const schema = JSON.parse(type.json_schema);
+        schemaHtml = `<pre><code>${escapeHtml(JSON.stringify(schema, null, 2))}</code></pre>`;
+      } catch {
+        schemaHtml = `<pre><code>${escapeHtml(type.json_schema)}</code></pre>`;
+      }
+    }
+
+    const createdByDisplay = type.created_by_name || type.created_by_email || 'System';
+
+    const content = `
+      <h2>${escapeHtml(type.name)}</h2>
+
+      <div class="card detail-card">
+        <h3>Type Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(type.id)}</code></dd>
+
+          <dt>Name</dt>
+          <dd><strong>${escapeHtml(type.name)}</strong></dd>
+
+          <dt>Category</dt>
+          <dd>
+            <span class="badge ${type.category === 'entity' ? 'success' : 'muted'}">${escapeHtml(type.category)}</span>
+          </dd>
+
+          <dt>Description</dt>
+          <dd>${type.description ? escapeHtml(type.description) : '<span class="muted">No description</span>'}</dd>
+
+          <dt>Usage</dt>
+          <dd>
+            <a href="${type.category === 'entity' ? `/ui/entities?type_id=${type.id}` : `/ui/links?type_id=${type.id}`}">
+              ${usageCount} ${type.category === 'entity' ? 'entities' : 'links'}
+            </a>
+          </dd>
+
+          <dt>Created By</dt>
+          <dd>${escapeHtml(createdByDisplay)}</dd>
+
+          <dt>Created At</dt>
+          <dd>${formatTimestamp(type.created_at)}</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h3>JSON Schema</h3>
+        ${schemaHtml}
+      </div>
+
+      ${recentItemsHtml || `<p class="muted">No ${type.category === 'entity' ? 'entities' : 'links'} of this type yet.</p>`}
+
+      <div class="button-group">
+        <a href="/ui/types" class="button secondary">Back to Types</a>
+        ${type.category === 'entity' ? `<a href="/ui/entities/new?type_id=${type.id}" class="button">Create Entity of This Type</a>` : `<a href="/ui/links/new?type_id=${type.id}" class="button">Create Link of This Type</a>`}
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: type.name,
+        user,
+        activePath: '/ui/types',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Types', href: '/ui/types' },
+          { label: type.name },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching type:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the type. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/types" class="button secondary">Back to Types</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/types',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Types', href: '/ui/types' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
 });
 
 /**
