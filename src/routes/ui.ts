@@ -1674,15 +1674,23 @@ ui.get('/entities/:id', async c => {
       </div>
     `;
 
-    // Build version history section
+    // Build version history section with compare links
+    const latestVer = versionHistory.results.find(v => v.is_latest === 1);
+    const latestVersionNum = latestVer?.version || versionHistory.results[0]?.version || 1;
     const versionHistorySection = `
       <div class="card">
         <h3>Version History (${versionHistory.results.length} versions)</h3>
         <div class="version-timeline">
           ${versionHistory.results
-            .map(version => {
+            .map((version, index) => {
               const isCurrentView = version.id === entityId;
               const changePreview = getChangePreview(version, versionHistory.results);
+              // Show compare link if there's a previous version
+              const prevVersion = versionHistory.results[index + 1];
+              const compareLink =
+                prevVersion && versionHistory.results.length > 1
+                  ? `<a href="/ui/entities/${entityId}/versions/${prevVersion.version}/compare/${version.version}" class="button small secondary" style="margin-left: 0.5rem;">Compare with v${prevVersion.version}</a>`
+                  : '';
 
               return `
               <div class="version-item ${isCurrentView ? 'current' : ''}">
@@ -1692,6 +1700,7 @@ ui.get('/entities/:id', async c => {
                   </span>
                   ${version.is_latest ? '<span class="badge success small">Latest</span>' : ''}
                   ${version.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+                  ${compareLink}
                 </div>
                 <div class="version-meta">
                   Modified by ${escapeHtml(version.created_by_name || version.created_by_email)} on ${formatTimestamp(version.created_at)}
@@ -1704,6 +1713,7 @@ ui.get('/entities/:id', async c => {
         </div>
         <div class="button-group">
           <a href="/ui/entities/${entityId}/versions" class="button secondary">View Full History</a>
+          ${versionHistory.results.length >= 2 ? `<a href="/ui/entities/${entityId}/versions/1/compare/${latestVersionNum}" class="button secondary">Compare First to Latest</a>` : ''}
         </div>
       </div>
     `;
@@ -1809,6 +1819,510 @@ ui.get('/entities/:id', async c => {
       </div>
       <div class="button-group">
         <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
+ * Version Comparison View
+ * GET /ui/entities/:id/versions/:v1/compare/:v2
+ * Shows a side-by-side comparison of two versions of an entity
+ */
+ui.get('/entities/:id/versions/:v1/compare/:v2', async c => {
+  const user = c.get('user');
+  const entityId = c.req.param('id');
+  const v1Param = c.req.param('v1');
+  const v2Param = c.req.param('v2');
+
+  // Parse version numbers
+  const v1 = parseInt(v1Param, 10);
+  const v2 = parseInt(v2Param, 10);
+
+  if (isNaN(v1) || isNaN(v2)) {
+    const content = `
+      <div class="error-message">
+        <h2>Invalid Version Numbers</h2>
+        <p>Version numbers must be positive integers.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Invalid Versions',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Invalid Versions' },
+          ],
+        },
+        content
+      ),
+      400
+    );
+  }
+
+  try {
+    // First, fetch all versions of this entity chain to find the correct records
+    // We need to find the version chain that contains the entity with the given ID
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_back vc ON e.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_forward vc ON e.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*,
+        u.display_name as created_by_name, u.email as created_by_email,
+        t.name as type_name
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      LEFT JOIN types t ON v.type_id = t.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(entityId, entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+        type_name: string;
+      }>();
+
+    if (versionHistory.results.length === 0) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Not Found</h2>
+          <p>The entity with ID "${escapeHtml(entityId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Find the specific versions
+    const version1 = versionHistory.results.find(v => v.version === v1);
+    const version2 = versionHistory.results.find(v => v.version === v2);
+
+    if (!version1 || !version2) {
+      const availableVersions = versionHistory.results.map(v => v.version).join(', ');
+      const content = `
+        <div class="error-message">
+          <h2>Version Not Found</h2>
+          <p>One or both versions (${v1}, ${v2}) could not be found.</p>
+          <p>Available versions: ${availableVersions}</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Version Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Version Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Parse properties for both versions
+    const props1 = JSON.parse(version1.properties);
+    const props2 = JSON.parse(version2.properties);
+
+    // Determine which version is "before" and which is "after"
+    const [older, newer] =
+      version1.version < version2.version ? [version1, version2] : [version2, version1];
+    const [olderProps, newerProps] =
+      version1.version < version2.version ? [props1, props2] : [props2, props1];
+
+    // Calculate differences
+    const allKeys = new Set([...Object.keys(olderProps), ...Object.keys(newerProps)]);
+    const added: Array<{ key: string; value: unknown }> = [];
+    const removed: Array<{ key: string; value: unknown }> = [];
+    const changed: Array<{ key: string; oldValue: unknown; newValue: unknown }> = [];
+    const unchanged: Array<{ key: string; value: unknown }> = [];
+
+    for (const key of allKeys) {
+      const inOlder = key in olderProps;
+      const inNewer = key in newerProps;
+
+      if (!inOlder && inNewer) {
+        added.push({ key, value: newerProps[key] });
+      } else if (inOlder && !inNewer) {
+        removed.push({ key, value: olderProps[key] });
+      } else if (JSON.stringify(olderProps[key]) !== JSON.stringify(newerProps[key])) {
+        changed.push({ key, oldValue: olderProps[key], newValue: newerProps[key] });
+      } else {
+        unchanged.push({ key, value: olderProps[key] });
+      }
+    }
+
+    // Check for status changes
+    const statusChanged =
+      older.is_deleted !== newer.is_deleted ? (older.is_deleted ? 'Restored' : 'Deleted') : null;
+
+    // Get display name from the latest version properties
+    const latestVersion = versionHistory.results.find(v => v.is_latest === 1);
+    const latestProps = latestVersion ? JSON.parse(latestVersion.properties) : newerProps;
+    const displayName =
+      latestProps.name || latestProps.title || latestProps.label || entityId.substring(0, 8);
+
+    // Helper to format a value for display
+    const formatValue = (value: unknown): string => {
+      if (value === null) return '<span class="muted">null</span>';
+      if (value === undefined) return '<span class="muted">undefined</span>';
+      if (typeof value === 'string') return escapeHtml(JSON.stringify(value));
+      if (typeof value === 'object') return escapeHtml(JSON.stringify(value, null, 2));
+      return escapeHtml(String(value));
+    };
+
+    // Build diff summary
+    const diffSummary = `
+      <div class="diff-summary">
+        <div class="diff-summary-item">
+          <span class="diff-summary-count" style="color: var(--color-success);">${added.length}</span>
+          <span class="diff-summary-label">Added</span>
+        </div>
+        <div class="diff-summary-item">
+          <span class="diff-summary-count" style="color: var(--color-error);">${removed.length}</span>
+          <span class="diff-summary-label">Removed</span>
+        </div>
+        <div class="diff-summary-item">
+          <span class="diff-summary-count" style="color: var(--color-warning);">${changed.length}</span>
+          <span class="diff-summary-label">Changed</span>
+        </div>
+        <div class="diff-summary-item">
+          <span class="diff-summary-count">${unchanged.length}</span>
+          <span class="diff-summary-label">Unchanged</span>
+        </div>
+        ${statusChanged ? `<div class="diff-summary-item"><span class="badge ${statusChanged === 'Deleted' ? 'danger' : 'success'}">${statusChanged}</span></div>` : ''}
+      </div>
+    `;
+
+    // Build changes section
+    let changesHtml = '';
+
+    if (added.length > 0) {
+      changesHtml += `
+        <div class="diff-section">
+          <h5>Added Properties</h5>
+          ${added
+            .map(
+              item => `
+            <div class="diff-added">
+              <span class="diff-key">${escapeHtml(item.key)}:</span>
+              <span class="diff-value">${formatValue(item.value)}</span>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    if (removed.length > 0) {
+      changesHtml += `
+        <div class="diff-section">
+          <h5>Removed Properties</h5>
+          ${removed
+            .map(
+              item => `
+            <div class="diff-removed">
+              <span class="diff-key">${escapeHtml(item.key)}:</span>
+              <span class="diff-value">${formatValue(item.value)}</span>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    if (changed.length > 0) {
+      changesHtml += `
+        <div class="diff-section">
+          <h5>Changed Properties</h5>
+          ${changed
+            .map(
+              item => `
+            <div class="diff-changed">
+              <div><span class="diff-key">${escapeHtml(item.key)}:</span></div>
+              <div style="margin-left: 1rem;">
+                <div style="text-decoration: line-through; opacity: 0.7;">${formatValue(item.oldValue)}</div>
+                <div class="diff-arrow">&darr;</div>
+                <div>${formatValue(item.newValue)}</div>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    if (unchanged.length > 0) {
+      changesHtml += `
+        <div class="diff-section">
+          <h5>Unchanged Properties</h5>
+          ${unchanged
+            .map(
+              item => `
+            <div class="diff-unchanged">
+              <span class="diff-key">${escapeHtml(item.key)}:</span>
+              <span class="diff-value">${formatValue(item.value)}</span>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    // Build comparison columns
+    const comparisonHtml = `
+      <div class="comparison-container">
+        <div class="comparison-column">
+          <div class="comparison-header">
+            <h4>Version ${older.version}</h4>
+            <div class="muted small">
+              ${older.is_latest ? '<span class="badge success small">Latest</span>' : '<span class="badge muted small">Older</span>'}
+              ${older.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+            </div>
+            <div class="muted small">
+              By ${escapeHtml(older.created_by_name || older.created_by_email)} on ${formatTimestamp(older.created_at)}
+            </div>
+          </div>
+          <div class="comparison-body">
+            <pre><code>${escapeHtml(JSON.stringify(olderProps, null, 2))}</code></pre>
+          </div>
+        </div>
+        <div class="comparison-column">
+          <div class="comparison-header">
+            <h4>Version ${newer.version}</h4>
+            <div class="muted small">
+              ${newer.is_latest ? '<span class="badge success small">Latest</span>' : '<span class="badge muted small">Newer</span>'}
+              ${newer.is_deleted ? '<span class="badge danger small">Deleted</span>' : ''}
+            </div>
+            <div class="muted small">
+              By ${escapeHtml(newer.created_by_name || newer.created_by_email)} on ${formatTimestamp(newer.created_at)}
+            </div>
+          </div>
+          <div class="comparison-body">
+            <pre><code>${escapeHtml(JSON.stringify(newerProps, null, 2))}</code></pre>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Build version selector form for comparing different versions
+    const versionSelectorHtml = `
+      <div class="card">
+        <h3>Compare Different Versions</h3>
+        <form class="version-selector" method="GET" action="">
+          <label for="v1-select">Version 1:</label>
+          <select id="v1-select" name="v1" onchange="updateCompareUrl()">
+            ${versionHistory.results
+              .map(
+                v => `
+              <option value="${v.version}" ${v.version === older.version ? 'selected' : ''}>
+                Version ${v.version} ${v.is_latest ? '(Latest)' : ''} ${v.is_deleted ? '(Deleted)' : ''} - ${formatTimestamp(v.created_at)}
+              </option>
+            `
+              )
+              .join('')}
+          </select>
+          <label for="v2-select">Version 2:</label>
+          <select id="v2-select" name="v2" onchange="updateCompareUrl()">
+            ${versionHistory.results
+              .map(
+                v => `
+              <option value="${v.version}" ${v.version === newer.version ? 'selected' : ''}>
+                Version ${v.version} ${v.is_latest ? '(Latest)' : ''} ${v.is_deleted ? '(Deleted)' : ''} - ${formatTimestamp(v.created_at)}
+              </option>
+            `
+              )
+              .join('')}
+          </select>
+          <button type="submit" class="button">Compare</button>
+        </form>
+        <script>
+          function updateCompareUrl() {
+            const form = document.querySelector('.version-selector');
+            const v1 = form.querySelector('#v1-select').value;
+            const v2 = form.querySelector('#v2-select').value;
+            const entityId = '${entityId}';
+            form.action = '/ui/entities/' + entityId + '/versions/' + v1 + '/compare/' + v2;
+          }
+          // Initialize form action on page load
+          updateCompareUrl();
+        </script>
+      </div>
+    `;
+
+    const content = `
+      <h2>Comparing Versions: ${escapeHtml(displayName)}</h2>
+      <p class="muted">Comparing version ${older.version} with version ${newer.version}</p>
+
+      ${diffSummary}
+
+      <div class="card">
+        <h3>Property Differences</h3>
+        ${changesHtml || '<p class="muted">No differences between these versions.</p>'}
+      </div>
+
+      <div class="card">
+        <h3>Full Comparison</h3>
+        ${comparisonHtml}
+      </div>
+
+      <div class="card">
+        <h3>Metadata Comparison</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Version ${older.version}</th>
+              <th>Version ${newer.version}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>ID</strong></td>
+              <td><code>${older.id}</code></td>
+              <td><code>${newer.id}</code></td>
+            </tr>
+            <tr>
+              <td><strong>Type</strong></td>
+              <td>${escapeHtml(older.type_name)}</td>
+              <td>${escapeHtml(newer.type_name)}</td>
+            </tr>
+            <tr>
+              <td><strong>Status</strong></td>
+              <td>${older.is_deleted ? '<span class="badge danger">Deleted</span>' : '<span class="badge success">Active</span>'}</td>
+              <td>${newer.is_deleted ? '<span class="badge danger">Deleted</span>' : '<span class="badge success">Active</span>'}</td>
+            </tr>
+            <tr>
+              <td><strong>Created By</strong></td>
+              <td>${escapeHtml(older.created_by_name || older.created_by_email)}</td>
+              <td>${escapeHtml(newer.created_by_name || newer.created_by_email)}</td>
+            </tr>
+            <tr>
+              <td><strong>Created At</strong></td>
+              <td>${formatTimestamp(older.created_at)}</td>
+              <td>${formatTimestamp(newer.created_at)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      ${versionSelectorHtml}
+
+      <div class="button-group">
+        <a href="/ui/entities/${entityId}" class="button secondary">Back to Entity</a>
+        <a href="/ui/entities/${older.id}" class="button small secondary">View Version ${older.version}</a>
+        <a href="/ui/entities/${newer.id}" class="button small secondary">View Version ${newer.version}</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `Compare Versions - ${displayName}`,
+        user,
+        activePath: '/ui/entities',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Entities', href: '/ui/entities' },
+          { label: displayName, href: `/ui/entities/${entityId}` },
+          { label: `Compare v${older.version} vs v${newer.version}` },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error comparing versions:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while comparing versions. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
       </div>
     `;
 

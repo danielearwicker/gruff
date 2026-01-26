@@ -840,7 +840,7 @@ Each entity in the list shows:
 - Click to see all entities/links of that type
 - "Create new type" button (admin feature)
 
-### 🟦 Version Comparison View
+### ✅ Version Comparison View
 
 **Route:** `GET /ui/entities/:id/versions/:v1/compare/:v2`
 
@@ -850,6 +850,11 @@ Each entity in the list shows:
 - Highlighted differences in properties
 - Show what changed (added, removed, modified fields)
 - Metadata comparison (created_by, created_at)
+- Version selector form to compare any two versions
+- Summary of changes (added, removed, changed, unchanged counts)
+- Full JSON comparison view
+- Compare links in entity detail version history
+- Responsive design for mobile viewing
 
 ### 🟦 Search Interface
 
