@@ -13,7 +13,13 @@
       "Bash(pkill:*)",
       "Bash(xargs:*)",
       "Bash(chmod:*)",
-      "Bash(/home/dearwicker/gruff/scripts/cleanup-workers.sh:*)"
+      "Bash(/home/dearwicker/gruff/scripts/cleanup-workers.sh:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run format:check:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run format:*)"
     ]
   }
 }

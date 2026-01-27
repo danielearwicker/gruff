@@ -21,7 +21,7 @@ In addition, to preserve the robustness of the product, refer to `TESTING.md`. E
 
 ## Hygiene
 
-You **MUST** check for TS type errors (`npx tsc`) and lint errors (`npm run lint`) and make sure these are fixed,
+You **MUST** check for TS type errors (`npx tsc`) and lint errors (`npm run lint`) and make sure these are fixed.
 
 You **MUST** run `npm run format:check` to ensure the code is correctly formatted with prettier, or just run `npm run format` to reformat it. This is essentially because the CI pipeline runs the check, so a commit that is not formatted correctly is entirely invalid.
 

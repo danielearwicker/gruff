@@ -32,14 +32,14 @@ describe('Entity Schemas', () => {
       }
     });
 
-    it('should reject invalid UUID for type_id', () => {
-      const invalidData = {
-        type_id: 'not-a-uuid',
+    it('should accept non-UUID type_id (human-readable IDs allowed)', () => {
+      const validData = {
+        type_id: 'person',
         properties: {},
       };
 
-      const result = createEntitySchema.safeParse(invalidData);
-      expect(result.success).toBe(false);
+      const result = createEntitySchema.safeParse(validData);
+      expect(result.success).toBe(true);
     });
 
     it('should reject missing type_id', () => {
@@ -172,13 +172,13 @@ describe('Entity Schemas', () => {
       }
     });
 
-    it('should reject invalid UUID in type_id', () => {
-      const invalidQuery = {
-        type_id: 'not-a-uuid',
+    it('should accept non-UUID type_id in query (human-readable IDs allowed)', () => {
+      const validQuery = {
+        type_id: 'person',
       };
 
-      const result = entityQuerySchema.safeParse(invalidQuery);
-      expect(result.success).toBe(false);
+      const result = entityQuerySchema.safeParse(validQuery);
+      expect(result.success).toBe(true);
     });
 
     it('should reject invalid timestamp format', () => {

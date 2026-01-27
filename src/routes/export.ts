@@ -104,21 +104,6 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
     // Get all entity IDs for link filtering
     const entityIds = new Set(entities.map(e => e.id as string));
 
-    // Build link query - only get links where both source and target are in the exported entities
-    let linkSql =
-      'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
-    const linkBindings: (string | number)[] = [];
-
-    // Only get latest versions unless include_versions is true
-    if (!query.include_versions) {
-      linkSql += ' AND l.is_latest = 1';
-    }
-
-    // Filter by deleted status
-    if (!query.include_deleted) {
-      linkSql += ' AND l.is_deleted = 0';
-    }
-
     // Only include links where both entities are in the export
     // To avoid exceeding SQLite's bind parameter limit (999), we need to be careful
     // when we have many entities. Split into batches if needed.

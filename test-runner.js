@@ -528,18 +528,18 @@ async function testValidationSuccessEntity() {
   );
 }
 
-async function testValidationFailureInvalidUUID() {
-  logTest('Validation - Invalid UUID Format');
+async function testValidationAcceptsNonUUIDTypeId() {
+  logTest('Validation - Accepts Non-UUID Type ID (human-readable IDs allowed)');
 
   const response = await makeRequest('POST', '/api/validate/entity', {
-    type_id: 'not-a-valid-uuid',
+    type_id: 'person',
     properties: {},
   });
 
-  assertEquals(response.status, 400, 'Status code should be 400');
-  assert(!response.ok, 'Response should not be OK');
-  assert(response.data.error, 'Should return error message');
-  assert(response.data.details, 'Should return validation details');
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.ok, 'Response should be OK');
+  assert(response.data.success, 'Validation should succeed');
+  assertEquals(response.data.received.type_id, 'person', 'Should have correct type_id');
 }
 
 async function testValidationFailureMissingField() {
@@ -11573,7 +11573,7 @@ async function runTests() {
 
     // Validation tests
     testValidationSuccessEntity,
-    testValidationFailureInvalidUUID,
+    testValidationAcceptsNonUUIDTypeId,
     testValidationFailureMissingField,
     testValidationCustomSchema,
     testValidationCustomSchemaFailure,

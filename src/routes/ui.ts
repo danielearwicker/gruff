@@ -2036,7 +2036,8 @@ ui.get('/entities/:id/versions', async c => {
     }
 
     // Get the latest version for display name
-    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+    const latestVersion =
+      versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
     const props = JSON.parse(latestVersion.properties);
     const displayName = props.name || props.title || props.label || entityId.substring(0, 8);
 
@@ -2058,7 +2059,8 @@ ui.get('/entities/:id/versions', async c => {
             .map((version, index) => {
               const versionProps = JSON.parse(version.properties);
               const propsPreview = JSON.stringify(versionProps);
-              const truncatedProps = propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
+              const truncatedProps =
+                propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
               const prevVersion = versionHistory.results[index + 1];
 
               return `
@@ -2273,7 +2275,8 @@ ui.get('/entities/:id/versions/:version', async c => {
       );
     }
 
-    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+    const latestVersion =
+      versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
     const props = JSON.parse(entity.properties);
     const displayName = props.name || props.title || props.label || entityId.substring(0, 8);
 
@@ -4658,7 +4661,8 @@ ui.get('/links/:id/versions', async c => {
     }
 
     // Get the latest version for display
-    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+    const latestVersion =
+      versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
 
     // Fetch source and target entity names for display
     const sourceEntity = await c.env.DB.prepare(
@@ -4683,8 +4687,14 @@ ui.get('/links/:id/versions', async c => {
       }
     };
 
-    const sourceDisplayName = getEntityDisplayName(sourceEntity?.properties, latestVersion.source_entity_id);
-    const targetDisplayName = getEntityDisplayName(targetEntity?.properties, latestVersion.target_entity_id);
+    const sourceDisplayName = getEntityDisplayName(
+      sourceEntity?.properties,
+      latestVersion.source_entity_id
+    );
+    const targetDisplayName = getEntityDisplayName(
+      targetEntity?.properties,
+      latestVersion.target_entity_id
+    );
 
     // Build version history table
     const versionTable = `
@@ -4704,7 +4714,8 @@ ui.get('/links/:id/versions', async c => {
             .map(version => {
               const versionProps = JSON.parse(version.properties);
               const propsPreview = JSON.stringify(versionProps);
-              const truncatedProps = propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
+              const truncatedProps =
+                propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
               const changePreview = getLinkChangePreview(version, versionHistory.results);
 
               return `
@@ -4762,7 +4773,10 @@ ui.get('/links/:id/versions', async c => {
         breadcrumbs: [
           { label: 'Home', href: '/ui' },
           { label: 'Links', href: '/ui/links' },
-          { label: latestVersion.id.substring(0, 8) + '...', href: `/ui/links/${latestVersion.id}` },
+          {
+            label: latestVersion.id.substring(0, 8) + '...',
+            href: `/ui/links/${latestVersion.id}`,
+          },
           { label: 'Versions' },
         ],
       },
