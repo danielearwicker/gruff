@@ -1949,6 +1949,479 @@ ui.get('/entities/:id', async c => {
 });
 
 /**
+ * Entity Version History List
+ * GET /ui/entities/:id/versions
+ * Lists all versions of an entity
+ */
+ui.get('/entities/:id/versions', async c => {
+  const user = c.get('user');
+  const entityId = c.req.param('id');
+
+  try {
+    // Fetch all versions of this entity chain
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_back vc ON e.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_forward vc ON e.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*,
+        u.display_name as created_by_name, u.email as created_by_email,
+        t.name as type_name
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      LEFT JOIN types t ON v.type_id = t.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(entityId, entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+        type_name: string;
+      }>();
+
+    if (versionHistory.results.length === 0) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Not Found</h2>
+          <p>The entity with ID "${escapeHtml(entityId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Get the latest version for display name
+    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+    const props = JSON.parse(latestVersion.properties);
+    const displayName = props.name || props.title || props.label || entityId.substring(0, 8);
+
+    // Build version history table
+    const versionTable = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Modified By</th>
+            <th>Modified At</th>
+            <th>Properties Preview</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${versionHistory.results
+            .map((version, index) => {
+              const versionProps = JSON.parse(version.properties);
+              const propsPreview = JSON.stringify(versionProps);
+              const truncatedProps = propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
+              const prevVersion = versionHistory.results[index + 1];
+
+              return `
+              <tr>
+                <td>
+                  <a href="/ui/entities/${version.id}/versions/${version.version}">
+                    <strong>Version ${version.version}</strong>
+                  </a>
+                </td>
+                <td>
+                  ${version.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old</span>'}
+                  ${version.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+                </td>
+                <td>${escapeHtml(version.created_by_name || version.created_by_email)}</td>
+                <td>${formatTimestamp(version.created_at)}</td>
+                <td><code class="small">${escapeHtml(truncatedProps)}</code></td>
+                <td>
+                  <div class="button-group compact">
+                    <a href="/ui/entities/${version.id}" class="button small">View</a>
+                    ${prevVersion ? `<a href="/ui/entities/${entityId}/versions/${prevVersion.version}/compare/${version.version}" class="button small secondary">Compare</a>` : ''}
+                  </div>
+                </td>
+              </tr>
+            `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    `;
+
+    const content = `
+      <h2>Version History: ${escapeHtml(displayName)}</h2>
+      <p class="muted">Entity type: <span class="badge">${escapeHtml(latestVersion.type_name)}</span></p>
+      <p>This entity has ${versionHistory.results.length} version${versionHistory.results.length !== 1 ? 's' : ''}.</p>
+
+      ${versionTable}
+
+      <div class="button-group">
+        <a href="/ui/entities/${latestVersion.id}" class="button">View Latest Version</a>
+        ${versionHistory.results.length >= 2 ? `<a href="/ui/entities/${entityId}/versions/1/compare/${latestVersion.version}" class="button secondary">Compare First to Latest</a>` : ''}
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `Version History - ${displayName}`,
+        user,
+        activePath: '/ui/entities',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Entities', href: '/ui/entities' },
+          { label: displayName, href: `/ui/entities/${latestVersion.id}` },
+          { label: 'Versions' },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching entity version history:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the version history. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
+ * Entity Specific Version Detail
+ * GET /ui/entities/:id/versions/:version
+ * Shows a specific version of an entity
+ */
+ui.get('/entities/:id/versions/:version', async c => {
+  const user = c.get('user');
+  const entityId = c.req.param('id');
+  const versionParam = c.req.param('version');
+  const versionNum = parseInt(versionParam, 10);
+
+  if (isNaN(versionNum) || versionNum < 1) {
+    const content = `
+      <div class="error-message">
+        <h2>Invalid Version Number</h2>
+        <p>Version number must be a positive integer.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Invalid Version',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Invalid Version' },
+          ],
+        },
+        content
+      ),
+      400
+    );
+  }
+
+  try {
+    // Fetch all versions of this entity chain to find the requested version
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_back vc ON e.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM entities WHERE id = ?
+        UNION ALL
+        SELECT e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.is_latest, e.is_deleted, e.previous_version_id
+        FROM entities e
+        INNER JOIN version_chain_forward vc ON e.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*,
+        u.display_name as created_by_name, u.email as created_by_email,
+        t.name as type_name, t.description as type_description
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      LEFT JOIN types t ON v.type_id = t.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(entityId, entityId)
+      .all<{
+        id: string;
+        type_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+        type_name: string;
+        type_description: string | null;
+      }>();
+
+    // Find the requested version
+    const entity = versionHistory.results.find(v => v.version === versionNum);
+
+    if (!entity) {
+      const content = `
+        <div class="error-message">
+          <h2>Version Not Found</h2>
+          <p>Version ${versionNum} of this entity could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities/${escapeHtml(entityId)}/versions" class="button secondary">View All Versions</a>
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Version Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Version Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+    const props = JSON.parse(entity.properties);
+    const displayName = props.name || props.title || props.label || entityId.substring(0, 8);
+
+    // Find previous and next versions for navigation
+    const currentIndex = versionHistory.results.findIndex(v => v.version === versionNum);
+    const prevVersion = versionHistory.results[currentIndex + 1];
+    const nextVersion = versionHistory.results[currentIndex - 1];
+
+    // Build version navigation
+    const versionNav = `
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            ${prevVersion ? `<a href="/ui/entities/${entityId}/versions/${prevVersion.version}" class="button secondary small">&larr; Version ${prevVersion.version}</a>` : '<span class="muted small">First version</span>'}
+          </div>
+          <div>
+            <strong>Version ${entity.version}</strong> of ${versionHistory.results.length}
+          </div>
+          <div>
+            ${nextVersion ? `<a href="/ui/entities/${entityId}/versions/${nextVersion.version}" class="button secondary small">Version ${nextVersion.version} &rarr;</a>` : '<span class="muted small">Latest version</span>'}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Build entity info section
+    const entityInfoSection = `
+      <div class="card detail-card">
+        <h3>Entity Information</h3>
+        <dl class="detail-list">
+          <dt>ID</dt>
+          <dd><code>${escapeHtml(entity.id)}</code></dd>
+
+          <dt>Type</dt>
+          <dd>
+            <a href="/ui/entities?type_id=${entity.type_id}" class="badge">${escapeHtml(entity.type_name)}</a>
+            ${entity.type_description ? `<span class="muted small">${escapeHtml(entity.type_description)}</span>` : ''}
+          </dd>
+
+          <dt>Version</dt>
+          <dd>${entity.version}${entity.previous_version_id ? ` <span class="muted">(previous: <a href="/ui/entities/${entity.previous_version_id}">${entity.previous_version_id.substring(0, 8)}...</a>)</span>` : ''}</dd>
+
+          <dt>Created By</dt>
+          <dd>${escapeHtml(entity.created_by_name || entity.created_by_email)}</dd>
+
+          <dt>Created At</dt>
+          <dd>${formatTimestamp(entity.created_at)}</dd>
+
+          <dt>Status</dt>
+          <dd>
+            ${entity.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old Version</span>'}
+            ${entity.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+          </dd>
+        </dl>
+      </div>
+    `;
+
+    // Build properties section
+    const propertiesSection = `
+      <div class="card">
+        <h3>Properties</h3>
+        <pre><code>${escapeHtml(JSON.stringify(props, null, 2))}</code></pre>
+      </div>
+    `;
+
+    // Build comparison links
+    const comparisonLinks = `
+      <div class="card">
+        <h3>Compare Versions</h3>
+        ${prevVersion ? `<a href="/ui/entities/${entityId}/versions/${prevVersion.version}/compare/${entity.version}" class="button secondary">Compare with Previous (v${prevVersion.version})</a>` : '<span class="muted">No previous version to compare</span>'}
+        ${entity.version !== latestVersion.version ? ` <a href="/ui/entities/${entityId}/versions/${entity.version}/compare/${latestVersion.version}" class="button secondary">Compare with Latest (v${latestVersion.version})</a>` : ''}
+      </div>
+    `;
+
+    // Build the banner for old versions
+    const oldVersionBanner = !entity.is_latest
+      ? `
+      <div class="warning-message">
+        <strong>Viewing old version</strong> - You are viewing version ${entity.version} of this entity.
+        <a href="/ui/entities/${latestVersion.id}">View latest version</a>
+      </div>
+    `
+      : '';
+
+    const content = `
+      <h2>${escapeHtml(displayName)} - Version ${entity.version}</h2>
+      ${oldVersionBanner}
+      ${versionNav}
+      ${entityInfoSection}
+      ${propertiesSection}
+      ${comparisonLinks}
+
+      <div class="button-group">
+        <a href="/ui/entities/${latestVersion.id}" class="button">View Latest Version</a>
+        <a href="/ui/entities/${entityId}/versions" class="button secondary">View All Versions</a>
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `${displayName} - Version ${entity.version}`,
+        user,
+        activePath: '/ui/entities',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Entities', href: '/ui/entities' },
+          { label: displayName, href: `/ui/entities/${latestVersion.id}` },
+          { label: 'Versions', href: `/ui/entities/${entityId}/versions` },
+          { label: `Version ${entity.version}` },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching entity version:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the version. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
  * Version Comparison View
  * GET /ui/entities/:id/versions/:v1/compare/:v2
  * Shows a side-by-side comparison of two versions of an entity
@@ -4094,6 +4567,239 @@ function getLinkChangePreview(
     '</span>'
   );
 }
+
+/**
+ * Link Version History List
+ * GET /ui/links/:id/versions
+ * Lists all versions of a link
+ */
+ui.get('/links/:id/versions', async c => {
+  const user = c.get('user');
+  const linkId = c.req.param('id');
+
+  try {
+    // Fetch all versions of this link chain
+    const versionHistory = await c.env.DB.prepare(
+      `
+      WITH RECURSIVE version_chain_back AS (
+        SELECT id, type_id, source_entity_id, target_entity_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM links WHERE id = ?
+        UNION ALL
+        SELECT l.id, l.type_id, l.source_entity_id, l.target_entity_id, l.properties, l.version, l.created_at, l.created_by, l.is_latest, l.is_deleted, l.previous_version_id
+        FROM links l
+        INNER JOIN version_chain_back vc ON l.id = vc.previous_version_id
+      ),
+      version_chain_forward AS (
+        SELECT id, type_id, source_entity_id, target_entity_id, properties, version, created_at, created_by, is_latest, is_deleted, previous_version_id
+        FROM links WHERE id = ?
+        UNION ALL
+        SELECT l.id, l.type_id, l.source_entity_id, l.target_entity_id, l.properties, l.version, l.created_at, l.created_by, l.is_latest, l.is_deleted, l.previous_version_id
+        FROM links l
+        INNER JOIN version_chain_forward vc ON l.previous_version_id = vc.id
+      )
+      SELECT DISTINCT v.*,
+        u.display_name as created_by_name, u.email as created_by_email,
+        t.name as type_name
+      FROM (
+        SELECT * FROM version_chain_back
+        UNION
+        SELECT * FROM version_chain_forward
+      ) v
+      LEFT JOIN users u ON v.created_by = u.id
+      LEFT JOIN types t ON v.type_id = t.id
+      ORDER BY v.version DESC
+    `
+    )
+      .bind(linkId, linkId)
+      .all<{
+        id: string;
+        type_id: string;
+        source_entity_id: string;
+        target_entity_id: string;
+        properties: string;
+        version: number;
+        created_at: number;
+        created_by: string;
+        is_latest: number;
+        is_deleted: number;
+        previous_version_id: string | null;
+        created_by_name: string | null;
+        created_by_email: string;
+        type_name: string;
+      }>();
+
+    if (versionHistory.results.length === 0) {
+      const content = `
+        <div class="error-message">
+          <h2>Link Not Found</h2>
+          <p>The link with ID "${escapeHtml(linkId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/links" class="button secondary">Back to Links</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Link Not Found',
+            user,
+            activePath: '/ui/links',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Links', href: '/ui/links' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Get the latest version for display
+    const latestVersion = versionHistory.results.find(v => v.is_latest === 1) || versionHistory.results[0];
+
+    // Fetch source and target entity names for display
+    const sourceEntity = await c.env.DB.prepare(
+      'SELECT properties FROM entities WHERE id = ? AND is_latest = 1'
+    )
+      .bind(latestVersion.source_entity_id)
+      .first<{ properties: string }>();
+
+    const targetEntity = await c.env.DB.prepare(
+      'SELECT properties FROM entities WHERE id = ? AND is_latest = 1'
+    )
+      .bind(latestVersion.target_entity_id)
+      .first<{ properties: string }>();
+
+    const getEntityDisplayName = (props: string | undefined, entityId: string) => {
+      if (!props) return entityId.substring(0, 8) + '...';
+      try {
+        const parsed = JSON.parse(props);
+        return parsed.name || parsed.title || parsed.label || entityId.substring(0, 8) + '...';
+      } catch {
+        return entityId.substring(0, 8) + '...';
+      }
+    };
+
+    const sourceDisplayName = getEntityDisplayName(sourceEntity?.properties, latestVersion.source_entity_id);
+    const targetDisplayName = getEntityDisplayName(targetEntity?.properties, latestVersion.target_entity_id);
+
+    // Build version history table
+    const versionTable = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Modified By</th>
+            <th>Modified At</th>
+            <th>Properties Preview</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${versionHistory.results
+            .map(version => {
+              const versionProps = JSON.parse(version.properties);
+              const propsPreview = JSON.stringify(versionProps);
+              const truncatedProps = propsPreview.length > 80 ? propsPreview.substring(0, 80) + '...' : propsPreview;
+              const changePreview = getLinkChangePreview(version, versionHistory.results);
+
+              return `
+              <tr>
+                <td>
+                  <a href="/ui/links/${version.id}">
+                    <strong>Version ${version.version}</strong>
+                  </a>
+                </td>
+                <td>
+                  ${version.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old</span>'}
+                  ${version.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+                </td>
+                <td>${escapeHtml(version.created_by_name || version.created_by_email)}</td>
+                <td>${formatTimestamp(version.created_at)}</td>
+                <td>
+                  <code class="small">${escapeHtml(truncatedProps)}</code>
+                  <div class="small">${changePreview}</div>
+                </td>
+                <td>
+                  <div class="button-group compact">
+                    <a href="/ui/links/${version.id}" class="button small">View</a>
+                  </div>
+                </td>
+              </tr>
+            `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    `;
+
+    const content = `
+      <h2>Version History: ${escapeHtml(latestVersion.type_name)} Link</h2>
+      <p class="muted">
+        <a href="/ui/entities/${latestVersion.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+        &rarr;
+        <a href="/ui/entities/${latestVersion.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+      </p>
+      <p>This link has ${versionHistory.results.length} version${versionHistory.results.length !== 1 ? 's' : ''}.</p>
+
+      ${versionTable}
+
+      <div class="button-group">
+        <a href="/ui/links/${latestVersion.id}" class="button">View Latest Version</a>
+        <a href="/ui/links" class="button secondary">Back to Links</a>
+      </div>
+    `;
+
+    const html = renderPage(
+      {
+        title: `Version History - ${latestVersion.type_name} Link`,
+        user,
+        activePath: '/ui/links',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Links', href: '/ui/links' },
+          { label: latestVersion.id.substring(0, 8) + '...', href: `/ui/links/${latestVersion.id}` },
+          { label: 'Versions' },
+        ],
+      },
+      content
+    );
+
+    return c.html(html);
+  } catch (error) {
+    console.error('Error fetching link version history:', error);
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while fetching the version history. Please try again later.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/links" class="button secondary">Back to Links</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/links',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Links', href: '/ui/links' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
 
 /**
  * Type browser
