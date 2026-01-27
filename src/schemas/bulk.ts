@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { uuidSchema, sanitizedJsonPropertiesSchema } from './common.js';
+import { uuidSchema, typeIdSchema, sanitizedJsonPropertiesSchema } from './common.js';
 
 // Maximum number of items in a single bulk operation (to prevent abuse and stay within D1 limits)
 export const MAX_BULK_ITEMS = 100;
 
 // Schema for a single entity in bulk create (with sanitization for XSS prevention)
 export const bulkCreateEntityItemSchema = z.object({
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   properties: sanitizedJsonPropertiesSchema.optional().default({}),
   // Optional client-provided ID for reference in response
   client_id: z.string().optional(),
@@ -22,7 +22,7 @@ export const bulkCreateEntitiesSchema = z.object({
 
 // Schema for a single link in bulk create (with sanitization for XSS prevention)
 export const bulkCreateLinkItemSchema = z.object({
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
   properties: sanitizedJsonPropertiesSchema.optional().default({}),

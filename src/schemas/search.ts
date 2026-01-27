@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuidSchema } from './common.js';
+import { uuidSchema, typeIdSchema } from './common.js';
 
 /**
  * Property filter schema with comparison operators
@@ -126,7 +126,7 @@ export function isPropertyFilter(expr: FilterExpression): expr is PropertyFilter
 // Entity search request schema
 export const searchEntitiesSchema = z.object({
   // Type filter
-  type_id: uuidSchema.optional(),
+  type_id: typeIdSchema.optional(),
 
   // Property filters - DEPRECATED: Use property_filters or filter_expression instead
   // Kept for backward compatibility with simple equality matching
@@ -159,7 +159,7 @@ export const searchEntitiesSchema = z.object({
 // Link search request schema
 export const searchLinksSchema = z.object({
   // Type filter
-  type_id: uuidSchema.optional(),
+  type_id: typeIdSchema.optional(),
 
   // Entity filters
   source_entity_id: uuidSchema.optional(),
@@ -202,7 +202,7 @@ export const suggestionsSchema = z.object({
   property_path: z.string().optional().default('name'),
 
   // Entity type filter
-  type_id: uuidSchema.optional(),
+  type_id: typeIdSchema.optional(),
 
   // Maximum number of suggestions to return (comes as string from query params)
   limit: z

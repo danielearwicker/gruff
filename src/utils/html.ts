@@ -72,6 +72,19 @@ export const commonStyles = `
     line-height: 1.6;
   }
 
+  a {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  a:visited {
+    color: var(--color-primary);
+  }
+
   .container {
     max-width: 1200px;
     margin: 0 auto;

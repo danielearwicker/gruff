@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   uuidSchema,
+  typeIdSchema,
   timestampSchema,
   sqliteBooleanSchema,
   jsonPropertiesSchema,
@@ -11,7 +12,7 @@ import {
 // Link database model schema
 export const linkSchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
   properties: z.string(), // JSON stored as string
@@ -25,7 +26,7 @@ export const linkSchema = z.object({
 
 // Link creation schema (with sanitization for XSS prevention)
 export const createLinkSchema = z.object({
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
   properties: sanitizedJsonPropertiesSchema.default({}),
@@ -39,7 +40,7 @@ export const updateLinkSchema = z.object({
 // Link response schema (with parsed JSON properties)
 export const linkResponseSchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
   properties: jsonPropertiesSchema,
@@ -53,7 +54,7 @@ export const linkResponseSchema = z.object({
 
 // Link query filters (for query parameters - handles string coercion)
 export const linkQuerySchema = paginationQuerySchema.extend({
-  type_id: z.string().uuid().optional(),
+  type_id: z.string().optional(),
   source_entity_id: z.string().uuid().optional(),
   target_entity_id: z.string().uuid().optional(),
   created_by: z.string().uuid().optional(),

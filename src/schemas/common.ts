@@ -4,6 +4,9 @@ import { sanitizeProperties, validateAndSanitize } from '../utils/sanitize.js';
 // Common UUID schema
 export const uuidSchema = z.string().uuid('Invalid UUID format');
 
+// Type ID schema - accepts any non-empty string (types can use human-readable IDs)
+export const typeIdSchema = z.string().min(1, 'Type ID is required');
+
 // Common timestamp schema (Unix timestamp in milliseconds)
 export const timestampSchema = z.number().int().positive();
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   uuidSchema,
+  typeIdSchema,
   jsonPropertiesSchema,
   sanitizedJsonPropertiesSchema,
   timestampSchema,
@@ -57,7 +58,7 @@ export const exportQuerySchema = z.object({
 // Schema for a single exported entity (full data for portability)
 export const exportedEntitySchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   type_name: z.string().optional(), // Resolved type name for readability
   properties: jsonPropertiesSchema,
   version: z.number().int().positive(),
@@ -71,7 +72,7 @@ export const exportedEntitySchema = z.object({
 // Schema for a single exported link (full data for portability)
 export const exportedLinkSchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   type_name: z.string().optional(), // Resolved type name for readability
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
@@ -86,7 +87,7 @@ export const exportedLinkSchema = z.object({
 
 // Schema for a single exported type
 export const exportedTypeSchema = z.object({
-  id: uuidSchema,
+  id: typeIdSchema,
   name: z.string(),
   category: z.enum(['entity', 'link']),
   description: z.string().nullable(),
@@ -117,7 +118,7 @@ export const importEntityItemSchema = z
     // Client-provided ID for cross-reference (will be mapped to new IDs)
     client_id: z.string(),
     // Type can be specified by ID (for existing types) or name (for included types)
-    type_id: uuidSchema.optional(),
+    type_id: typeIdSchema.optional(),
     type_name: z.string().optional(),
     properties: sanitizedJsonPropertiesSchema.optional().default({}),
   })
@@ -131,7 +132,7 @@ export const importLinkItemSchema = z
     // Client-provided ID for cross-reference
     client_id: z.string().optional(),
     // Type can be specified by ID or name
-    type_id: uuidSchema.optional(),
+    type_id: typeIdSchema.optional(),
     type_name: z.string().optional(),
     // Source and target can reference client_ids from the import or existing entity IDs
     source_entity_client_id: z.string().optional(),

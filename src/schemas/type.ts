@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   uuidSchema,
+  typeIdSchema,
   timestampSchema,
   jsonPropertiesSchema,
   paginationQuerySchema,
@@ -19,7 +20,7 @@ const sanitizedStringSchema = (maxLength: number) =>
 
 // Type database model schema
 export const typeSchema = z.object({
-  id: uuidSchema,
+  id: typeIdSchema,
   name: z.string().min(1).max(255),
   category: typeCategorySchema,
   description: z.string().nullable(),

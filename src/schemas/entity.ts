@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   uuidSchema,
+  typeIdSchema,
   timestampSchema,
   sqliteBooleanSchema,
   jsonPropertiesSchema,
@@ -11,7 +12,7 @@ import {
 // Entity database model schema
 export const entitySchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   properties: z.string(), // JSON stored as string
   version: z.number().int().positive(),
   previous_version_id: uuidSchema.nullable(),
@@ -23,7 +24,7 @@ export const entitySchema = z.object({
 
 // Entity creation schema (with sanitization for XSS prevention)
 export const createEntitySchema = z.object({
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   properties: sanitizedJsonPropertiesSchema.optional().default({}),
 });
 
@@ -35,7 +36,7 @@ export const updateEntitySchema = z.object({
 // Entity response schema (with parsed JSON properties)
 export const entityResponseSchema = z.object({
   id: uuidSchema,
-  type_id: uuidSchema,
+  type_id: typeIdSchema,
   properties: jsonPropertiesSchema,
   version: z.number().int().positive(),
   previous_version_id: uuidSchema.nullable(),
@@ -47,7 +48,7 @@ export const entityResponseSchema = z.object({
 
 // Entity query filters (for query parameters - handles string coercion)
 export const entityQuerySchema = paginationQuerySchema.extend({
-  type_id: z.string().uuid().optional(),
+  type_id: z.string().optional(),
   created_by: z.string().uuid().optional(),
   created_after: z
     .string()
