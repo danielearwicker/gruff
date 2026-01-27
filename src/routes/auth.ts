@@ -432,6 +432,9 @@ authRouter.get('/google', async c => {
     return c.json(response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
+  // Check if this is a UI-initiated OAuth flow
+  const uiState = c.req.query('ui_state');
+
   try {
     const config: GoogleOAuthConfig = {
       clientId: c.env.GOOGLE_CLIENT_ID,
@@ -443,14 +446,24 @@ authRouter.get('/google', async c => {
     const { state, stateData } = generateGoogleOAuthState();
 
     // Store state in KV for validation during callback
-    await c.env.KV.put(`${OAUTH_STATE_PREFIX}${state}`, JSON.stringify(stateData), {
+    // Include ui_state if this is a UI-initiated flow
+    const stateToStore = uiState ? { ...stateData, ui_state: uiState } : stateData;
+    await c.env.KV.put(`${OAUTH_STATE_PREFIX}${state}`, JSON.stringify(stateToStore), {
       expirationTtl: OAUTH_STATE_TTL,
     });
 
     // Build authorization URL
     const authUrl = await buildGoogleAuthorizationUrl(config, state, stateData.codeVerifier || '');
 
-    logger.info('Google OAuth authorization URL generated', { state: stateData.nonce });
+    logger.info('Google OAuth authorization URL generated', {
+      state: stateData.nonce,
+      isUiFlow: !!uiState,
+    });
+
+    // If this is a UI flow, redirect directly to Google
+    if (uiState) {
+      return c.redirect(authUrl);
+    }
 
     return c.json(
       response.success({
@@ -460,6 +473,11 @@ authRouter.get('/google', async c => {
     );
   } catch (error) {
     logger.error('Error generating Google OAuth URL', error as Error);
+    if (uiState) {
+      return c.redirect(
+        `/ui/auth/login?error=${encodeURIComponent('Failed to initiate Google sign-in')}`
+      );
+    }
     return c.json(response.error('Failed to initiate Google sign-in', 'OAUTH_INIT_FAILED'), 500);
   }
 });
@@ -629,6 +647,18 @@ authRouter.get('/google/callback', async c => {
 
     logger.info('Google OAuth login successful', { userId, isNewUser });
 
+    // Check if this is a UI-initiated flow
+    const uiState = storedState.ui_state;
+    if (uiState) {
+      // Redirect to UI callback with tokens
+      const callbackUrl = new URL('/ui/auth/oauth/callback', c.req.url);
+      callbackUrl.searchParams.set('access_token', tokens.accessToken);
+      callbackUrl.searchParams.set('refresh_token', tokens.refreshToken);
+      callbackUrl.searchParams.set('provider', 'google');
+      callbackUrl.searchParams.set('ui_state', uiState);
+      return c.redirect(callbackUrl.toString());
+    }
+
     // Return success response with tokens
     const statusCode = isNewUser ? 201 : 200;
     const responseData = {
@@ -654,6 +684,22 @@ authRouter.get('/google/callback', async c => {
     return c.json(response.success(responseData), statusCode);
   } catch (error) {
     logger.error('Error during Google OAuth callback', error as Error);
+
+    // Check if there's UI state to redirect errors
+    const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${query.state}`);
+    if (storedStateJson) {
+      try {
+        const storedState = JSON.parse(storedStateJson);
+        if (storedState.ui_state) {
+          return c.redirect(
+            `/ui/auth/login?error=${encodeURIComponent('Failed to complete Google sign-in')}`
+          );
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+    }
+
     return c.json(
       response.error('Failed to complete Google sign-in', 'OAUTH_CALLBACK_FAILED'),
       500
@@ -680,6 +726,9 @@ authRouter.get('/github', async c => {
     return c.json(response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
   }
 
+  // Check if this is a UI-initiated OAuth flow
+  const uiState = c.req.query('ui_state');
+
   try {
     const config: GitHubOAuthConfig = {
       clientId: c.env.GITHUB_CLIENT_ID,
@@ -691,14 +740,24 @@ authRouter.get('/github', async c => {
     const { state, stateData } = generateGitHubOAuthState();
 
     // Store state in KV for validation during callback
-    await c.env.KV.put(`${OAUTH_STATE_PREFIX}github:${state}`, JSON.stringify(stateData), {
+    // Include ui_state if this is a UI-initiated flow
+    const stateToStore = uiState ? { ...stateData, ui_state: uiState } : stateData;
+    await c.env.KV.put(`${OAUTH_STATE_PREFIX}github:${state}`, JSON.stringify(stateToStore), {
       expirationTtl: OAUTH_STATE_TTL,
     });
 
     // Build authorization URL
     const authUrl = buildGitHubAuthorizationUrl(config, state);
 
-    logger.info('GitHub OAuth authorization URL generated', { state: stateData.nonce });
+    logger.info('GitHub OAuth authorization URL generated', {
+      state: stateData.nonce,
+      isUiFlow: !!uiState,
+    });
+
+    // If this is a UI flow, redirect directly to GitHub
+    if (uiState) {
+      return c.redirect(authUrl);
+    }
 
     return c.json(
       response.success({
@@ -708,6 +767,11 @@ authRouter.get('/github', async c => {
     );
   } catch (error) {
     logger.error('Error generating GitHub OAuth URL', error as Error);
+    if (uiState) {
+      return c.redirect(
+        `/ui/auth/login?error=${encodeURIComponent('Failed to initiate GitHub sign-in')}`
+      );
+    }
     return c.json(response.error('Failed to initiate GitHub sign-in', 'OAUTH_INIT_FAILED'), 500);
   }
 });
@@ -759,7 +823,7 @@ authRouter.get('/github/callback', async c => {
     }
 
     // Parse stored state
-    JSON.parse(storedStateJson);
+    const storedState = JSON.parse(storedStateJson);
     const parsedState = parseGitHubOAuthState(state);
 
     if (!parsedState) {
@@ -885,6 +949,18 @@ authRouter.get('/github/callback', async c => {
 
     logger.info('GitHub OAuth login successful', { userId, isNewUser });
 
+    // Check if this is a UI-initiated flow
+    const uiState = storedState.ui_state;
+    if (uiState) {
+      // Redirect to UI callback with tokens
+      const callbackUrl = new URL('/ui/auth/oauth/callback', c.req.url);
+      callbackUrl.searchParams.set('access_token', tokens.accessToken);
+      callbackUrl.searchParams.set('refresh_token', tokens.refreshToken);
+      callbackUrl.searchParams.set('provider', 'github');
+      callbackUrl.searchParams.set('ui_state', uiState);
+      return c.redirect(callbackUrl.toString());
+    }
+
     // Return success response with tokens
     const statusCode = isNewUser ? 201 : 200;
     const responseData = {
@@ -910,6 +986,22 @@ authRouter.get('/github/callback', async c => {
     return c.json(response.success(responseData), statusCode);
   } catch (error) {
     logger.error('Error during GitHub OAuth callback', error as Error);
+
+    // Check if there's UI state to redirect errors
+    const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}github:${query.state}`);
+    if (storedStateJson) {
+      try {
+        const storedState = JSON.parse(storedStateJson);
+        if (storedState.ui_state) {
+          return c.redirect(
+            `/ui/auth/login?error=${encodeURIComponent('Failed to complete GitHub sign-in')}`
+          );
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+    }
+
     return c.json(
       response.error('Failed to complete GitHub sign-in', 'OAUTH_CALLBACK_FAILED'),
       500

@@ -4,21 +4,120 @@
  */
 
 import { Hono } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { renderPage, escapeHtml, formatTimestamp } from '../utils/html.js';
-import { optionalAuth } from '../middleware/auth.js';
+import { verifyAccessToken, createTokenPair, createAccessToken } from '../utils/jwt.js';
+import {
+  storeRefreshToken,
+  validateRefreshToken as validateStoredRefreshToken,
+  invalidateSession,
+} from '../utils/session.js';
+import { hashPassword, verifyPassword } from '../utils/password.js';
 
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
   JWT_SECRET: string;
   ENVIRONMENT: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_REDIRECT_URI?: string;
 };
 
 const ui = new Hono<{ Bindings: Bindings }>();
 
-// Apply optional authentication to all UI routes
-// This allows viewing the UI without authentication, but personalizes it when logged in
-ui.use('*', optionalAuth());
+// Cookie names for UI session management
+const ACCESS_TOKEN_COOKIE = 'gruff_access_token';
+const REFRESH_TOKEN_COOKIE = 'gruff_refresh_token';
+
+// Cookie options
+const getCookieOptions = (c: { env: Bindings }, maxAge: number) => ({
+  path: '/',
+  httpOnly: true,
+  secure: c.env.ENVIRONMENT === 'production',
+  sameSite: 'Lax' as const,
+  maxAge,
+});
+
+/**
+ * Cookie-based authentication middleware for UI routes
+ * Extracts JWT from cookies and validates it
+ */
+ui.use('*', async (c, next) => {
+  const accessToken = getCookie(c, ACCESS_TOKEN_COOKIE);
+  const refreshToken = getCookie(c, REFRESH_TOKEN_COOKIE);
+
+  if (!accessToken && !refreshToken) {
+    // No tokens - continue without authentication
+    await next();
+    return;
+  }
+
+  const jwtSecret = c.env.JWT_SECRET;
+  if (!jwtSecret) {
+    await next();
+    return;
+  }
+
+  // Try to validate the access token
+  if (accessToken) {
+    const payload = await verifyAccessToken(accessToken, jwtSecret);
+    if (payload) {
+      c.set('user', payload);
+      await next();
+      return;
+    }
+  }
+
+  // Access token invalid/expired - try to refresh using refresh token
+  if (refreshToken) {
+    const { verifyRefreshToken } = await import('../utils/jwt.js');
+    const refreshPayload = await verifyRefreshToken(refreshToken, jwtSecret);
+
+    if (refreshPayload) {
+      // Validate refresh token is still valid in KV
+      const isValid = await validateStoredRefreshToken(
+        c.env.KV,
+        refreshPayload.user_id,
+        refreshToken
+      );
+
+      if (isValid) {
+        // Generate new access token
+        const newAccessToken = await createAccessToken(
+          refreshPayload.user_id,
+          refreshPayload.email,
+          jwtSecret
+        );
+
+        // Set the new access token cookie
+        setCookie(c, ACCESS_TOKEN_COOKIE, newAccessToken, getCookieOptions(c, 15 * 60)); // 15 minutes
+
+        // Set user context
+        c.set('user', refreshPayload);
+        await next();
+        return;
+      }
+    }
+
+    // Refresh token is invalid - clear cookies
+    deleteCookie(c, ACCESS_TOKEN_COOKIE, { path: '/' });
+    deleteCookie(c, REFRESH_TOKEN_COOKIE, { path: '/' });
+  }
+
+  await next();
+});
+
+// Override CSP for UI routes to allow inline styles and scripts needed for the UI
+ui.use('*', async (c, next) => {
+  await next();
+  // Set a permissive CSP for the UI that allows inline styles and scripts
+  c.header(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'"
+  );
+});
 
 /**
  * Home page / Dashboard
@@ -844,7 +943,7 @@ ui.get('/entities/new', async c => {
       document.getElementById('create-entity-form').addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        const typeId = document.getElementById('type_id').value;
+        const typeId = document.getElementById('type_id').value.trim();
         const propertiesText = document.getElementById('properties').value;
         const submitBtn = document.getElementById('submit-btn');
         const errorDiv = document.getElementById('json-error');
@@ -889,8 +988,12 @@ ui.get('/entities/new', async c => {
             // Success - redirect to the new entity
             window.location.href = '/ui/entities/' + data.data.id;
           } else {
-            // Error - show message
-            errorDiv.textContent = data.error || data.message || 'Failed to create entity';
+            // Error - show message with details if available
+            let errorMessage = data.error || data.message || 'Failed to create entity';
+            if (data.details && Array.isArray(data.details)) {
+              errorMessage += ': ' + data.details.map(d => d.message || d.path).join(', ');
+            }
+            errorDiv.textContent = errorMessage;
             errorDiv.style.display = 'block';
             submitBtn.disabled = false;
             submitBtn.textContent = 'Create Entity';
@@ -1198,8 +1301,12 @@ ui.get('/entities/:id/edit', async c => {
               // Success - redirect to the new version
               window.location.href = '/ui/entities/' + data.data.id;
             } else {
-              // Error - show message
-              errorDiv.textContent = data.error || data.message || 'Failed to update entity';
+              // Error - show message with details if available
+              let errorMessage = data.error || data.message || 'Failed to update entity';
+              if (data.details && Array.isArray(data.details)) {
+                errorMessage += ': ' + data.details.map(d => d.message || d.path).join(', ');
+              }
+              errorDiv.textContent = errorMessage;
               errorDiv.style.display = 'block';
               submitBtn.disabled = false;
               submitBtn.textContent = 'Save Changes (Create Version ${entity.version + 1})';
@@ -2747,9 +2854,9 @@ ui.get('/links/new', async c => {
       document.getElementById('create-link-form').addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        const typeId = document.getElementById('type_id').value;
-        const sourceEntityId = document.getElementById('source_entity_id').value;
-        const targetEntityId = document.getElementById('target_entity_id').value;
+        const typeId = document.getElementById('type_id').value.trim();
+        const sourceEntityId = document.getElementById('source_entity_id').value.trim();
+        const targetEntityId = document.getElementById('target_entity_id').value.trim();
         const propertiesText = document.getElementById('properties').value;
         const submitBtn = document.getElementById('submit-btn');
         const errorDiv = document.getElementById('json-error');
@@ -2812,8 +2919,12 @@ ui.get('/links/new', async c => {
             // Success - redirect to the new link
             window.location.href = '/ui/links/' + data.data.id;
           } else {
-            // Error - show message
-            errorDiv.textContent = data.error || data.message || 'Failed to create link';
+            // Error - show message with details if available
+            let errorMessage = data.error || data.message || 'Failed to create link';
+            if (data.details && Array.isArray(data.details)) {
+              errorMessage += ': ' + data.details.map(d => d.message || d.path).join(', ');
+            }
+            errorDiv.textContent = errorMessage;
             errorDiv.style.display = 'block';
             submitBtn.disabled = false;
             submitBtn.textContent = 'Create Link';
@@ -3265,8 +3376,12 @@ ui.get('/links/:id/edit', async c => {
               // Success - redirect to the new version
               window.location.href = '/ui/links/' + data.data.id;
             } else {
-              // Error - show message
-              errorDiv.textContent = data.error || data.message || 'Failed to update link';
+              // Error - show message with details if available
+              let errorMessage = data.error || data.message || 'Failed to update link';
+              if (data.details && Array.isArray(data.details)) {
+                errorMessage += ': ' + data.details.map(d => d.message || d.path).join(', ');
+              }
+              errorDiv.textContent = errorMessage;
               errorDiv.style.display = 'block';
               submitBtn.disabled = false;
               submitBtn.textContent = 'Save Changes (Create Version ${link.version + 1})';
@@ -5311,22 +5426,165 @@ ui.get('/search', async c => {
 });
 
 /**
- * Login page (placeholder)
+ * Login page
  * GET /ui/auth/login
  */
 ui.get('/auth/login', async c => {
+  const user = c.get('user');
+
+  // If already logged in, redirect to dashboard
+  if (user) {
+    return c.redirect('/ui');
+  }
+
+  const error = c.req.query('error') || '';
+  const success = c.req.query('success') || '';
+  const returnTo = c.req.query('return_to') || '/ui';
+
+  // Check which OAuth providers are configured
+  const googleEnabled = !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_REDIRECT_URI);
+  const githubEnabled = !!(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_REDIRECT_URI);
+
+  const errorMessage = error
+    ? `<div class="error-message">${escapeHtml(decodeURIComponent(error))}</div>`
+    : '';
+  const successMessage = success
+    ? `<div class="success-message">${escapeHtml(decodeURIComponent(success))}</div>`
+    : '';
+
+  const oauthButtons =
+    googleEnabled || githubEnabled
+      ? `
+    <div class="oauth-divider">
+      <span>or continue with</span>
+    </div>
+    <div class="oauth-buttons">
+      ${googleEnabled ? `<a href="/ui/auth/oauth/google?return_to=${encodeURIComponent(returnTo)}" class="button oauth-button google-button">Sign in with Google</a>` : ''}
+      ${githubEnabled ? `<a href="/ui/auth/oauth/github?return_to=${encodeURIComponent(returnTo)}" class="button oauth-button github-button">Sign in with GitHub</a>` : ''}
+    </div>
+  `
+      : '';
+
   const content = `
-    <h2>Login</h2>
-    <p>Login page coming soon.</p>
-    <p>For now, you can use the <a href="/docs">API</a> to authenticate:</p>
-    <ul>
-      <li><code>POST /api/auth/register</code> - Register a new account</li>
-      <li><code>POST /api/auth/login</code> - Login with email and password</li>
-      <li><code>GET /api/auth/google</code> - Sign in with Google</li>
-      <li><code>GET /api/auth/github</code> - Sign in with GitHub</li>
-    </ul>
-    <div class="button-group">
-      <a href="/ui" class="button secondary">Back to Dashboard</a>
+    <style>
+      .auth-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem 0;
+      }
+      .auth-form {
+        background: var(--color-muted);
+        padding: 2rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--color-border);
+      }
+      .auth-form h2 {
+        margin-top: 0;
+        text-align: center;
+      }
+      .form-group {
+        margin-bottom: 1rem;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+      }
+      .form-group input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 0.375rem;
+        font-size: 1rem;
+        background: var(--color-bg);
+        color: var(--color-fg);
+      }
+      .form-group input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      }
+      .auth-form .button {
+        width: 100%;
+        padding: 0.75rem;
+        font-size: 1rem;
+      }
+      .oauth-divider {
+        text-align: center;
+        margin: 1.5rem 0;
+        position: relative;
+      }
+      .oauth-divider::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: var(--color-border);
+      }
+      .oauth-divider span {
+        background: var(--color-muted);
+        padding: 0 1rem;
+        position: relative;
+        color: var(--color-secondary);
+        font-size: 0.875rem;
+      }
+      .oauth-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .oauth-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        background: var(--color-bg);
+        color: var(--color-fg);
+        border: 1px solid var(--color-border);
+      }
+      .oauth-button:hover {
+        background: var(--color-muted);
+      }
+      .auth-footer {
+        text-align: center;
+        margin-top: 1.5rem;
+        color: var(--color-secondary);
+      }
+      .auth-footer a {
+        color: var(--color-primary);
+      }
+    </style>
+
+    <div class="auth-container">
+      <div class="auth-form">
+        <h2>Login</h2>
+        ${errorMessage}
+        ${successMessage}
+
+        <form method="POST" action="/ui/auth/login">
+          <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+          </div>
+
+          <button type="submit" class="button">Sign In</button>
+        </form>
+
+        ${oauthButtons}
+      </div>
+
+      <div class="auth-footer">
+        <p>Don't have an account? <a href="/ui/auth/register${returnTo !== '/ui' ? `?return_to=${encodeURIComponent(returnTo)}` : ''}">Register</a></p>
+      </div>
     </div>
   `;
 
@@ -5334,11 +5592,431 @@ ui.get('/auth/login', async c => {
     {
       title: 'Login',
       activePath: '/ui/auth/login',
+      breadcrumbs: [{ label: 'Home', href: '/ui' }, { label: 'Login' }],
     },
     content
   );
 
   return c.html(html);
+});
+
+/**
+ * Login form handler
+ * POST /ui/auth/login
+ */
+ui.post('/auth/login', async c => {
+  const formData = await c.req.parseBody();
+  const email = String(formData.email || '').trim();
+  const password = String(formData.password || '');
+  const returnTo = String(formData.return_to || '/ui');
+
+  // Validate input
+  if (!email || !password) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Email and password are required')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Find user by email
+  const user = await c.env.DB.prepare(
+    'SELECT id, email, display_name, provider, password_hash, is_active FROM users WHERE email = ?'
+  )
+    .bind(email)
+    .first<{
+      id: string;
+      email: string;
+      display_name: string | null;
+      provider: string;
+      password_hash: string | null;
+      is_active: number;
+    }>();
+
+  if (!user) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Invalid email or password')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Check if account is active
+  if (!user.is_active) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Account is not active')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Check if this is a local account
+  if (user.provider !== 'local' || !user.password_hash) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('This account uses a different authentication method')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Verify password
+  const isValidPassword = await verifyPassword(password, user.password_hash);
+  if (!isValidPassword) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Invalid email or password')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Get JWT secret
+  const jwtSecret = c.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Server configuration error')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Generate tokens
+  const tokens = await createTokenPair(user.id, user.email, jwtSecret);
+
+  // Store refresh token in KV
+  await storeRefreshToken(c.env.KV, user.id, user.email, tokens.refreshToken);
+
+  // Set cookies
+  setCookie(c, ACCESS_TOKEN_COOKIE, tokens.accessToken, getCookieOptions(c, 15 * 60)); // 15 minutes
+  setCookie(c, REFRESH_TOKEN_COOKIE, tokens.refreshToken, getCookieOptions(c, 7 * 24 * 60 * 60)); // 7 days
+
+  // Redirect to return URL
+  return c.redirect(returnTo);
+});
+
+/**
+ * Registration page
+ * GET /ui/auth/register
+ */
+ui.get('/auth/register', async c => {
+  const user = c.get('user');
+
+  // If already logged in, redirect to dashboard
+  if (user) {
+    return c.redirect('/ui');
+  }
+
+  const error = c.req.query('error') || '';
+  const returnTo = c.req.query('return_to') || '/ui';
+
+  const errorMessage = error
+    ? `<div class="error-message">${escapeHtml(decodeURIComponent(error))}</div>`
+    : '';
+
+  const content = `
+    <style>
+      .auth-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem 0;
+      }
+      .auth-form {
+        background: var(--color-muted);
+        padding: 2rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--color-border);
+      }
+      .auth-form h2 {
+        margin-top: 0;
+        text-align: center;
+      }
+      .form-group {
+        margin-bottom: 1rem;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+      }
+      .form-group input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 0.375rem;
+        font-size: 1rem;
+        background: var(--color-bg);
+        color: var(--color-fg);
+      }
+      .form-group input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      }
+      .form-group .hint {
+        font-size: 0.75rem;
+        color: var(--color-secondary);
+        margin-top: 0.25rem;
+      }
+      .auth-form .button {
+        width: 100%;
+        padding: 0.75rem;
+        font-size: 1rem;
+      }
+      .auth-footer {
+        text-align: center;
+        margin-top: 1.5rem;
+        color: var(--color-secondary);
+      }
+      .auth-footer a {
+        color: var(--color-primary);
+      }
+    </style>
+
+    <div class="auth-container">
+      <div class="auth-form">
+        <h2>Create Account</h2>
+        ${errorMessage}
+
+        <form method="POST" action="/ui/auth/register">
+          <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="display_name">Display Name (optional)</label>
+            <input type="text" id="display_name" name="display_name" autocomplete="name" placeholder="Your name">
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required autocomplete="new-password" placeholder="Create a password" minlength="8">
+            <p class="hint">Must be at least 8 characters</p>
+          </div>
+
+          <div class="form-group">
+            <label for="password_confirm">Confirm Password</label>
+            <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password" placeholder="Confirm your password">
+          </div>
+
+          <button type="submit" class="button">Create Account</button>
+        </form>
+      </div>
+
+      <div class="auth-footer">
+        <p>Already have an account? <a href="/ui/auth/login${returnTo !== '/ui' ? `?return_to=${encodeURIComponent(returnTo)}` : ''}">Login</a></p>
+      </div>
+    </div>
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Register',
+      activePath: '/ui/auth/register',
+      breadcrumbs: [{ label: 'Home', href: '/ui' }, { label: 'Register' }],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Registration form handler
+ * POST /ui/auth/register
+ */
+ui.post('/auth/register', async c => {
+  const formData = await c.req.parseBody();
+  const email = String(formData.email || '').trim();
+  const displayName = String(formData.display_name || '').trim() || null;
+  const password = String(formData.password || '');
+  const passwordConfirm = String(formData.password_confirm || '');
+  const returnTo = String(formData.return_to || '/ui');
+
+  // Validate input
+  if (!email) {
+    return c.redirect(
+      `/ui/auth/register?error=${encodeURIComponent('Email is required')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  if (!password || password.length < 8) {
+    return c.redirect(
+      `/ui/auth/register?error=${encodeURIComponent('Password must be at least 8 characters')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  if (password !== passwordConfirm) {
+    return c.redirect(
+      `/ui/auth/register?error=${encodeURIComponent('Passwords do not match')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Check if user already exists
+  const existingUser = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
+    .bind(email)
+    .first();
+
+  if (existingUser) {
+    return c.redirect(
+      `/ui/auth/register?error=${encodeURIComponent('An account with this email already exists')}&return_to=${encodeURIComponent(returnTo)}`
+    );
+  }
+
+  // Hash password
+  const passwordHash = await hashPassword(password);
+
+  // Create user
+  const userId = crypto.randomUUID();
+  const now = Math.floor(Date.now() / 1000);
+
+  // Sanitize display name for XSS prevention
+  const sanitizedDisplayName = displayName ? escapeHtml(displayName) : null;
+
+  await c.env.DB.prepare(
+    `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active)
+     VALUES (?, ?, ?, 'local', NULL, ?, ?, ?, 1)`
+  )
+    .bind(userId, email, sanitizedDisplayName, passwordHash, now, now)
+    .run();
+
+  // Get JWT secret
+  const jwtSecret = c.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return c.redirect(`/ui/auth/login?error=${encodeURIComponent('Server configuration error')}`);
+  }
+
+  // Generate tokens
+  const tokens = await createTokenPair(userId, email, jwtSecret);
+
+  // Store refresh token in KV
+  await storeRefreshToken(c.env.KV, userId, email, tokens.refreshToken);
+
+  // Set cookies
+  setCookie(c, ACCESS_TOKEN_COOKIE, tokens.accessToken, getCookieOptions(c, 15 * 60)); // 15 minutes
+  setCookie(c, REFRESH_TOKEN_COOKIE, tokens.refreshToken, getCookieOptions(c, 7 * 24 * 60 * 60)); // 7 days
+
+  // Redirect to return URL
+  return c.redirect(returnTo);
+});
+
+/**
+ * Logout handler
+ * GET /ui/auth/logout
+ */
+ui.get('/auth/logout', async c => {
+  const refreshToken = getCookie(c, REFRESH_TOKEN_COOKIE);
+
+  // If we have a refresh token, invalidate the session in KV
+  if (refreshToken && c.env.JWT_SECRET) {
+    const { verifyRefreshToken } = await import('../utils/jwt.js');
+    const payload = await verifyRefreshToken(refreshToken, c.env.JWT_SECRET);
+    if (payload) {
+      await invalidateSession(c.env.KV, payload.user_id);
+    }
+  }
+
+  // Clear cookies
+  deleteCookie(c, ACCESS_TOKEN_COOKIE, { path: '/' });
+  deleteCookie(c, REFRESH_TOKEN_COOKIE, { path: '/' });
+
+  // Redirect to login with success message
+  return c.redirect('/ui/auth/login?success=' + encodeURIComponent('You have been logged out'));
+});
+
+/**
+ * OAuth initiation routes
+ * These redirect to the API OAuth endpoints and handle the callback
+ */
+
+// KV key prefix for OAuth state storage
+const UI_OAUTH_STATE_PREFIX = 'ui_oauth_state:';
+const UI_OAUTH_STATE_TTL = 15 * 60; // 15 minutes
+
+/**
+ * Google OAuth initiation
+ * GET /ui/auth/oauth/google
+ */
+ui.get('/auth/oauth/google', async c => {
+  const returnTo = c.req.query('return_to') || '/ui';
+
+  // Check if Google OAuth is configured
+  if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_REDIRECT_URI) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Google sign-in is not configured')}`
+    );
+  }
+
+  // Generate a state parameter and store return URL
+  const state = crypto.randomUUID();
+  await c.env.KV.put(
+    `${UI_OAUTH_STATE_PREFIX}google:${state}`,
+    JSON.stringify({ returnTo, timestamp: Date.now() }),
+    { expirationTtl: UI_OAUTH_STATE_TTL }
+  );
+
+  // Redirect to the API OAuth endpoint
+  // The callback will need to handle both API and UI flows
+  return c.redirect(`/api/auth/google?ui_state=${state}`);
+});
+
+/**
+ * GitHub OAuth initiation
+ * GET /ui/auth/oauth/github
+ */
+ui.get('/auth/oauth/github', async c => {
+  const returnTo = c.req.query('return_to') || '/ui';
+
+  // Check if GitHub OAuth is configured
+  if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_REDIRECT_URI) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('GitHub sign-in is not configured')}`
+    );
+  }
+
+  // Generate a state parameter and store return URL
+  const state = crypto.randomUUID();
+  await c.env.KV.put(
+    `${UI_OAUTH_STATE_PREFIX}github:${state}`,
+    JSON.stringify({ returnTo, timestamp: Date.now() }),
+    { expirationTtl: UI_OAUTH_STATE_TTL }
+  );
+
+  // Redirect to the API OAuth endpoint
+  return c.redirect(`/api/auth/github?ui_state=${state}`);
+});
+
+/**
+ * OAuth callback handler for UI
+ * GET /ui/auth/oauth/callback
+ * Handles the callback from API OAuth endpoints
+ */
+ui.get('/auth/oauth/callback', async c => {
+  const accessToken = c.req.query('access_token');
+  const refreshToken = c.req.query('refresh_token');
+  const error = c.req.query('error');
+  const provider = c.req.query('provider');
+  const uiState = c.req.query('ui_state');
+
+  // Check for errors
+  if (error) {
+    return c.redirect(`/ui/auth/login?error=${encodeURIComponent(error)}`);
+  }
+
+  // Validate tokens
+  if (!accessToken || !refreshToken) {
+    return c.redirect(
+      `/ui/auth/login?error=${encodeURIComponent('Authentication failed - missing tokens')}`
+    );
+  }
+
+  // Get return URL from state
+  let returnTo = '/ui';
+  if (uiState && provider) {
+    const stateData = await c.env.KV.get(`${UI_OAUTH_STATE_PREFIX}${provider}:${uiState}`);
+    if (stateData) {
+      const parsed = JSON.parse(stateData);
+      returnTo = parsed.returnTo || '/ui';
+      // Delete the state (one-time use)
+      await c.env.KV.delete(`${UI_OAUTH_STATE_PREFIX}${provider}:${uiState}`);
+    }
+  }
+
+  // Set cookies
+  setCookie(c, ACCESS_TOKEN_COOKIE, accessToken, getCookieOptions(c, 15 * 60)); // 15 minutes
+  setCookie(c, REFRESH_TOKEN_COOKIE, refreshToken, getCookieOptions(c, 7 * 24 * 60 * 60)); // 7 days
+
+  // Redirect to return URL
+  return c.redirect(returnTo);
 });
 
 export default ui;

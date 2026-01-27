@@ -868,20 +868,51 @@ Each entity in the list shows:
 - Results displayed in table format (similar to entity list)
 - Export search results button
 
-### 🟦 Authentication Integration
+### ✅ Authentication Integration
 
 #### Login Page
 
-- If user accesses `/ui/*` without authentication, redirect to `/ui/auth/login`
-- Simple login form (email/password)
-- OAuth provider buttons (Google, GitHub)
-- "Register new account" link
+- Login page at `/ui/auth/login` with email/password form
+- OAuth provider buttons (Google, GitHub) when configured
+- "Register new account" link to registration page
+- Error/success message display
+- Return URL support for redirecting after login
+
+#### Registration Page
+
+- Registration page at `/ui/auth/register`
+- Email, display name (optional), password, and confirm password fields
+- Password validation (minimum 8 characters)
+- Automatic login after successful registration
+
+#### Logout
+
+- Logout route at `/ui/auth/logout`
+- Invalidates session in KV store
+- Clears authentication cookies
+- Redirects to login with success message
+
+#### OAuth Integration
+
+- UI OAuth initiation routes at `/ui/auth/oauth/google` and `/ui/auth/oauth/github`
+- Seamless integration with existing API OAuth endpoints
+- State management for return URL preservation
+- Automatic redirect back to UI after OAuth callback
 
 #### User Context
 
 - Show logged-in user in header/navbar
 - Logout button
+- Cookie-based session management with JWT tokens
+- Automatic token refresh using refresh tokens
 - Created/updated records automatically attributed to current user
+
+#### Cookie-Based Sessions
+
+- Access token cookie (15 minutes expiry)
+- Refresh token cookie (7 days expiry)
+- HttpOnly and Secure flags for production
+- Automatic token refresh when access token expires
 
 #### Permission Levels (Future)
 
