@@ -371,16 +371,24 @@ describe('Response Time Tracking', () => {
     });
 
     describe('startTimer', () => {
-      it('should return a function that calculates duration', async () => {
-        const tracker = new ResponseTimeTracker();
-        const getElapsed = tracker.startTimer();
+      it('should return a function that calculates duration', () => {
+        // Mock performance.now() to return controlled timestamps
+        let currentTime = 1000; // Base timestamp
+        const performanceSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentTime);
 
-        // Wait a bit
-        await new Promise(resolve => setTimeout(resolve, 10));
+        try {
+          const tracker = new ResponseTimeTracker();
+          const getElapsed = tracker.startTimer();
 
-        const duration = getElapsed();
-        expect(duration).toBeGreaterThanOrEqual(10);
-        expect(typeof duration).toBe('number');
+          // Simulate 10ms passing
+          currentTime += 10;
+          const duration = getElapsed();
+
+          expect(duration).toBe(10); // Exact match due to controlled timing
+          expect(typeof duration).toBe('number');
+        } finally {
+          performanceSpy.mockRestore();
+        }
       });
 
       it('should round duration to integer', async () => {
