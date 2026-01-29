@@ -6145,6 +6145,797 @@ ui.get('/search', async c => {
   return c.html(html);
 });
 
+// =============================================================================
+// GROUP ADMINISTRATION ROUTES
+// =============================================================================
+
+/**
+ * Group list view
+ * GET /ui/groups
+ */
+ui.get('/groups', async c => {
+  const user = c.get('user');
+
+  // Get filter/pagination parameters
+  const nameFilter = c.req.query('name') || '';
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+
+  // Build query
+  let query = `
+    SELECT g.id, g.name, g.description, g.created_at, g.created_by,
+           u.display_name as created_by_name, u.email as created_by_email,
+           (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
+    FROM groups g
+    LEFT JOIN users u ON g.created_by = u.id
+    WHERE 1=1
+  `;
+  const params: unknown[] = [];
+
+  if (nameFilter) {
+    query += ' AND g.name LIKE ?';
+    params.push(`%${nameFilter}%`);
+  }
+
+  query += ' ORDER BY g.name ASC LIMIT ? OFFSET ?';
+  params.push(limit + 1, offset); // Fetch one extra to check if there are more
+
+  const results = await c.env.DB.prepare(query)
+    .bind(...params)
+    .all<{
+      id: string;
+      name: string;
+      description: string | null;
+      created_at: number;
+      created_by: string | null;
+      created_by_name: string | null;
+      created_by_email: string | null;
+      member_count: number;
+    }>();
+
+  const groups = results.results || [];
+  const hasMore = groups.length > limit;
+  if (hasMore) groups.pop(); // Remove the extra one
+
+  // Get total count for display
+  let countQuery = 'SELECT COUNT(*) as total FROM groups WHERE 1=1';
+  const countParams: unknown[] = [];
+  if (nameFilter) {
+    countQuery += ' AND name LIKE ?';
+    countParams.push(`%${nameFilter}%`);
+  }
+  const countResult = await c.env.DB.prepare(countQuery)
+    .bind(...countParams)
+    .first<{ total: number }>();
+  const total = countResult?.total || 0;
+
+  // Build filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/groups" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">Search by Name:</label>
+            <input type="text" id="name" name="name" value="${escapeHtml(nameFilter)}" placeholder="Enter group name...">
+          </div>
+        </div>
+        <div class="button-group">
+          <button type="submit" class="button">Search</button>
+          <a href="/ui/groups" class="button secondary">Clear</a>
+        </div>
+      </form>
+    </div>
+  `;
+
+  // Build groups table
+  const groupsTable =
+    groups.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Members</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${groups
+          .map(
+            group => `
+          <tr>
+            <td><a href="/ui/groups/${group.id}">${escapeHtml(group.name)}</a></td>
+            <td class="muted">${group.description ? escapeHtml(group.description.substring(0, 50)) + (group.description.length > 50 ? '...' : '') : '-'}</td>
+            <td><span class="badge muted">${group.member_count}</span></td>
+            <td>${group.created_by_name || group.created_by_email ? escapeHtml(group.created_by_name || group.created_by_email || '') : '-'}</td>
+            <td class="muted small">${formatTimestamp(group.created_at)}</td>
+            <td>
+              <div class="button-group compact">
+                <a href="/ui/groups/${group.id}" class="button small">View</a>
+                <a href="/ui/groups/${group.id}/edit" class="button small secondary">Edit</a>
+              </div>
+            </td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No groups found.</p>';
+
+  // Build pagination
+  const currentPage = Math.floor(offset / limit) + 1;
+  const totalPages = Math.ceil(total / limit);
+  const buildPageUrl = (newOffset: number) => {
+    const params = new URLSearchParams();
+    if (nameFilter) params.set('name', nameFilter);
+    params.set('limit', String(limit));
+    params.set('offset', String(newOffset));
+    return `/ui/groups?${params.toString()}`;
+  };
+
+  const pagination =
+    total > limit
+      ? `
+    <div class="pagination">
+      ${offset > 0 ? `<a href="${buildPageUrl(Math.max(0, offset - limit))}" class="button small secondary">&laquo; Previous</a>` : ''}
+      <span class="muted">Page ${currentPage} of ${totalPages} (${total} total groups)</span>
+      ${hasMore ? `<a href="${buildPageUrl(offset + limit)}" class="button small secondary">Next &raquo;</a>` : ''}
+    </div>
+  `
+      : '';
+
+  const content = `
+    <h2>Groups</h2>
+    <p>Manage groups and their memberships. Groups can contain users and other groups.</p>
+
+    <div class="button-group">
+      <a href="/ui/groups/new" class="button">Create New Group</a>
+    </div>
+
+    <h3>Filter Groups</h3>
+    ${filterForm}
+
+    <h3>All Groups</h3>
+    ${groupsTable}
+    ${pagination}
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Groups',
+      user,
+      activePath: '/ui/groups',
+      breadcrumbs: [{ label: 'Home', href: '/ui' }, { label: 'Groups' }],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Create group form
+ * GET /ui/groups/new
+ */
+ui.get('/groups/new', async c => {
+  const user = c.get('user');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/groups/new'));
+  }
+
+  const error = c.req.query('error') || '';
+
+  const errorMessage = error
+    ? `<div class="error-message">${escapeHtml(decodeURIComponent(error))}</div>`
+    : '';
+
+  const content = `
+    <h2>Create New Group</h2>
+    ${errorMessage}
+
+    <div class="card">
+      <form id="create-group-form" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">Name: *</label>
+            <input type="text" id="name" name="name" required placeholder="Enter group name">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" rows="3" placeholder="Enter group description (optional)"></textarea>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Create Group</button>
+          <a href="/ui/groups" class="button secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      document.getElementById('create-group-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const name = document.getElementById('name').value.trim();
+        const description = document.getElementById('description').value.trim();
+
+        if (!name) {
+          alert('Name is required');
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/groups', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: name,
+              description: description || undefined
+            }),
+            credentials: 'same-origin'
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.data && data.data.id) {
+            window.location.href = '/ui/groups/' + data.data.id;
+          } else {
+            const errorMsg = data.error || data.message || 'Failed to create group';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      });
+    </script>
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Create Group',
+      user,
+      activePath: '/ui/groups',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Groups', href: '/ui/groups' },
+        { label: 'Create New Group' },
+      ],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Edit group form
+ * GET /ui/groups/:id/edit
+ */
+ui.get('/groups/:id/edit', async c => {
+  const user = c.get('user');
+  const groupId = c.req.param('id');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect(
+      '/ui/auth/login?return_to=' + encodeURIComponent(`/ui/groups/${groupId}/edit`)
+    );
+  }
+
+  // Fetch group
+  const group = await c.env.DB.prepare(
+    'SELECT id, name, description, created_at, created_by FROM groups WHERE id = ?'
+  )
+    .bind(groupId)
+    .first<{
+      id: string;
+      name: string;
+      description: string | null;
+      created_at: number;
+      created_by: string | null;
+    }>();
+
+  if (!group) {
+    const content = `
+      <div class="error-message">
+        <h2>Group Not Found</h2>
+        <p>The requested group does not exist.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/groups" class="button secondary">Back to Groups</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Group Not Found',
+          user,
+          activePath: '/ui/groups',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Groups', href: '/ui/groups' },
+            { label: 'Not Found' },
+          ],
+        },
+        content
+      ),
+      404
+    );
+  }
+
+  const error = c.req.query('error') || '';
+  const errorMessage = error
+    ? `<div class="error-message">${escapeHtml(decodeURIComponent(error))}</div>`
+    : '';
+
+  const content = `
+    <h2>Edit Group: ${escapeHtml(group.name)}</h2>
+    ${errorMessage}
+
+    <div class="card">
+      <form id="edit-group-form" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">Name: *</label>
+            <input type="text" id="name" name="name" required value="${escapeHtml(group.name)}">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" rows="3">${escapeHtml(group.description || '')}</textarea>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Save Changes</button>
+          <a href="/ui/groups/${escapeHtml(groupId)}" class="button secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      document.getElementById('edit-group-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const name = document.getElementById('name').value.trim();
+        const description = document.getElementById('description').value.trim();
+
+        if (!name) {
+          alert('Name is required');
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/groups/${escapeHtml(groupId)}', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: name,
+              description: description || undefined
+            }),
+            credentials: 'same-origin'
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            window.location.href = '/ui/groups/${escapeHtml(groupId)}';
+          } else {
+            const errorMsg = data.error || data.message || 'Failed to update group';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      });
+    </script>
+  `;
+
+  const html = renderPage(
+    {
+      title: `Edit Group - ${group.name}`,
+      user,
+      activePath: '/ui/groups',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Groups', href: '/ui/groups' },
+        { label: group.name, href: `/ui/groups/${groupId}` },
+        { label: 'Edit' },
+      ],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
+/**
+ * Group detail view with members
+ * GET /ui/groups/:id
+ */
+ui.get('/groups/:id', async c => {
+  const user = c.get('user');
+  const groupId = c.req.param('id');
+
+  // Fetch group
+  const group = await c.env.DB.prepare(
+    `SELECT g.id, g.name, g.description, g.created_at, g.created_by,
+            u.display_name as created_by_name, u.email as created_by_email
+     FROM groups g
+     LEFT JOIN users u ON g.created_by = u.id
+     WHERE g.id = ?`
+  )
+    .bind(groupId)
+    .first<{
+      id: string;
+      name: string;
+      description: string | null;
+      created_at: number;
+      created_by: string | null;
+      created_by_name: string | null;
+      created_by_email: string | null;
+    }>();
+
+  if (!group) {
+    const content = `
+      <div class="error-message">
+        <h2>Group Not Found</h2>
+        <p>The requested group does not exist.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/groups" class="button secondary">Back to Groups</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Group Not Found',
+          user,
+          activePath: '/ui/groups',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Groups', href: '/ui/groups' },
+            { label: 'Not Found' },
+          ],
+        },
+        content
+      ),
+      404
+    );
+  }
+
+  // Fetch direct members
+  const directMembers = await c.env.DB.prepare(
+    `SELECT
+       gm.member_type,
+       gm.member_id,
+       gm.created_at,
+       CASE
+         WHEN gm.member_type = 'user' THEN u.display_name
+         WHEN gm.member_type = 'group' THEN mg.name
+       END as name,
+       CASE
+         WHEN gm.member_type = 'user' THEN u.email
+         ELSE NULL
+       END as email
+     FROM group_members gm
+     LEFT JOIN users u ON gm.member_type = 'user' AND gm.member_id = u.id
+     LEFT JOIN groups mg ON gm.member_type = 'group' AND gm.member_id = mg.id
+     WHERE gm.group_id = ?
+     ORDER BY gm.member_type, gm.created_at DESC`
+  )
+    .bind(groupId)
+    .all<{
+      member_type: string;
+      member_id: string;
+      created_at: number;
+      name: string | null;
+      email: string | null;
+    }>();
+
+  const members = directMembers.results || [];
+  const userMembers = members.filter(m => m.member_type === 'user');
+  const groupMembers = members.filter(m => m.member_type === 'group');
+
+  // Fetch all users for add member dropdown
+  const allUsers = await c.env.DB.prepare(
+    'SELECT id, display_name, email FROM users ORDER BY email'
+  ).all<{ id: string; display_name: string | null; email: string }>();
+
+  // Fetch all groups (except this one) for add member dropdown
+  const allGroups = await c.env.DB.prepare(
+    'SELECT id, name FROM groups WHERE id != ? ORDER BY name'
+  )
+    .bind(groupId)
+    .all<{ id: string; name: string }>();
+
+  // Build group info card
+  const groupInfoCard = `
+    <div class="card">
+      <h3>Group Details</h3>
+      <dl class="detail-list">
+        <dt>ID</dt>
+        <dd><code>${escapeHtml(group.id)}</code></dd>
+
+        <dt>Name</dt>
+        <dd>${escapeHtml(group.name)}</dd>
+
+        <dt>Description</dt>
+        <dd>${group.description ? escapeHtml(group.description) : '<span class="muted">No description</span>'}</dd>
+
+        <dt>Created By</dt>
+        <dd>${group.created_by_name || group.created_by_email ? escapeHtml(group.created_by_name || group.created_by_email || '') : '<span class="muted">Unknown</span>'}</dd>
+
+        <dt>Created At</dt>
+        <dd>${formatTimestamp(group.created_at)}</dd>
+
+        <dt>Total Members</dt>
+        <dd><span class="badge muted">${members.length}</span> (${userMembers.length} users, ${groupMembers.length} groups)</dd>
+      </dl>
+
+      <div class="button-group">
+        <a href="/ui/groups/${escapeHtml(groupId)}/edit" class="button">Edit Group</a>
+        <button type="button" class="button danger" onclick="deleteGroup()">Delete Group</button>
+      </div>
+    </div>
+  `;
+
+  // Build user members table
+  const userMembersSection =
+    userMembers.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Added</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${userMembers
+          .map(
+            m => `
+          <tr>
+            <td>${m.name ? escapeHtml(m.name) : '<span class="muted">-</span>'}</td>
+            <td><a href="/ui/users/${m.member_id}">${escapeHtml(m.email || m.member_id)}</a></td>
+            <td class="muted small">${formatTimestamp(m.created_at)}</td>
+            <td>
+              <button type="button" class="button small danger" onclick="removeMember('user', '${escapeHtml(m.member_id)}')">Remove</button>
+            </td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No user members.</p>';
+
+  // Build group members table
+  const groupMembersSection =
+    groupMembers.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Group Name</th>
+          <th>Added</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${groupMembers
+          .map(
+            m => `
+          <tr>
+            <td><a href="/ui/groups/${m.member_id}">${escapeHtml(m.name || m.member_id)}</a></td>
+            <td class="muted small">${formatTimestamp(m.created_at)}</td>
+            <td>
+              <button type="button" class="button small danger" onclick="removeMember('group', '${escapeHtml(m.member_id)}')">Remove</button>
+            </td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No nested group members.</p>';
+
+  // Build add member form
+  const existingUserIds = new Set(userMembers.map(m => m.member_id));
+  const existingGroupIds = new Set(groupMembers.map(m => m.member_id));
+  const availableUsers = (allUsers.results || []).filter(u => !existingUserIds.has(u.id));
+  const availableGroups = (allGroups.results || []).filter(g => !existingGroupIds.has(g.id));
+
+  const addMemberForm = `
+    <div class="card">
+      <h3>Add Member</h3>
+      <form id="add-member-form" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="member_type">Member Type:</label>
+            <select id="member_type" name="member_type" onchange="updateMemberOptions()">
+              <option value="user">User</option>
+              <option value="group">Group</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="member_id">Select Member:</label>
+            <select id="member_id" name="member_id">
+              ${availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.display_name || u.email)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Add Member</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      const availableUsers = ${JSON.stringify(availableUsers.map(u => ({ id: u.id, label: u.display_name || u.email })))};
+      const availableGroups = ${JSON.stringify(availableGroups.map(g => ({ id: g.id, label: g.name })))};
+
+      function updateMemberOptions() {
+        const memberType = document.getElementById('member_type').value;
+        const memberSelect = document.getElementById('member_id');
+        const options = memberType === 'user' ? availableUsers : availableGroups;
+
+        memberSelect.innerHTML = options.map(o =>
+          '<option value="' + o.id + '">' + escapeHtmlJs(o.label) + '</option>'
+        ).join('');
+      }
+
+      function escapeHtmlJs(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      document.getElementById('add-member-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const memberType = document.getElementById('member_type').value;
+        const memberId = document.getElementById('member_id').value;
+
+        if (!memberId) {
+          alert('Please select a member');
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/groups/${escapeHtml(groupId)}/members', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              member_type: memberType,
+              member_id: memberId
+            }),
+            credentials: 'same-origin'
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            const errorMsg = data.error || data.message || 'Failed to add member';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      });
+
+      async function removeMember(memberType, memberId) {
+        if (!confirm('Are you sure you want to remove this member from the group?')) {
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/groups/${escapeHtml(groupId)}/members/' + memberType + '/' + memberId, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          });
+
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            const data = await response.json();
+            const errorMsg = data.error || data.message || 'Failed to remove member';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+
+      async function deleteGroup() {
+        if (!confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/groups/${escapeHtml(groupId)}', {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          });
+
+          if (response.ok) {
+            window.location.href = '/ui/groups';
+          } else {
+            const data = await response.json();
+            const errorMsg = data.error || data.message || 'Failed to delete group';
+            alert('Error: ' + errorMsg);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+    </script>
+  `;
+
+  const content = `
+    <h2>Group: ${escapeHtml(group.name)}</h2>
+
+    ${groupInfoCard}
+
+    <h3>User Members (${userMembers.length})</h3>
+    ${userMembersSection}
+
+    <h3>Nested Group Members (${groupMembers.length})</h3>
+    ${groupMembersSection}
+
+    ${addMemberForm}
+
+    <div class="button-group">
+      <a href="/ui/groups" class="button secondary">Back to Groups</a>
+    </div>
+  `;
+
+  const html = renderPage(
+    {
+      title: `Group - ${group.name}`,
+      user,
+      activePath: '/ui/groups',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Groups', href: '/ui/groups' },
+        { label: group.name },
+      ],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
 /**
  * Login page
  * GET /ui/auth/login

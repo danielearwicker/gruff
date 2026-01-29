@@ -12376,6 +12376,200 @@ async function testGroupRequiresAuth() {
 }
 
 // ============================================================================
+// Group Administration UI Tests
+// ============================================================================
+
+async function testUIGroupListBasic() {
+  logTest('UI - Group List Page - Basic View');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(
+    response.headers.get('content-type'),
+    'text/html; charset=UTF-8',
+    'Should return HTML'
+  );
+  assert(html.includes('<h2>Groups</h2>'), 'Should have groups heading');
+  assert(html.includes('Create New Group'), 'Should have create group button');
+  assert(html.includes('Filter Groups'), 'Should have filter section');
+  assert(html.includes('name="name"'), 'Should have name search input');
+}
+
+async function testUIGroupListWithData() {
+  logTest('UI - Group List Page - With Group Data');
+
+  // Create a group for testing
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-group-list-${Date.now()}@test.com`,
+    password: 'test123456',
+    display_name: 'UI Group Tester',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: `UI List Test Group ${Date.now()}`,
+    description: 'A test group for UI',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Fetch the group list page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('UI List Test Group'), 'Should display the created group');
+  assert(html.includes('data-table'), 'Should have data table');
+  assert(html.includes(`/ui/groups/${groupId}`), 'Should have link to group detail');
+}
+
+async function testUIGroupDetailBasic() {
+  logTest('UI - Group Detail Page');
+
+  // Create a group for testing
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-group-detail-${Date.now()}@test.com`,
+    password: 'test123456',
+    display_name: 'UI Detail Tester',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: `UI Detail Test Group ${Date.now()}`,
+    description: 'Test description',
+  });
+  const groupId = groupResponse.data.data.id;
+  const groupName = groupResponse.data.data.name;
+
+  // Fetch the group detail page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes(`Group: ${groupName}`), 'Should display group name in title');
+  assert(html.includes('Group Details'), 'Should have group details section');
+  assert(html.includes('Test description'), 'Should display description');
+  assert(html.includes('User Members'), 'Should have user members section');
+  assert(html.includes('Nested Group Members'), 'Should have nested group members section');
+  assert(html.includes('Add Member'), 'Should have add member form');
+  assert(html.includes('Edit Group'), 'Should have edit button');
+  assert(html.includes('Delete Group'), 'Should have delete button');
+}
+
+async function testUIGroupDetailNotFound() {
+  logTest('UI - Group Detail Page - Not Found');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-group-id`);
+  const html = await response.text();
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(html.includes('Group Not Found'), 'Should show not found message');
+  assert(html.includes('Back to Groups'), 'Should have back link');
+}
+
+async function testUIGroupDetailWithMembers() {
+  logTest('UI - Group Detail Page - With Members');
+
+  // Create auth for testing
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-group-members-${Date.now()}@test.com`,
+    password: 'test123456',
+    display_name: 'Member Tester',
+  });
+  const token = authResponse.data.data.access_token;
+  const userId = authResponse.data.data.user.id;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: `Group with Members ${Date.now()}`,
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Add user as member
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Fetch the group detail page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Member Tester'), 'Should display member name');
+  assert(html.includes('Remove'), 'Should have remove member button');
+}
+
+async function testUIGroupCreateForm() {
+  logTest('UI - Group Create Form Page');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/new`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('<h2>Create New Group</h2>'), 'Should have create group heading');
+  assert(html.includes('name="name"'), 'Should have name input');
+  assert(html.includes('name="description"'), 'Should have description input');
+  assert(html.includes('Create Group'), 'Should have create button');
+  assert(html.includes('Cancel'), 'Should have cancel button');
+}
+
+async function testUIGroupEditForm() {
+  logTest('UI - Group Edit Form Page');
+
+  // Create a group for testing
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-group-edit-${Date.now()}@test.com`,
+    password: 'test123456',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: `Editable Group ${Date.now()}`,
+    description: 'Original description',
+  });
+  const groupId = groupResponse.data.data.id;
+  const groupName = groupResponse.data.data.name;
+
+  // Fetch the edit form page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}/edit`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes(`Edit Group: ${groupName}`), 'Should have edit group heading with name');
+  assert(html.includes(`value="${groupName}"`), 'Should have name pre-filled');
+  assert(html.includes('Original description'), 'Should have description pre-filled');
+  assert(html.includes('Save Changes'), 'Should have save button');
+  assert(html.includes('Cancel'), 'Should have cancel button');
+}
+
+async function testUIGroupEditFormNotFound() {
+  logTest('UI - Group Edit Form Page - Not Found');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-id/edit`);
+  const html = await response.text();
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(html.includes('Group Not Found'), 'Should show not found message');
+}
+
+async function testUIGroupNavigation() {
+  logTest('UI - Group Navigation Link in Header');
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('href="/ui/groups"'), 'Should have groups navigation link');
+  assert(html.includes('>Groups<'), 'Should have Groups text in navigation');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -12859,6 +13053,17 @@ async function runTests() {
     testUserGroups,
     testUserEffectiveGroups,
     testGroupRequiresAuth,
+
+    // Group Administration UI tests
+    testUIGroupListBasic,
+    testUIGroupListWithData,
+    testUIGroupDetailBasic,
+    testUIGroupDetailNotFound,
+    testUIGroupDetailWithMembers,
+    testUIGroupCreateForm,
+    testUIGroupEditForm,
+    testUIGroupEditFormNotFound,
+    testUIGroupNavigation,
   ];
 
   for (const test of tests) {

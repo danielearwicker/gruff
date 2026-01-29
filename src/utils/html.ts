@@ -846,6 +846,7 @@ export function renderHeader(options: PageOptions): string {
     { label: 'Entities', href: '/ui/entities', path: '/ui/entities' },
     { label: 'Links', href: '/ui/links', path: '/ui/links' },
     { label: 'Types', href: '/ui/types', path: '/ui/types' },
+    { label: 'Groups', href: '/ui/groups', path: '/ui/groups' },
     { label: 'Search', href: '/ui/search', path: '/ui/search' },
   ];
 

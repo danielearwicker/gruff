@@ -1003,7 +1003,7 @@ Each entity in the list shows:
 - Results displayed in table format (similar to entity list)
 - Export search results button
 
-### 🟦 Group Administration
+### ✅ Group Administration
 
 **Route:** `GET /ui/groups`
 
@@ -1219,7 +1219,7 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/search`                         | GET    | Search interface               |
 | `/ui/auth/login`                     | GET    | Login page                     |
 
-### 🟦 Group Administration Routes
+### ✅ Group Administration Routes
 
 | Route                 | Method | Description               |
 | --------------------- | ------ | ------------------------- |
