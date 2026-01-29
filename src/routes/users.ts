@@ -426,4 +426,243 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
   }
 });
 
+/**
+ * GET /api/users/{id}/groups
+ *
+ * List groups a user directly belongs to
+ */
+usersRouter.get('/:id/groups', requireAuth(), async c => {
+  const logger = getLogger(c);
+  const userId = c.req.param('id');
+
+  try {
+    // Check if user exists
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+
+    if (!user) {
+      logger.warn('User not found for groups query', { userId });
+      return c.json(response.notFound('User'), 404);
+    }
+
+    // Get groups the user directly belongs to
+    const groups = await c.env.DB.prepare(
+      `SELECT g.id, g.name, g.description, g.created_at, gm.created_at as joined_at
+       FROM groups g
+       INNER JOIN group_members gm ON g.id = gm.group_id
+       WHERE gm.member_type = 'user' AND gm.member_id = ?
+       ORDER BY gm.created_at DESC`
+    )
+      .bind(userId)
+      .all<{
+        id: string;
+        name: string;
+        description: string | null;
+        created_at: number;
+        joined_at: number;
+      }>();
+
+    logger.info('User groups retrieved', { userId, count: groups.results?.length || 0 });
+
+    return c.json(
+      response.success({
+        user_id: userId,
+        groups: groups.results || [],
+        count: groups.results?.length || 0,
+      })
+    );
+  } catch (error) {
+    logger.error('Error retrieving user groups', error as Error, { userId });
+    return c.json(response.error('Failed to retrieve user groups', 'USER_GROUPS_FAILED'), 500);
+  }
+});
+
+/**
+ * Helper function to recursively get all groups a user belongs to
+ * (directly or through nested group membership)
+ */
+async function getEffectiveGroups(
+  db: D1Database,
+  userId: string,
+  visited: Set<string> = new Set()
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    path: string[];
+  }>
+> {
+  const result: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    path: string[];
+  }> = [];
+
+  // Get groups the user directly belongs to
+  const directGroups = await db
+    .prepare(
+      `SELECT g.id, g.name, g.description
+       FROM groups g
+       INNER JOIN group_members gm ON g.id = gm.group_id
+       WHERE gm.member_type = 'user' AND gm.member_id = ?`
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      name: string;
+      description: string | null;
+    }>();
+
+  for (const group of directGroups.results || []) {
+    if (!visited.has(group.id)) {
+      visited.add(group.id);
+      result.push({
+        ...group,
+        path: [group.id],
+      });
+
+      // Recursively get parent groups of this group
+      const parentGroups = await getParentGroups(db, group.id, new Set(visited));
+      for (const parent of parentGroups) {
+        if (!visited.has(parent.id)) {
+          visited.add(parent.id);
+          result.push({
+            ...parent,
+            path: [group.id, ...parent.path],
+          });
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Helper function to get all parent groups of a group
+ */
+async function getParentGroups(
+  db: D1Database,
+  groupId: string,
+  visited: Set<string> = new Set()
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    path: string[];
+  }>
+> {
+  if (visited.has(groupId)) {
+    return [];
+  }
+
+  const result: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    path: string[];
+  }> = [];
+
+  // Get groups that contain this group as a member
+  const parentGroups = await db
+    .prepare(
+      `SELECT g.id, g.name, g.description
+       FROM groups g
+       INNER JOIN group_members gm ON g.id = gm.group_id
+       WHERE gm.member_type = 'group' AND gm.member_id = ?`
+    )
+    .bind(groupId)
+    .all<{
+      id: string;
+      name: string;
+      description: string | null;
+    }>();
+
+  for (const parent of parentGroups.results || []) {
+    if (!visited.has(parent.id)) {
+      visited.add(parent.id);
+      result.push({
+        ...parent,
+        path: [parent.id],
+      });
+
+      // Recursively get parents of this parent
+      const grandparents = await getParentGroups(db, parent.id, new Set(visited));
+      for (const grandparent of grandparents) {
+        result.push({
+          ...grandparent,
+          path: [parent.id, ...grandparent.path],
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * GET /api/users/{id}/effective-groups
+ *
+ * List all groups a user belongs to (directly or through nested group membership)
+ */
+usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
+  const logger = getLogger(c);
+  const userId = c.req.param('id');
+
+  try {
+    // Check if user exists
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(userId).first();
+
+    if (!user) {
+      logger.warn('User not found for effective groups query', { userId });
+      return c.json(response.notFound('User'), 404);
+    }
+
+    const groups = await getEffectiveGroups(c.env.DB, userId);
+
+    // Deduplicate groups (might appear through multiple paths)
+    const uniqueGroups = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        description: string | null;
+        paths: string[][];
+      }
+    >();
+
+    for (const group of groups) {
+      const existing = uniqueGroups.get(group.id);
+      if (existing) {
+        existing.paths.push(group.path);
+      } else {
+        uniqueGroups.set(group.id, {
+          id: group.id,
+          name: group.name,
+          description: group.description,
+          paths: [group.path],
+        });
+      }
+    }
+
+    logger.info('User effective groups retrieved', { userId, count: uniqueGroups.size });
+
+    return c.json(
+      response.success({
+        user_id: userId,
+        groups: Array.from(uniqueGroups.values()),
+        count: uniqueGroups.size,
+      })
+    );
+  } catch (error) {
+    logger.error('Error retrieving user effective groups', error as Error, { userId });
+    return c.json(
+      response.error('Failed to retrieve user effective groups', 'USER_EFFECTIVE_GROUPS_FAILED'),
+      500
+    );
+  }
+});
+
 export default usersRouter;

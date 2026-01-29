@@ -102,7 +102,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - acl_id (INTEGER, FK -> acls.id, NULL) -- 🟦 NULL means public/unrestricted
 ```
 
-#### 🟦 `groups` Table
+#### ✅ `groups` Table
 
 ```sql
 - id (TEXT, PK) -- UUID stored as TEXT
@@ -112,7 +112,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - created_by (TEXT, FK -> users.id)
 ```
 
-#### 🟦 `group_members` Table
+#### ✅ `group_members` Table
 
 ```sql
 - group_id (TEXT, FK -> groups.id, NOT NULL)
@@ -125,7 +125,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 
 Groups form a hierarchy: a group can contain users and other groups. Cycles are prevented by validation on insert.
 
-#### 🟦 `acls` Table
+#### ✅ `acls` Table
 
 ```sql
 - id (INTEGER, PK, AUTOINCREMENT)
@@ -135,7 +135,7 @@ Groups form a hierarchy: a group can contain users and other groups. Cycles are 
 
 ACLs are deduplicated: when an entity or link's access control is modified, the system computes a canonical hash of the requested permissions. If an ACL with that hash already exists, its ID is reused; otherwise a new ACL is created. This allows efficient filtering via integer foreign keys.
 
-#### 🟦 `acl_entries` Table
+#### ✅ `acl_entries` Table
 
 ```sql
 - acl_id (INTEGER, FK -> acls.id, NOT NULL)
@@ -514,7 +514,7 @@ PUT    /api/users/{id}             # Update user profile
 GET    /api/users/{id}/activity    # Get user's creation/edit history
 ```
 
-### 🟦 Group Management Endpoints
+### ✅ Group Management Endpoints
 
 ```
 POST   /api/groups                   # Create a new group

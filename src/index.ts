@@ -38,6 +38,7 @@ import docsRouter from './routes/docs.js';
 import generatedColumnsRouter from './routes/generated-columns.js';
 import queryPlanRouter from './routes/query-plan.js';
 import uiRouter from './routes/ui.js';
+import groupsRouter from './routes/groups.js';
 
 // Define the environment bindings type
 type Bindings = {
@@ -423,6 +424,9 @@ app.route('/api/auth', authRouter);
 
 // Mount user management routes
 app.route('/api/users', usersRouter);
+
+// Mount group management routes
+app.route('/api/groups', groupsRouter);
 
 // Mount type management routes
 app.route('/api/types', typesRouter);

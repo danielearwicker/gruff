@@ -210,6 +210,7 @@ async function resetDatabase() {
     './migrations/0003_is_latest_triggers.sql',
     './migrations/0005_audit_logs.sql',
     './migrations/0006_generated_columns.sql',
+    './migrations/0007_groups.sql',
   ];
 
   // Use same isolated test state path as defined at top of function
@@ -11554,6 +11555,827 @@ async function testQueryPerformanceTrackingBulkOperations() {
 }
 
 // ============================================================================
+// Group Management Tests
+// ============================================================================
+
+// Helper to get auth token for group tests
+async function getGroupTestAuthToken() {
+  const email = `grouptest-${Date.now()}@example.com`;
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email,
+    password: 'password123',
+    display_name: 'Group Test User',
+  });
+  return registerResponse.data.data.access_token;
+}
+
+async function testCreateGroup() {
+  logTest('Group Management - Create a new group');
+
+  const token = await getGroupTestAuthToken();
+
+  const response = await makeRequestWithHeaders(
+    'POST',
+    '/api/groups',
+    { Authorization: `Bearer ${token}` },
+    {
+      name: 'Test Engineering Team',
+      description: 'A test group for engineers',
+    }
+  );
+
+  assertEquals(response.status, 201, 'Status code should be 201 Created');
+  assert(response.data.data, 'Should return data object');
+  assert(response.data.data.id, 'Should return group ID');
+  assertEquals(response.data.data.name, 'Test Engineering Team', 'Name should match');
+  assertEquals(
+    response.data.data.description,
+    'A test group for engineers',
+    'Description should match'
+  );
+  assert(response.data.data.created_at, 'Should have created_at timestamp');
+  assert(response.data.data.created_by, 'Should have created_by user ID');
+}
+
+async function testCreateGroupDuplicateName() {
+  logTest('Group Management - Reject duplicate group name');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // First, create a group
+  const firstResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Unique Group Name Test',
+    description: 'First group',
+  });
+  assertEquals(firstResponse.status, 201, 'First group should be created');
+
+  // Try to create another group with the same name
+  const secondResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Unique Group Name Test',
+    description: 'Second group with same name',
+  });
+
+  assertEquals(secondResponse.status, 409, 'Status code should be 409 Conflict');
+  assert(secondResponse.data.error, 'Should return error message');
+  assertEquals(
+    secondResponse.data.code,
+    'GROUP_NAME_EXISTS',
+    'Error code should be GROUP_NAME_EXISTS'
+  );
+}
+
+async function testCreateGroupValidation() {
+  logTest('Group Management - Validate group creation input');
+
+  const token = await getGroupTestAuthToken();
+
+  // Test missing name
+  const response = await makeRequestWithHeaders(
+    'POST',
+    '/api/groups',
+    { Authorization: `Bearer ${token}` },
+    { description: 'Group without name' }
+  );
+
+  assertEquals(response.status, 400, 'Status code should be 400 for missing name');
+  assert(response.data.error, 'Should return error message');
+}
+
+async function testListGroups() {
+  logTest('Group Management - List all groups');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a few groups first
+  await makeRequestWithHeaders('POST', '/api/groups', headers, { name: 'List Test Group 1' });
+  await makeRequestWithHeaders('POST', '/api/groups', headers, { name: 'List Test Group 2' });
+
+  const response = await makeRequestWithHeaders('GET', '/api/groups', headers);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data array');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assert(response.data.data.length >= 2, 'Should have at least 2 groups');
+  assert(response.data.pagination, 'Should have pagination metadata');
+}
+
+async function testListGroupsWithNameFilter() {
+  logTest('Group Management - List groups with name filter');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group with a unique name
+  await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'SearchableGroupTest123',
+  });
+
+  const response = await makeRequestWithHeaders('GET', '/api/groups?name=Searchable', headers);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data array');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assert(
+    response.data.data.some(g => g.name.includes('Searchable')),
+    'Should find groups matching name filter'
+  );
+}
+
+async function testGetGroupById() {
+  logTest('Group Management - Get group by ID');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group first
+  const createResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Get By ID Test Group',
+    description: 'Test description',
+  });
+  const groupId = createResponse.data.data.id;
+
+  const response = await makeRequestWithHeaders('GET', `/api/groups/${groupId}`, headers);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data object');
+  assertEquals(response.data.data.id, groupId, 'ID should match');
+  assertEquals(response.data.data.name, 'Get By ID Test Group', 'Name should match');
+  assertEquals(response.data.data.member_count, 0, 'Member count should be 0 for new group');
+}
+
+async function testGetGroupByIdNotFound() {
+  logTest('Group Management - Get non-existent group returns 404');
+
+  const token = await getGroupTestAuthToken();
+
+  const response = await makeRequestWithHeaders(
+    'GET',
+    '/api/groups/00000000-0000-0000-0000-000000000000',
+    { Authorization: `Bearer ${token}` }
+  );
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+  assert(response.data.error, 'Should return error message');
+}
+
+async function testUpdateGroup() {
+  logTest('Group Management - Update group');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group first
+  const createResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Update Test Group Original',
+    description: 'Original description',
+  });
+  const groupId = createResponse.data.data.id;
+
+  // Update the group
+  const updateResponse = await makeRequestWithHeaders('PUT', `/api/groups/${groupId}`, headers, {
+    name: 'Update Test Group Modified',
+    description: 'Updated description',
+  });
+
+  assertEquals(updateResponse.status, 200, 'Status code should be 200');
+  assertEquals(
+    updateResponse.data.data.name,
+    'Update Test Group Modified',
+    'Name should be updated'
+  );
+  assertEquals(
+    updateResponse.data.data.description,
+    'Updated description',
+    'Description should be updated'
+  );
+}
+
+async function testUpdateGroupNotFound() {
+  logTest('Group Management - Update non-existent group returns 404');
+
+  const token = await getGroupTestAuthToken();
+
+  const response = await makeRequestWithHeaders(
+    'PUT',
+    '/api/groups/00000000-0000-0000-0000-000000000000',
+    { Authorization: `Bearer ${token}` },
+    { name: 'Updated Name' }
+  );
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+}
+
+async function testDeleteGroup() {
+  logTest('Group Management - Delete group');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group first
+  const createResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Delete Test Group',
+  });
+  const groupId = createResponse.data.data.id;
+
+  // Delete the group
+  const deleteResponse = await makeRequestWithHeaders('DELETE', `/api/groups/${groupId}`, headers);
+
+  assertEquals(deleteResponse.status, 200, 'Status code should be 200');
+  assert(deleteResponse.data.message, 'Should return success message');
+
+  // Verify it's deleted
+  const getResponse = await makeRequestWithHeaders('GET', `/api/groups/${groupId}`, headers);
+  assertEquals(getResponse.status, 404, 'Group should no longer exist');
+}
+
+async function testDeleteGroupNotFound() {
+  logTest('Group Management - Delete non-existent group returns 404');
+
+  const token = await getGroupTestAuthToken();
+
+  const response = await makeRequestWithHeaders(
+    'DELETE',
+    '/api/groups/00000000-0000-0000-0000-000000000000',
+    { Authorization: `Bearer ${token}` }
+  );
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+}
+
+async function testAddUserMemberToGroup() {
+  logTest('Group Management - Add user member to group');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group With User Members',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group
+  const addResponse = await makeRequestWithHeaders(
+    'POST',
+    `/api/groups/${groupId}/members`,
+    headers,
+    { member_type: 'user', member_id: userId }
+  );
+
+  assertEquals(addResponse.status, 201, 'Status code should be 201 Created');
+  assertEquals(addResponse.data.data.member_type, 'user', 'Member type should be user');
+  assertEquals(addResponse.data.data.member_id, userId, 'Member ID should match user ID');
+}
+
+async function testAddGroupMemberToGroup() {
+  logTest('Group Management - Add group member to group (nested groups)');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create parent group
+  const parentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Parent Group For Nesting',
+  });
+  const parentGroupId = parentResponse.data.data.id;
+
+  // Create child group
+  const childResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Child Group For Nesting',
+  });
+  const childGroupId = childResponse.data.data.id;
+
+  // Add child group to parent group
+  const addResponse = await makeRequestWithHeaders(
+    'POST',
+    `/api/groups/${parentGroupId}/members`,
+    headers,
+    { member_type: 'group', member_id: childGroupId }
+  );
+
+  assertEquals(addResponse.status, 201, 'Status code should be 201 Created');
+  assertEquals(addResponse.data.data.member_type, 'group', 'Member type should be group');
+  assertEquals(
+    addResponse.data.data.member_id,
+    childGroupId,
+    'Member ID should match child group ID'
+  );
+}
+
+async function testAddMemberAlreadyExists() {
+  logTest('Group Management - Adding duplicate member returns 409');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group For Duplicate Member Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group first time
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Try to add same user again
+  const duplicateResponse = await makeRequestWithHeaders(
+    'POST',
+    `/api/groups/${groupId}/members`,
+    headers,
+    { member_type: 'user', member_id: userId }
+  );
+
+  assertEquals(duplicateResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(
+    duplicateResponse.data.code,
+    'MEMBER_ALREADY_EXISTS',
+    'Error code should be MEMBER_ALREADY_EXISTS'
+  );
+}
+
+async function testAddMemberToNonexistentGroup() {
+  logTest('Group Management - Adding member to non-existent group returns 404');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  const response = await makeRequestWithHeaders(
+    'POST',
+    '/api/groups/00000000-0000-0000-0000-000000000000/members',
+    headers,
+    { member_type: 'user', member_id: userId }
+  );
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+}
+
+async function testAddNonexistentUserToGroup() {
+  logTest('Group Management - Adding non-existent user to group returns 404');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group For Nonexistent User Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  const response = await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: '00000000-0000-0000-0000-000000000000',
+  });
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+}
+
+async function testPreventCircularGroupMembership() {
+  logTest('Group Management - Prevent circular group membership');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create two groups
+  const group1Response = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Circular Test Group 1',
+  });
+  const group1Id = group1Response.data.data.id;
+
+  const group2Response = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Circular Test Group 2',
+  });
+  const group2Id = group2Response.data.data.id;
+
+  // Add group2 as member of group1
+  await makeRequestWithHeaders('POST', `/api/groups/${group1Id}/members`, headers, {
+    member_type: 'group',
+    member_id: group2Id,
+  });
+
+  // Try to add group1 as member of group2 (would create a cycle)
+  const circularResponse = await makeRequestWithHeaders(
+    'POST',
+    `/api/groups/${group2Id}/members`,
+    headers,
+    { member_type: 'group', member_id: group1Id }
+  );
+
+  assertEquals(circularResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(
+    circularResponse.data.code,
+    'CIRCULAR_MEMBERSHIP',
+    'Error code should be CIRCULAR_MEMBERSHIP'
+  );
+}
+
+async function testPreventSelfMembership() {
+  logTest('Group Management - Prevent group from being member of itself');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Self Membership Test Group',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Try to add group as member of itself
+  const selfResponse = await makeRequestWithHeaders(
+    'POST',
+    `/api/groups/${groupId}/members`,
+    headers,
+    { member_type: 'group', member_id: groupId }
+  );
+
+  assertEquals(selfResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(
+    selfResponse.data.code,
+    'CIRCULAR_MEMBERSHIP',
+    'Error code should be CIRCULAR_MEMBERSHIP'
+  );
+}
+
+async function testRemoveMemberFromGroup() {
+  logTest('Group Management - Remove member from group');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group For Remove Member Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Remove user from group
+  const removeResponse = await makeRequestWithHeaders(
+    'DELETE',
+    `/api/groups/${groupId}/members/user/${userId}`,
+    headers
+  );
+
+  assertEquals(removeResponse.status, 200, 'Status code should be 200');
+  assert(removeResponse.data.message, 'Should return success message');
+}
+
+async function testRemoveMemberNotFound() {
+  logTest('Group Management - Remove non-existent member returns 404');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group For Remove Nonexistent Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  const response = await makeRequestWithHeaders(
+    'DELETE',
+    `/api/groups/${groupId}/members/user/00000000-0000-0000-0000-000000000000`,
+    headers
+  );
+
+  assertEquals(response.status, 404, 'Status code should be 404');
+}
+
+async function testListGroupMembers() {
+  logTest('Group Management - List group members');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group For List Members Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // List members
+  const listResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/groups/${groupId}/members`,
+    headers
+  );
+
+  assertEquals(listResponse.status, 200, 'Status code should be 200');
+  assert(Array.isArray(listResponse.data.data), 'Should return array of members');
+  assert(listResponse.data.data.length >= 1, 'Should have at least 1 member');
+
+  const member = listResponse.data.data.find(m => m.member_id === userId);
+  assert(member, 'Should find the added user');
+  assertEquals(member.member_type, 'user', 'Member type should be user');
+}
+
+async function testListGroupMembersFilterByType() {
+  logTest('Group Management - List group members with type filter');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create groups
+  const parentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Parent For Filter Test',
+  });
+  const parentId = parentResponse.data.data.id;
+
+  const childResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Child For Filter Test',
+  });
+  const childId = childResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add both user and group as members
+  await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+  await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
+    member_type: 'group',
+    member_id: childId,
+  });
+
+  // Filter by user type
+  const userResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/groups/${parentId}/members?member_type=user`,
+    headers
+  );
+  assertEquals(userResponse.status, 200, 'Status code should be 200');
+  assert(
+    userResponse.data.data.every(m => m.member_type === 'user'),
+    'All members should be users'
+  );
+
+  // Filter by group type
+  const groupFilterResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/groups/${parentId}/members?member_type=group`,
+    headers
+  );
+  assertEquals(groupFilterResponse.status, 200, 'Status code should be 200');
+  assert(
+    groupFilterResponse.data.data.every(m => m.member_type === 'group'),
+    'All members should be groups'
+  );
+}
+
+async function testGetEffectiveMembers() {
+  logTest('Group Management - Get effective members (recursive)');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create nested groups: Parent -> Child -> User
+  const parentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Effective Members Parent',
+  });
+  const parentId = parentResponse.data.data.id;
+
+  const childResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Effective Members Child',
+  });
+  const childId = childResponse.data.data.id;
+
+  // Get current user
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add child group to parent
+  await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
+    member_type: 'group',
+    member_id: childId,
+  });
+
+  // Add user to child group
+  await makeRequestWithHeaders('POST', `/api/groups/${childId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Get effective members of parent (should include user through child)
+  const effectiveResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/groups/${parentId}/effective-members`,
+    headers
+  );
+
+  assertEquals(effectiveResponse.status, 200, 'Status code should be 200');
+  assert(effectiveResponse.data.data.users, 'Should have users array');
+  assert(effectiveResponse.data.data.groups, 'Should have groups array');
+  assert(effectiveResponse.data.data.total_users >= 1, 'Should have at least 1 effective user');
+  assert(effectiveResponse.data.data.total_groups >= 1, 'Should have at least 1 nested group');
+
+  // Verify the user is in the effective members through the child path
+  const effectiveUser = effectiveResponse.data.data.users.find(u => u.member_id === userId);
+  assert(effectiveUser, 'User should be in effective members');
+}
+
+async function testDeleteGroupWithMembers() {
+  logTest('Group Management - Cannot delete group with members');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Group With Members Delete Test',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get the current user ID
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Try to delete group (should fail)
+  const deleteResponse = await makeRequestWithHeaders('DELETE', `/api/groups/${groupId}`, headers);
+
+  assertEquals(deleteResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(
+    deleteResponse.data.code,
+    'GROUP_HAS_MEMBERS',
+    'Error code should be GROUP_HAS_MEMBERS'
+  );
+}
+
+async function testDeleteGroupThatIsMember() {
+  logTest('Group Management - Cannot delete group that is member of another group');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create parent group
+  const parentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Parent For Delete Member Test',
+  });
+  const parentId = parentResponse.data.data.id;
+
+  // Create child group
+  const childResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Child For Delete Member Test',
+  });
+  const childId = childResponse.data.data.id;
+
+  // Add child to parent
+  await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
+    member_type: 'group',
+    member_id: childId,
+  });
+
+  // Try to delete child group (should fail because it's a member of parent)
+  const deleteResponse = await makeRequestWithHeaders('DELETE', `/api/groups/${childId}`, headers);
+
+  assertEquals(deleteResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(deleteResponse.data.code, 'GROUP_IS_MEMBER', 'Error code should be GROUP_IS_MEMBER');
+}
+
+async function testUserGroups() {
+  logTest('Group Management - Get groups a user belongs to');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'User Groups Test Group',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Get current user
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Add user to group
+  await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Get user's groups
+  const userGroupsResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/users/${userId}/groups`,
+    headers
+  );
+
+  assertEquals(userGroupsResponse.status, 200, 'Status code should be 200');
+  assert(userGroupsResponse.data.data.groups, 'Should have groups array');
+  assert(userGroupsResponse.data.data.groups.length >= 1, 'Should have at least 1 group');
+
+  const group = userGroupsResponse.data.data.groups.find(g => g.id === groupId);
+  assert(group, 'Should find the group user was added to');
+}
+
+async function testUserEffectiveGroups() {
+  logTest('Group Management - Get effective groups for user (recursive)');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create nested groups: Grandparent -> Parent -> User
+  const grandparentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Effective Groups Grandparent',
+  });
+  const grandparentId = grandparentResponse.data.data.id;
+
+  const parentResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'Effective Groups Parent2',
+  });
+  const parentId = parentResponse.data.data.id;
+
+  // Get current user
+  const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
+  const userId = meResponse.data.data.id;
+
+  // Build hierarchy: grandparent contains parent, parent contains user
+  await makeRequestWithHeaders('POST', `/api/groups/${grandparentId}/members`, headers, {
+    member_type: 'group',
+    member_id: parentId,
+  });
+  await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
+    member_type: 'user',
+    member_id: userId,
+  });
+
+  // Get user's effective groups
+  const effectiveResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/users/${userId}/effective-groups`,
+    headers
+  );
+
+  assertEquals(effectiveResponse.status, 200, 'Status code should be 200');
+  assert(effectiveResponse.data.data.groups, 'Should have groups array');
+  assert(effectiveResponse.data.data.count >= 2, 'Should have at least 2 effective groups');
+
+  // User should be effectively a member of both parent and grandparent
+  const groupIds = effectiveResponse.data.data.groups.map(g => g.id);
+  assert(groupIds.includes(parentId), 'Should include direct parent group');
+  assert(groupIds.includes(grandparentId), 'Should include grandparent group');
+}
+
+async function testGroupRequiresAuth() {
+  logTest('Group Management - Endpoints require authentication');
+
+  // Make requests without auth token
+  const listResponse = await fetch(`${DEV_SERVER_URL}/api/groups`);
+  assertEquals(listResponse.status, 401, 'List groups should require auth');
+
+  const createResponse = await fetch(`${DEV_SERVER_URL}/api/groups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Test' }),
+  });
+  assertEquals(createResponse.status, 401, 'Create group should require auth');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -12007,6 +12829,36 @@ async function runTests() {
     testQueryPerformanceTrackingGraphOperations,
     testQueryPerformanceTrackingSearchOperations,
     testQueryPerformanceTrackingBulkOperations,
+
+    // Group Management tests
+    testCreateGroup,
+    testCreateGroupDuplicateName,
+    testCreateGroupValidation,
+    testListGroups,
+    testListGroupsWithNameFilter,
+    testGetGroupById,
+    testGetGroupByIdNotFound,
+    testUpdateGroup,
+    testUpdateGroupNotFound,
+    testDeleteGroup,
+    testDeleteGroupNotFound,
+    testAddUserMemberToGroup,
+    testAddGroupMemberToGroup,
+    testAddMemberAlreadyExists,
+    testAddMemberToNonexistentGroup,
+    testAddNonexistentUserToGroup,
+    testPreventCircularGroupMembership,
+    testPreventSelfMembership,
+    testRemoveMemberFromGroup,
+    testRemoveMemberNotFound,
+    testListGroupMembers,
+    testListGroupMembersFilterByType,
+    testGetEffectiveMembers,
+    testDeleteGroupWithMembers,
+    testDeleteGroupThatIsMember,
+    testUserGroups,
+    testUserEffectiveGroups,
+    testGroupRequiresAuth,
   ];
 
   for (const test of tests) {
