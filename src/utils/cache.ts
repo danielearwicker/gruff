@@ -27,6 +27,8 @@ export const CACHE_TTL = {
   LINK: 60,
   /** User data is moderately stable */
   USER: 120,
+  /** Effective groups: cache for 5 minutes (as per spec) */
+  EFFECTIVE_GROUPS: 300,
   /** Short TTL for dynamic data */
   SHORT: 30,
   /** Default TTL for unspecified types */
@@ -42,6 +44,7 @@ export const CACHE_PREFIX = {
   ENTITY: 'cache:entity:',
   LINK: 'cache:link:',
   USER: 'cache:user:',
+  EFFECTIVE_GROUPS: 'cache:effective-groups:',
 } as const;
 
 /**
@@ -110,6 +113,13 @@ export function getLinkCacheKey(linkId: string): string {
  */
 export function getUserCacheKey(userId: string): string {
   return `${CACHE_PREFIX.USER}${userId}`;
+}
+
+/**
+ * Generate a cache key for a user's effective groups
+ */
+export function getEffectiveGroupsCacheKey(userId: string): string {
+  return `${CACHE_PREFIX.EFFECTIVE_GROUPS}${userId}`;
 }
 
 /**
@@ -280,6 +290,63 @@ export async function invalidateLinkCache(kv: KVNamespace, linkId: string): Prom
  */
 export async function invalidateUserCache(kv: KVNamespace, userId: string): Promise<void> {
   await deleteCache(kv, getUserCacheKey(userId));
+}
+
+/**
+ * Invalidate effective groups cache for a specific user
+ *
+ * @param kv - KV namespace binding
+ * @param userId - User ID whose effective groups cache should be invalidated
+ */
+export async function invalidateEffectiveGroupsCache(
+  kv: KVNamespace,
+  userId: string
+): Promise<void> {
+  await deleteCache(kv, getEffectiveGroupsCacheKey(userId));
+}
+
+/**
+ * Invalidate effective groups cache for all users affected by a group membership change
+ * This should be called when a user or group is added/removed from a group
+ *
+ * Since we can't efficiently enumerate all affected users, we use a version-based approach:
+ * increment a global version number that is checked when reading cached effective groups.
+ *
+ * @param kv - KV namespace binding
+ */
+export async function invalidateAllEffectiveGroupsCache(kv: KVNamespace): Promise<void> {
+  const versionKey = 'cache:effective-groups:version';
+  const currentVersion = await kv.get(versionKey);
+  const newVersion = (parseInt(currentVersion || '0', 10) + 1).toString();
+  // Keep the version key for a long time (10x the TTL to ensure it outlives all cached entries)
+  await kv.put(versionKey, newVersion, { expirationTtl: CACHE_TTL.EFFECTIVE_GROUPS * 10 });
+}
+
+/**
+ * Get the current effective groups cache version
+ *
+ * @param kv - KV namespace binding
+ * @returns Current version number as string
+ */
+export async function getEffectiveGroupsVersion(kv: KVNamespace): Promise<string> {
+  const version = await kv.get('cache:effective-groups:version');
+  return version || '0';
+}
+
+/**
+ * Generate a versioned effective groups cache key
+ * This ensures cache entries are invalidated when the global version changes
+ *
+ * @param kv - KV namespace binding
+ * @param userId - User ID
+ * @returns Versioned cache key
+ */
+export async function getVersionedEffectiveGroupsCacheKey(
+  kv: KVNamespace,
+  userId: string
+): Promise<string> {
+  const version = await getEffectiveGroupsVersion(kv);
+  return `${getEffectiveGroupsCacheKey(userId)}:v${version}`;
 }
 
 /**

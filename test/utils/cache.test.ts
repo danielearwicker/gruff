@@ -9,12 +9,16 @@ import {
   getEntityCacheKey,
   getLinkCacheKey,
   getUserCacheKey,
+  getEffectiveGroupsCacheKey,
   getVersionedTypesListCacheKey,
+  getVersionedEffectiveGroupsCacheKey,
   invalidateTypeCache,
   invalidateTypesListCache,
   invalidateEntityCache,
   invalidateLinkCache,
   invalidateUserCache,
+  invalidateEffectiveGroupsCache,
+  invalidateAllEffectiveGroupsCache,
   getOrSet,
   CACHE_TTL,
   CACHE_PREFIX,
@@ -114,6 +118,11 @@ describe('Cache Utility', () => {
     it('should generate correct user cache key', () => {
       const key = getUserCacheKey('user-001');
       expect(key).toBe('cache:user:user-001');
+    });
+
+    it('should generate correct effective groups cache key', () => {
+      const key = getEffectiveGroupsCacheKey('user-001');
+      expect(key).toBe('cache:effective-groups:user-001');
     });
   });
 
@@ -274,6 +283,48 @@ describe('Cache Utility', () => {
       const cached = await getCache(kv, cacheKey);
       expect(cached).toBeNull();
     });
+
+    it('should invalidate effective groups cache for a specific user', async () => {
+      const userId = 'user-123';
+      const cacheKey = getEffectiveGroupsCacheKey(userId);
+
+      await setCache(kv, cacheKey, { groups: ['group-1', 'group-2'] });
+
+      await invalidateEffectiveGroupsCache(kv, userId);
+
+      const cached = await getCache(kv, cacheKey);
+      expect(cached).toBeNull();
+    });
+
+    it('should invalidate all effective groups cache by incrementing version', async () => {
+      // Get initial version
+      const version1 = await kv.get('cache:effective-groups:version');
+      expect(version1).toBeNull();
+
+      await invalidateAllEffectiveGroupsCache(kv);
+
+      const version2 = await kv.get('cache:effective-groups:version');
+      expect(version2).toBe('1');
+
+      await invalidateAllEffectiveGroupsCache(kv);
+
+      const version3 = await kv.get('cache:effective-groups:version');
+      expect(version3).toBe('2');
+    });
+
+    it('should generate versioned effective groups cache key', async () => {
+      const userId = 'user-123';
+
+      // Initial version
+      const key1 = await getVersionedEffectiveGroupsCacheKey(kv, userId);
+      expect(key1).toContain('v0');
+      expect(key1).toContain(userId);
+
+      // After invalidation
+      await invalidateAllEffectiveGroupsCache(kv);
+      const key2 = await getVersionedEffectiveGroupsCacheKey(kv, userId);
+      expect(key2).toContain('v1');
+    });
   });
 
   describe('getOrSet (Cache-Aside Pattern)', () => {
@@ -383,6 +434,7 @@ describe('Cache Utility', () => {
       expect(CACHE_TTL.ENTITY).toBe(60); // 1 minute
       expect(CACHE_TTL.LINK).toBe(60); // 1 minute
       expect(CACHE_TTL.USER).toBe(120); // 2 minutes
+      expect(CACHE_TTL.EFFECTIVE_GROUPS).toBe(300); // 5 minutes (as per spec)
       expect(CACHE_TTL.SHORT).toBe(30); // 30 seconds
       expect(CACHE_TTL.DEFAULT).toBe(60); // 1 minute
     });
@@ -395,6 +447,7 @@ describe('Cache Utility', () => {
       expect(CACHE_PREFIX.ENTITY).toBe('cache:entity:');
       expect(CACHE_PREFIX.LINK).toBe('cache:link:');
       expect(CACHE_PREFIX.USER).toBe('cache:user:');
+      expect(CACHE_PREFIX.EFFECTIVE_GROUPS).toBe('cache:effective-groups:');
     });
   });
 

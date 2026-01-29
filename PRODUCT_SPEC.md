@@ -156,7 +156,7 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
 - Index on `entities.created_by` and `links.created_by` for user queries
 - Index on `entities.created_at` and `links.created_at` for time-based queries
 
-### 🟦 Authorization Indexes
+### ✅ Authorization Indexes
 
 - Index on `group_members(member_type, member_id)` for reverse membership lookups
 - Index on `acl_entries(principal_type, principal_id)` for finding ACLs that grant access to a principal
@@ -249,14 +249,14 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
 
 ### Group Management
 
-#### 🟦 Group Hierarchy
+#### ✅ Group Hierarchy
 
 - Groups contain members which can be users or other groups
 - Recursive membership resolution: if User A is in Group X, and Group X is in Group Y, then User A is effectively a member of Group Y
 - Cycle detection prevents circular group membership
 - Maximum nesting depth of 10 levels to prevent performance issues
 
-#### 🟦 Effective Membership Resolution
+#### ✅ Effective Membership Resolution
 
 - `getEffectiveGroups(userId)` returns all groups a user belongs to (directly or transitively)
 - Results are cached in KV with TTL of 5 minutes

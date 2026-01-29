@@ -16,6 +16,12 @@ import {
   applyFieldSelectionToArray,
   USER_ALLOWED_FIELDS,
 } from '../utils/field-selection.js';
+import {
+  getCache,
+  setCache,
+  getVersionedEffectiveGroupsCacheKey,
+  CACHE_TTL,
+} from '../utils/cache.js';
 
 type Bindings = {
   DB: D1Database;
@@ -603,9 +609,24 @@ async function getParentGroups(
 }
 
 /**
+ * Cached result type for effective groups
+ */
+interface CachedEffectiveGroupsResult {
+  user_id: string;
+  groups: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    paths: string[][];
+  }>;
+  count: number;
+}
+
+/**
  * GET /api/users/{id}/effective-groups
  *
  * List all groups a user belongs to (directly or through nested group membership)
+ * Results are cached in KV with TTL of 5 minutes
  */
 usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
   const logger = getLogger(c);
@@ -620,6 +641,19 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
       return c.json(response.notFound('User'), 404);
     }
 
+    // Try to get from cache first using versioned key
+    const cacheKey = await getVersionedEffectiveGroupsCacheKey(c.env.KV, userId);
+    const cachedResult = await getCache<CachedEffectiveGroupsResult>(c.env.KV, cacheKey);
+
+    if (cachedResult) {
+      logger.info('User effective groups retrieved from cache', {
+        userId,
+        count: cachedResult.count,
+      });
+      return c.json(response.success(cachedResult));
+    }
+
+    // Cache miss: compute effective groups
     const groups = await getEffectiveGroups(c.env.DB, userId);
 
     // Deduplicate groups (might appear through multiple paths)
@@ -647,15 +681,20 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
       }
     }
 
-    logger.info('User effective groups retrieved', { userId, count: uniqueGroups.size });
+    const result: CachedEffectiveGroupsResult = {
+      user_id: userId,
+      groups: Array.from(uniqueGroups.values()),
+      count: uniqueGroups.size,
+    };
 
-    return c.json(
-      response.success({
-        user_id: userId,
-        groups: Array.from(uniqueGroups.values()),
-        count: uniqueGroups.size,
-      })
-    );
+    // Cache the result (don't await to avoid blocking the response)
+    setCache(c.env.KV, cacheKey, result, CACHE_TTL.EFFECTIVE_GROUPS).catch(err => {
+      logger.warn('Failed to cache effective groups', { userId, error: String(err) });
+    });
+
+    logger.info('User effective groups retrieved and cached', { userId, count: result.count });
+
+    return c.json(response.success(result));
   } catch (error) {
     logger.error('Error retrieving user effective groups', error as Error, { userId });
     return c.json(

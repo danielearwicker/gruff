@@ -19,6 +19,7 @@ import {
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { applyFieldSelection, applyFieldSelectionToArray } from '../utils/field-selection.js';
+import { invalidateAllEffectiveGroupsCache } from '../utils/cache.js';
 
 type Bindings = {
   DB: D1Database;
@@ -604,6 +605,9 @@ groupsRouter.post('/:id/members', requireAuth(), validateJson(addGroupMemberSche
       .bind(groupId, validated.member_type, validated.member_id, now, currentUser.user_id)
       .run();
 
+    // Invalidate effective groups cache since membership changed
+    await invalidateAllEffectiveGroupsCache(c.env.KV);
+
     logger.info('Member added to group', {
       groupId,
       memberType: validated.member_type,
@@ -674,6 +678,9 @@ groupsRouter.delete('/:id/members/:memberType/:memberId', requireAuth(), async c
     )
       .bind(groupId, memberType, memberId)
       .run();
+
+    // Invalidate effective groups cache since membership changed
+    await invalidateAllEffectiveGroupsCache(c.env.KV);
 
     logger.info('Member removed from group', { groupId, memberType, memberId });
 
