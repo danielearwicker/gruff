@@ -1031,7 +1031,7 @@ Each entity in the list shows:
 
 - Form for creating/editing group name and description
 
-### 🟦 ACL Editor
+### ✅ ACL Editor
 
 The entity and link detail views include an ACL section for managing access control.
 

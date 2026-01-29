@@ -13,6 +13,8 @@ import {
   invalidateSession,
 } from '../utils/session.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
+import { getEntityAclId, getLinkAclId, getEnrichedAclEntries } from '../utils/acl.js';
+import type { EnrichedAclEntry } from '../schemas/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -1613,6 +1615,16 @@ ui.get('/entities/:id', async c => {
         created_by_email: string;
       }>();
 
+    // Fetch ACL data for the entity (only for latest version)
+    let aclEntries: EnrichedAclEntry[] = [];
+    let aclId: number | null = null;
+    if (entity.is_latest) {
+      aclId = await getEntityAclId(c.env.DB, entity.id);
+      if (aclId !== null) {
+        aclEntries = await getEnrichedAclEntries(c.env.DB, aclId);
+      }
+    }
+
     // Build entity info section
     const entityInfoSection = `
       <div class="card detail-card">
@@ -1653,6 +1665,346 @@ ui.get('/entities/:id', async c => {
         <pre><code>${escapeHtml(JSON.stringify(props, null, 2))}</code></pre>
       </div>
     `;
+
+    // Build ACL section (only for latest version)
+    const aclSection = entity.is_latest
+      ? `
+      <div class="card" id="acl-section">
+        <h3>Access Control</h3>
+        ${
+          aclId === null
+            ? `
+          <p class="muted">This entity is <strong>public</strong> - accessible to all authenticated users.</p>
+        `
+            : `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Principal</th>
+                <th>Type</th>
+                <th>Permission</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${aclEntries
+                .map(
+                  entry => `
+                <tr data-principal-type="${escapeHtml(entry.principal_type)}" data-principal-id="${escapeHtml(entry.principal_id)}" data-permission="${escapeHtml(entry.permission)}">
+                  <td>
+                    ${entry.principal_type === 'user' ? `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span>${entry.principal_email ? ` <span class="muted small">(${escapeHtml(entry.principal_email)})</span>` : ''}` : `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span> <span class="muted small">(group)</span>`}
+                  </td>
+                  <td><span class="badge ${entry.principal_type === 'user' ? '' : 'muted'}">${escapeHtml(entry.principal_type)}</span></td>
+                  <td><span class="badge ${entry.permission === 'write' ? 'success' : ''}">${escapeHtml(entry.permission)}</span></td>
+                  <td>
+                    <button class="button small danger" onclick="removeAclEntry('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}')">Remove</button>
+                  </td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `
+        }
+
+        <div class="acl-form" style="margin-top: 1rem;">
+          <h4>Add Permission</h4>
+          <form id="add-acl-form" onsubmit="addAclEntry(event)" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end;">
+            <div style="flex: 0 0 auto;">
+              <label for="principal-type" class="small">Type</label>
+              <select id="principal-type" name="principal_type" required onchange="updatePrincipalSearch()">
+                <option value="user">User</option>
+                <option value="group">Group</option>
+              </select>
+            </div>
+            <div style="flex: 1 1 200px; position: relative;">
+              <label for="principal-search" class="small">Principal</label>
+              <input type="text" id="principal-search" placeholder="Search users or groups..." autocomplete="off" required />
+              <input type="hidden" id="principal-id" name="principal_id" required />
+              <div id="principal-suggestions" class="autocomplete-dropdown" style="display: none;"></div>
+            </div>
+            <div style="flex: 0 0 auto;">
+              <label for="permission" class="small">Permission</label>
+              <select id="permission" name="permission" required>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+              </select>
+            </div>
+            <div style="flex: 0 0 auto;">
+              <button type="submit" class="button">Add</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="button-group" style="margin-top: 1rem;">
+          ${aclId !== null ? '<button class="button secondary" onclick="makePublic()">Make Public</button>' : ''}
+          ${aclId === null ? '<button class="button secondary" onclick="makePrivate()">Make Private (Owner Only)</button>' : ''}
+        </div>
+
+        <style>
+          .acl-form label {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: var(--color-secondary);
+          }
+          .acl-form select, .acl-form input[type="text"] {
+            padding: 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            background-color: var(--color-bg);
+            color: var(--color-fg);
+          }
+          .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          }
+          .autocomplete-item {
+            padding: 0.5rem;
+            cursor: pointer;
+          }
+          .autocomplete-item:hover {
+            background-color: var(--color-muted);
+          }
+          .autocomplete-item .principal-name {
+            font-weight: 500;
+          }
+          .autocomplete-item .principal-email {
+            color: var(--color-secondary);
+            font-size: 0.875rem;
+          }
+        </style>
+
+        <script>
+          const entityId = '${escapeHtml(entity.id)}';
+          let currentAclEntries = ${JSON.stringify(aclEntries.map(e => ({ principal_type: e.principal_type, principal_id: e.principal_id, permission: e.permission })))};
+          let searchTimeout = null;
+
+          function updatePrincipalSearch() {
+            document.getElementById('principal-search').value = '';
+            document.getElementById('principal-id').value = '';
+            document.getElementById('principal-suggestions').style.display = 'none';
+          }
+
+          document.getElementById('principal-search').addEventListener('input', function(e) {
+            const query = e.target.value;
+            const principalType = document.getElementById('principal-type').value;
+
+            if (query.length < 2) {
+              document.getElementById('principal-suggestions').style.display = 'none';
+              return;
+            }
+
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => searchPrincipals(query, principalType), 300);
+          });
+
+          async function searchPrincipals(query, type) {
+            const suggestionsDiv = document.getElementById('principal-suggestions');
+            try {
+              const endpoint = type === 'user' ? '/api/users' : '/api/groups';
+              const response = await fetch(endpoint);
+              const result = await response.json();
+
+              if (!result.data) {
+                suggestionsDiv.style.display = 'none';
+                return;
+              }
+
+              const items = type === 'user' ? result.data : result.data.groups || result.data;
+              const filtered = items.filter(item => {
+                const searchLower = query.toLowerCase();
+                if (type === 'user') {
+                  return (item.email && item.email.toLowerCase().includes(searchLower)) ||
+                         (item.display_name && item.display_name.toLowerCase().includes(searchLower));
+                } else {
+                  return item.name && item.name.toLowerCase().includes(searchLower);
+                }
+              }).slice(0, 10);
+
+              if (filtered.length === 0) {
+                suggestionsDiv.innerHTML = '<div class="autocomplete-item muted">No results found</div>';
+                suggestionsDiv.style.display = 'block';
+                return;
+              }
+
+              suggestionsDiv.innerHTML = filtered.map(item => {
+                if (type === 'user') {
+                  return \`<div class="autocomplete-item" onclick="selectPrincipal('\${item.id}', '\${escapeHtmlJs(item.display_name || item.email)}')">
+                    <div class="principal-name">\${escapeHtmlJs(item.display_name || item.email)}</div>
+                    \${item.display_name ? \`<div class="principal-email">\${escapeHtmlJs(item.email)}</div>\` : ''}
+                  </div>\`;
+                } else {
+                  return \`<div class="autocomplete-item" onclick="selectPrincipal('\${item.id}', '\${escapeHtmlJs(item.name)}')">
+                    <div class="principal-name">\${escapeHtmlJs(item.name)}</div>
+                    \${item.description ? \`<div class="principal-email">\${escapeHtmlJs(item.description)}</div>\` : ''}
+                  </div>\`;
+                }
+              }).join('');
+              suggestionsDiv.style.display = 'block';
+            } catch (err) {
+              console.error('Error searching principals:', err);
+              suggestionsDiv.style.display = 'none';
+            }
+          }
+
+          function escapeHtmlJs(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+
+          function selectPrincipal(id, name) {
+            document.getElementById('principal-id').value = id;
+            document.getElementById('principal-search').value = name;
+            document.getElementById('principal-suggestions').style.display = 'none';
+          }
+
+          // Close suggestions when clicking outside
+          document.addEventListener('click', function(e) {
+            if (!e.target.closest('#add-acl-form')) {
+              document.getElementById('principal-suggestions').style.display = 'none';
+            }
+          });
+
+          async function addAclEntry(event) {
+            event.preventDefault();
+            const principalType = document.getElementById('principal-type').value;
+            const principalId = document.getElementById('principal-id').value;
+            const permission = document.getElementById('permission').value;
+
+            if (!principalId) {
+              alert('Please select a principal from the search results.');
+              return;
+            }
+
+            // Check if entry already exists
+            const exists = currentAclEntries.some(e =>
+              e.principal_type === principalType &&
+              e.principal_id === principalId &&
+              e.permission === permission
+            );
+
+            if (exists) {
+              alert('This permission already exists.');
+              return;
+            }
+
+            // Add new entry to current entries
+            const newEntries = [...currentAclEntries, { principal_type: principalType, principal_id: principalId, permission: permission }];
+
+            try {
+              const response = await fetch('/api/entities/' + entityId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to add permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function removeAclEntry(principalType, principalId, permission) {
+            if (!confirm('Are you sure you want to remove this permission?')) return;
+
+            const newEntries = currentAclEntries.filter(e =>
+              !(e.principal_type === principalType && e.principal_id === principalId && e.permission === permission)
+            );
+
+            try {
+              const response = await fetch('/api/entities/' + entityId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to remove permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function makePublic() {
+            if (!confirm('Are you sure you want to make this entity public? All authenticated users will be able to access it.')) return;
+
+            try {
+              const response = await fetch('/api/entities/' + entityId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: [] })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to make entity public'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function makePrivate() {
+            // Get the current user's ID from the page context or fetch it
+            try {
+              const meResponse = await fetch('/api/auth/me');
+              if (!meResponse.ok) {
+                alert('Please log in to set permissions.');
+                return;
+              }
+              const meResult = await meResponse.json();
+              const userId = meResult.data?.id;
+
+              if (!userId) {
+                alert('Could not determine current user.');
+                return;
+              }
+
+              if (!confirm('Are you sure you want to make this entity private? Only you will have access.')) return;
+
+              const response = await fetch('/api/entities/' + entityId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }]
+                })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to make entity private'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+        </script>
+      </div>
+    `
+      : '';
 
     // Build outbound links section
     const outboundLinksSection = `
@@ -1892,6 +2244,7 @@ ui.get('/entities/:id', async c => {
       ${oldVersionBanner}
       ${entityInfoSection}
       ${propertiesSection}
+      ${aclSection}
       ${outboundLinksSection}
       ${inboundLinksSection}
       ${versionHistorySection}
@@ -4170,6 +4523,16 @@ ui.get('/links/:id', async c => {
         created_by_email: string;
       }>();
 
+    // Fetch ACL data for the link (only for latest version)
+    let linkAclEntries: EnrichedAclEntry[] = [];
+    let linkAclId: number | null = null;
+    if (link.is_latest) {
+      linkAclId = await getLinkAclId(c.env.DB, link.id);
+      if (linkAclId !== null) {
+        linkAclEntries = await getEnrichedAclEntries(c.env.DB, linkAclId);
+      }
+    }
+
     // Helper to get entity display name
     const getEntityDisplayName = (entityProps: string | undefined, entityId: string) => {
       if (!entityProps) return entityId.substring(0, 8) + '...';
@@ -4353,6 +4716,346 @@ ui.get('/links/:id', async c => {
       </div>
     `;
 
+    // Build ACL section (only for latest version)
+    const linkAclSection = link.is_latest
+      ? `
+      <div class="card" id="link-acl-section">
+        <h3>Access Control</h3>
+        ${
+          linkAclId === null
+            ? `
+          <p class="muted">This link is <strong>public</strong> - accessible to all authenticated users.</p>
+        `
+            : `
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Principal</th>
+                <th>Type</th>
+                <th>Permission</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${linkAclEntries
+                .map(
+                  entry => `
+                <tr data-principal-type="${escapeHtml(entry.principal_type)}" data-principal-id="${escapeHtml(entry.principal_id)}" data-permission="${escapeHtml(entry.permission)}">
+                  <td>
+                    ${entry.principal_type === 'user' ? `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span>${entry.principal_email ? ` <span class="muted small">(${escapeHtml(entry.principal_email)})</span>` : ''}` : `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span> <span class="muted small">(group)</span>`}
+                  </td>
+                  <td><span class="badge ${entry.principal_type === 'user' ? '' : 'muted'}">${escapeHtml(entry.principal_type)}</span></td>
+                  <td><span class="badge ${entry.permission === 'write' ? 'success' : ''}">${escapeHtml(entry.permission)}</span></td>
+                  <td>
+                    <button class="button small danger" onclick="removeLinkAclEntry('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}')">Remove</button>
+                  </td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        `
+        }
+
+        <div class="acl-form" style="margin-top: 1rem;">
+          <h4>Add Permission</h4>
+          <form id="add-link-acl-form" onsubmit="addLinkAclEntry(event)" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end;">
+            <div style="flex: 0 0 auto;">
+              <label for="link-principal-type" class="small">Type</label>
+              <select id="link-principal-type" name="principal_type" required onchange="updateLinkPrincipalSearch()">
+                <option value="user">User</option>
+                <option value="group">Group</option>
+              </select>
+            </div>
+            <div style="flex: 1 1 200px; position: relative;">
+              <label for="link-principal-search" class="small">Principal</label>
+              <input type="text" id="link-principal-search" placeholder="Search users or groups..." autocomplete="off" required />
+              <input type="hidden" id="link-principal-id" name="principal_id" required />
+              <div id="link-principal-suggestions" class="autocomplete-dropdown" style="display: none;"></div>
+            </div>
+            <div style="flex: 0 0 auto;">
+              <label for="link-permission" class="small">Permission</label>
+              <select id="link-permission" name="permission" required>
+                <option value="read">Read</option>
+                <option value="write">Write</option>
+              </select>
+            </div>
+            <div style="flex: 0 0 auto;">
+              <button type="submit" class="button">Add</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="button-group" style="margin-top: 1rem;">
+          ${linkAclId !== null ? '<button class="button secondary" onclick="makeLinkPublic()">Make Public</button>' : ''}
+          ${linkAclId === null ? '<button class="button secondary" onclick="makeLinkPrivate()">Make Private (Owner Only)</button>' : ''}
+        </div>
+
+        <style>
+          .acl-form label {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: var(--color-secondary);
+          }
+          .acl-form select, .acl-form input[type="text"] {
+            padding: 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            background-color: var(--color-bg);
+            color: var(--color-fg);
+          }
+          .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          }
+          .autocomplete-item {
+            padding: 0.5rem;
+            cursor: pointer;
+          }
+          .autocomplete-item:hover {
+            background-color: var(--color-muted);
+          }
+          .autocomplete-item .principal-name {
+            font-weight: 500;
+          }
+          .autocomplete-item .principal-email {
+            color: var(--color-secondary);
+            font-size: 0.875rem;
+          }
+        </style>
+
+        <script>
+          const linkId = '${escapeHtml(link.id)}';
+          let currentLinkAclEntries = ${JSON.stringify(linkAclEntries.map(e => ({ principal_type: e.principal_type, principal_id: e.principal_id, permission: e.permission })))};
+          let linkSearchTimeout = null;
+
+          function updateLinkPrincipalSearch() {
+            document.getElementById('link-principal-search').value = '';
+            document.getElementById('link-principal-id').value = '';
+            document.getElementById('link-principal-suggestions').style.display = 'none';
+          }
+
+          document.getElementById('link-principal-search').addEventListener('input', function(e) {
+            const query = e.target.value;
+            const principalType = document.getElementById('link-principal-type').value;
+
+            if (query.length < 2) {
+              document.getElementById('link-principal-suggestions').style.display = 'none';
+              return;
+            }
+
+            clearTimeout(linkSearchTimeout);
+            linkSearchTimeout = setTimeout(() => searchLinkPrincipals(query, principalType), 300);
+          });
+
+          async function searchLinkPrincipals(query, type) {
+            const suggestionsDiv = document.getElementById('link-principal-suggestions');
+            try {
+              const endpoint = type === 'user' ? '/api/users' : '/api/groups';
+              const response = await fetch(endpoint);
+              const result = await response.json();
+
+              if (!result.data) {
+                suggestionsDiv.style.display = 'none';
+                return;
+              }
+
+              const items = type === 'user' ? result.data : result.data.groups || result.data;
+              const filtered = items.filter(item => {
+                const searchLower = query.toLowerCase();
+                if (type === 'user') {
+                  return (item.email && item.email.toLowerCase().includes(searchLower)) ||
+                         (item.display_name && item.display_name.toLowerCase().includes(searchLower));
+                } else {
+                  return item.name && item.name.toLowerCase().includes(searchLower);
+                }
+              }).slice(0, 10);
+
+              if (filtered.length === 0) {
+                suggestionsDiv.innerHTML = '<div class="autocomplete-item muted">No results found</div>';
+                suggestionsDiv.style.display = 'block';
+                return;
+              }
+
+              suggestionsDiv.innerHTML = filtered.map(item => {
+                if (type === 'user') {
+                  return \`<div class="autocomplete-item" onclick="selectLinkPrincipal('\${item.id}', '\${escapeHtmlJsLink(item.display_name || item.email)}')">
+                    <div class="principal-name">\${escapeHtmlJsLink(item.display_name || item.email)}</div>
+                    \${item.display_name ? \`<div class="principal-email">\${escapeHtmlJsLink(item.email)}</div>\` : ''}
+                  </div>\`;
+                } else {
+                  return \`<div class="autocomplete-item" onclick="selectLinkPrincipal('\${item.id}', '\${escapeHtmlJsLink(item.name)}')">
+                    <div class="principal-name">\${escapeHtmlJsLink(item.name)}</div>
+                    \${item.description ? \`<div class="principal-email">\${escapeHtmlJsLink(item.description)}</div>\` : ''}
+                  </div>\`;
+                }
+              }).join('');
+              suggestionsDiv.style.display = 'block';
+            } catch (err) {
+              console.error('Error searching principals:', err);
+              suggestionsDiv.style.display = 'none';
+            }
+          }
+
+          function escapeHtmlJsLink(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          }
+
+          function selectLinkPrincipal(id, name) {
+            document.getElementById('link-principal-id').value = id;
+            document.getElementById('link-principal-search').value = name;
+            document.getElementById('link-principal-suggestions').style.display = 'none';
+          }
+
+          // Close suggestions when clicking outside
+          document.addEventListener('click', function(e) {
+            if (!e.target.closest('#add-link-acl-form')) {
+              document.getElementById('link-principal-suggestions').style.display = 'none';
+            }
+          });
+
+          async function addLinkAclEntry(event) {
+            event.preventDefault();
+            const principalType = document.getElementById('link-principal-type').value;
+            const principalId = document.getElementById('link-principal-id').value;
+            const permission = document.getElementById('link-permission').value;
+
+            if (!principalId) {
+              alert('Please select a principal from the search results.');
+              return;
+            }
+
+            // Check if entry already exists
+            const exists = currentLinkAclEntries.some(e =>
+              e.principal_type === principalType &&
+              e.principal_id === principalId &&
+              e.permission === permission
+            );
+
+            if (exists) {
+              alert('This permission already exists.');
+              return;
+            }
+
+            // Add new entry to current entries
+            const newEntries = [...currentLinkAclEntries, { principal_type: principalType, principal_id: principalId, permission: permission }];
+
+            try {
+              const response = await fetch('/api/links/' + linkId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to add permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function removeLinkAclEntry(principalType, principalId, permission) {
+            if (!confirm('Are you sure you want to remove this permission?')) return;
+
+            const newEntries = currentLinkAclEntries.filter(e =>
+              !(e.principal_type === principalType && e.principal_id === principalId && e.permission === permission)
+            );
+
+            try {
+              const response = await fetch('/api/links/' + linkId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to remove permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function makeLinkPublic() {
+            if (!confirm('Are you sure you want to make this link public? All authenticated users will be able to access it.')) return;
+
+            try {
+              const response = await fetch('/api/links/' + linkId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: [] })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to make link public'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function makeLinkPrivate() {
+            // Get the current user's ID from the page context or fetch it
+            try {
+              const meResponse = await fetch('/api/auth/me');
+              if (!meResponse.ok) {
+                alert('Please log in to set permissions.');
+                return;
+              }
+              const meResult = await meResponse.json();
+              const userId = meResult.data?.id;
+
+              if (!userId) {
+                alert('Could not determine current user.');
+                return;
+              }
+
+              if (!confirm('Are you sure you want to make this link private? Only you will have access.')) return;
+
+              const response = await fetch('/api/links/' + linkId + '/acl', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }]
+                })
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to make link private'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+        </script>
+      </div>
+    `
+      : '';
+
     // Build version history section
     const versionHistorySection = `
       <div class="card">
@@ -4451,6 +5154,7 @@ ui.get('/links/:id', async c => {
       ${visualRepresentation}
       ${linkInfoSection}
       ${propertiesSection}
+      ${linkAclSection}
       ${versionHistorySection}
       ${actionsSection}
 

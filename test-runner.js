@@ -13120,6 +13120,193 @@ async function testAclValidationSchema() {
 }
 
 // ============================================================================
+// UI ACL Editor Tests
+// ============================================================================
+
+async function testUIEntityAclSection() {
+  logTest('UI - Entity Detail Page ACL Section');
+
+  // Create test user and entity
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-acl-entity-${Date.now()}@test.com`,
+    password: 'test123456',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `UIACLTestType-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'ACL Test Entity' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Fetch the entity detail page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Access Control'), 'Should have Access Control section heading');
+  assert(html.includes('public'), 'Should show entity is public by default');
+  assert(html.includes('Add Permission'), 'Should have Add Permission form');
+  assert(html.includes('Make Private'), 'Should have Make Private button for public entity');
+  assert(html.includes('principal-type'), 'Should have principal type selector');
+  assert(html.includes('principal-search'), 'Should have principal search input');
+  assert(html.includes('permission'), 'Should have permission selector');
+}
+
+async function testUIEntityAclSectionWithPermissions() {
+  logTest('UI - Entity Detail Page ACL Section with Permissions');
+
+  // Create test user and entity
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-acl-perm-${Date.now()}@test.com`,
+    password: 'test123456',
+  });
+  const token = authResponse.data.data.access_token;
+  const userId = authResponse.data.data.user.id;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `UIACLPermTestType-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'ACL Perm Test Entity' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Set ACL on the entity
+  await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  // Fetch the entity detail page - need to get the latest version after ACL update
+  const latestEntity = await makeRequestWithHeaders('GET', `/api/entities/${entityId}`, headers);
+  const latestId = latestEntity.data.data.id;
+
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${latestId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Access Control'), 'Should have Access Control section heading');
+  assert(html.includes('Principal'), 'Should have Principal table header');
+  assert(html.includes('Permission'), 'Should have Permission table header');
+  assert(html.includes('write'), 'Should show write permission');
+  assert(html.includes('Make Public'), 'Should have Make Public button for entity with ACL');
+  assert(html.includes('Remove'), 'Should have Remove button for each permission');
+}
+
+async function testUILinkAclSection() {
+  logTest('UI - Link Detail Page ACL Section');
+
+  // Create test user and entities
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-link-acl-${Date.now()}@test.com`,
+    password: 'test123456',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create entity and link types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `UILinkACLEntityType-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `UILinkACLLinkType-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create source and target entities
+  const sourceResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Source Entity' },
+  });
+  const sourceId = sourceResponse.data.data.id;
+
+  const targetResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Target Entity' },
+  });
+  const targetId = targetResponse.data.data.id;
+
+  // Create a link
+  const linkResponse = await makeRequestWithHeaders('POST', '/api/links', headers, {
+    type_id: linkTypeId,
+    source_entity_id: sourceId,
+    target_entity_id: targetId,
+    properties: { weight: 1 },
+  });
+  const linkId = linkResponse.data.data.id;
+
+  // Fetch the link detail page
+  const response = await fetch(`${DEV_SERVER_URL}/ui/links/${linkId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(html.includes('Access Control'), 'Should have Access Control section heading');
+  assert(html.includes('public'), 'Should show link is public by default');
+  assert(html.includes('Add Permission'), 'Should have Add Permission form');
+  assert(html.includes('Make Private'), 'Should have Make Private button for public link');
+}
+
+async function testUIEntityAclSectionOldVersion() {
+  logTest('UI - Entity Detail Page ACL Section - Hidden on Old Version');
+
+  // Create test user and entity
+  const authResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `ui-acl-old-${Date.now()}@test.com`,
+    password: 'test123456',
+  });
+  const token = authResponse.data.data.access_token;
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `UIACLOldTestType-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Version 1' },
+  });
+  const entityId = entityResponse.data.data.id;
+
+  // Update the entity to create version 2
+  await makeRequestWithHeaders('PUT', `/api/entities/${entityId}`, headers, {
+    properties: { name: 'Version 2' },
+  });
+
+  // Fetch the old version (version 1)
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
+  const html = await response.text();
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  // Old version should not have ACL section (only shown on latest)
+  assert(!html.includes('id="acl-section"'), 'Should NOT have ACL section on old version');
+  assert(html.includes('Viewing old version'), 'Should show old version banner');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -13630,6 +13817,12 @@ async function runTests() {
     testLinkAclNotFound,
     testLinkAclOnDeletedLink,
     testAclValidationSchema,
+
+    // UI ACL Editor tests
+    testUIEntityAclSection,
+    testUIEntityAclSectionWithPermissions,
+    testUILinkAclSection,
+    testUIEntityAclSectionOldVersion,
   ];
 
   for (const test of tests) {
