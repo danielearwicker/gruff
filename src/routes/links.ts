@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   createLinkSchema,
   updateLinkSchema,
@@ -26,11 +27,13 @@ import {
   LINK_ALLOWED_FIELDS,
 } from '../utils/field-selection.js';
 import {
-  getLinkAclId,
   getEnrichedAclEntries,
   getOrCreateAcl,
   setLinkAcl,
   validateAclPrincipals,
+  buildAclFilterClause,
+  filterByAclPermission,
+  hasPermissionByAclId,
 } from '../utils/acl.js';
 
 type Bindings = {
@@ -215,16 +218,39 @@ links.post('/', validateJson(createLinkSchema), async c => {
 /**
  * GET /api/links
  * List links with optional filtering and cursor-based pagination
+ *
+ * ACL filtering is applied when authenticated:
+ * - Authenticated users see links they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-links.get('/', validateQuery(linkQuerySchema), async c => {
+links.get('/', optionalAuth(), validateQuery(linkQuerySchema), async c => {
   const query = c.get('validated_query') as LinkQuery;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   try {
     let sql = 'SELECT * FROM links WHERE is_latest = 1';
     const bindings: unknown[] = [];
 
-    // Apply filters
+    // Apply ACL filtering based on authentication status
+    let aclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      aclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read');
+
+      if (aclFilter.useFilter) {
+        sql += ` AND ${aclFilter.whereClause}`;
+        bindings.push(...aclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      sql += ' AND acl_id IS NULL';
+    }
+
+    // Apply other filters
     if (!query.include_deleted) {
       sql += ' AND is_deleted = 0';
     }
@@ -304,18 +330,29 @@ links.get('/', validateQuery(linkQuerySchema), async c => {
     sql += ' ORDER BY created_at DESC, id DESC';
 
     // Fetch limit + 1 to check if there are more results
+    // If using per-row ACL filtering, fetch more to account for filtered items
     const limit = query.limit || 20;
+    const fetchLimit = aclFilter && !aclFilter.useFilter ? (limit + 1) * 3 : limit + 1;
     sql += ' LIMIT ?';
-    bindings.push(limit + 1);
+    bindings.push(fetchLimit);
 
     const { results } = await db
       .prepare(sql)
       .bind(...bindings)
       .all();
 
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredResults = results;
+    if (aclFilter && !aclFilter.useFilter) {
+      filteredResults = filterByAclPermission(
+        results as Array<{ acl_id?: number | null }>,
+        aclFilter.accessibleAclIds
+      );
+    }
+
     // Check if there are more results
-    const hasMore = results.length > limit;
-    const items = hasMore ? results.slice(0, limit) : results;
+    const hasMore = filteredResults.length > limit;
+    const items = hasMore ? filteredResults.slice(0, limit) : filteredResults;
 
     // Parse properties for each link
     const linksData = items.map(link => ({
@@ -369,15 +406,42 @@ links.get('/', validateQuery(linkQuerySchema), async c => {
  * Caching: Individual link lookups are cached for fast repeated access.
  * Cache is invalidated when link is updated, deleted, or restored.
  * Note: Field selection is applied after cache retrieval for consistency.
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the link
+ * - Links with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access links with NULL acl_id
  */
-links.get('/:id', async c => {
+links.get('/:id', optionalAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
   const fieldsParam = c.req.query('fields');
+  const user = c.get('user');
 
   try {
-    // Try to get from cache first
+    const link = await findLatestVersion(db, id);
+
+    if (!link) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check permission
+    const aclId = link.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this link'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public links (NULL acl_id)
+      if (aclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this link'), 403);
+      }
+    }
+
+    // Try to get from cache (only for authenticated users with permission or public links)
     const cacheKey = getLinkCacheKey(id);
     const cached = await getCache<{ data?: Record<string, unknown> }>(kv, cacheKey);
     if (cached) {
@@ -397,12 +461,6 @@ links.get('/:id', async c => {
         return c.json(response.success(fieldSelection.data));
       }
       return c.json(cached);
-    }
-
-    const link = await findLatestVersion(db, id);
-
-    if (!link) {
-      return c.json(response.notFound('Link'), 404);
     }
 
     // Parse properties back to object
@@ -452,13 +510,17 @@ links.get('/:id', async c => {
 /**
  * PUT /api/links/:id
  * Update link (creates new version)
+ *
+ * Requires authentication and write permission on the link.
  */
-links.put('/:id', validateJson(updateLinkSchema), async c => {
+links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateLink;
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -466,6 +528,13 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to update this link'), 403);
     }
 
     // Check if link is soft-deleted
@@ -507,12 +576,12 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
     // First, set current version's is_latest to false
     await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
-    // Then insert new version with new ID
+    // Then insert new version with new ID, preserving acl_id
     await db
       .prepare(
         `
-      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
     `
       )
       .bind(
@@ -524,7 +593,8 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
         newVersion,
         currentVersion.id, // previous_version_id references the previous row's id
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
@@ -540,7 +610,7 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
 
     // Log the update operation
     try {
-      await logLinkOperation(db, c, 'update', newId, systemUserId, {
+      await logLinkOperation(db, c, 'update', newId, userId, {
         previous_version_id: currentVersion.id,
         old_properties: currentVersion.properties
           ? JSON.parse(currentVersion.properties as string)
@@ -557,8 +627,8 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
     // Invalidate cache for both the original ID and the old version ID
     try {
       await Promise.all([
-        invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id as string),
+        invalidateLinkCache(kv, id),
+        invalidateLinkCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -578,12 +648,16 @@ links.put('/:id', validateJson(updateLinkSchema), async c => {
 /**
  * DELETE /api/links/:id
  * Soft delete link (creates new version with is_deleted = true)
+ *
+ * Requires authentication and write permission on the link.
  */
-links.delete('/:id', async c => {
+links.delete('/:id', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -591,6 +665,13 @@ links.delete('/:id', async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to delete this link'), 403);
     }
 
     // Check if already soft-deleted
@@ -604,12 +685,12 @@ links.delete('/:id', async c => {
     // Set current version's is_latest to false
     await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
-    // Insert new version with is_deleted = 1 and new ID
+    // Insert new version with is_deleted = 1 and new ID, preserving acl_id
     await db
       .prepare(
         `
-      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)
+      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
     `
       )
       .bind(
@@ -621,13 +702,14 @@ links.delete('/:id', async c => {
         newVersion,
         currentVersion.id,
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
     // Log the delete operation
     try {
-      await logLinkOperation(db, c, 'delete', newId, systemUserId, {
+      await logLinkOperation(db, c, 'delete', newId, userId, {
         previous_version_id: currentVersion.id,
         type_id: currentVersion.type_id,
         source_entity_id: currentVersion.source_entity_id,
@@ -643,8 +725,8 @@ links.delete('/:id', async c => {
     // Invalidate cache for both the original ID and the old version ID
     try {
       await Promise.all([
-        invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id as string),
+        invalidateLinkCache(kv, id),
+        invalidateLinkCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -664,12 +746,16 @@ links.delete('/:id', async c => {
 /**
  * POST /api/links/:id/restore
  * Restore a soft-deleted link (creates new version with is_deleted = false)
+ *
+ * Requires authentication and write permission on the link.
  */
-links.post('/:id/restore', async c => {
+links.post('/:id/restore', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -677,6 +763,13 @@ links.post('/:id/restore', async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to restore this link'), 403);
     }
 
     // Check if link is not deleted
@@ -690,12 +783,12 @@ links.post('/:id/restore', async c => {
     // Set current version's is_latest to false
     await db.prepare('UPDATE links SET is_latest = 0 WHERE id = ?').bind(currentVersion.id).run();
 
-    // Insert new version with is_deleted = 0 and new ID
+    // Insert new version with is_deleted = 0 and new ID, preserving acl_id
     await db
       .prepare(
         `
-      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
     `
       )
       .bind(
@@ -707,7 +800,8 @@ links.post('/:id/restore', async c => {
         newVersion,
         currentVersion.id,
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
@@ -723,7 +817,7 @@ links.post('/:id/restore', async c => {
 
     // Log the restore operation
     try {
-      await logLinkOperation(db, c, 'restore', newId, systemUserId, {
+      await logLinkOperation(db, c, 'restore', newId, userId, {
         previous_version_id: currentVersion.id,
         type_id: currentVersion.type_id,
         source_entity_id: currentVersion.source_entity_id,
@@ -739,8 +833,8 @@ links.post('/:id/restore', async c => {
     // Invalidate cache for both the original ID and the old version ID
     try {
       await Promise.all([
-        invalidateLinkCache(c.env.KV, id),
-        invalidateLinkCache(c.env.KV, currentVersion.id as string),
+        invalidateLinkCache(kv, id),
+        invalidateLinkCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -1033,10 +1127,15 @@ function calculateDiff(
  * Returns the list of principals (users and groups) that have read or write
  * permission on this link. If the link has no ACL (null acl_id), it means
  * the link is public and accessible to all authenticated users.
+ *
+ * Requires authentication and read permission on the link.
  */
-links.get('/:id/acl', async c => {
+links.get('/:id/acl', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // First, verify the link exists
@@ -1046,8 +1145,12 @@ links.get('/:id/acl', async c => {
       return c.json(response.notFound('Link'), 404);
     }
 
-    // Get the ACL ID for this link
-    const aclId = await getLinkAclId(db, link.id as string);
+    // Check read permission
+    const aclId = link.acl_id as number | null;
+    const canRead = await hasPermissionByAclId(db, kv, userId, aclId, 'read');
+    if (!canRead) {
+      return c.json(response.forbidden('You do not have permission to view this link'), 403);
+    }
 
     // If no ACL, return empty entries (public)
     if (aclId === null) {
@@ -1085,6 +1188,8 @@ links.get('/:id/acl', async c => {
  * - Setting entries creates/reuses a deduplicated ACL
  * - Creates a new version of the link with the updated ACL
  *
+ * Requires authentication and write permission on the link.
+ *
  * ACL request format:
  * {
  *   "entries": [
@@ -1093,13 +1198,13 @@ links.get('/:id/acl', async c => {
  *   ]
  * }
  */
-links.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
+links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as SetAclRequest;
   const db = c.env.DB;
-
-  // For now, we'll use the test user ID. In the future, this comes from auth middleware
-  const systemUserId = 'test-user-001';
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // First, verify the link exists
@@ -1107,6 +1212,13 @@ links.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
 
     if (!link) {
       return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check write permission
+    const currentAclId = link.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, currentAclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to modify this link'), 403);
     }
 
     // Check if link is soft-deleted
@@ -1137,7 +1249,7 @@ links.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
     const aclId = await getOrCreateAcl(db, data.entries);
 
     // Set the ACL on the link (creates new version)
-    await setLinkAcl(db, link.id as string, aclId, systemUserId);
+    await setLinkAcl(db, link.id as string, aclId, userId);
 
     // Get the updated ACL for response
     let responseEntries: unknown[] = [];
@@ -1147,8 +1259,8 @@ links.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
 
     // Invalidate cache
     try {
-      await invalidateLinkCache(c.env.KV, id);
-      await invalidateLinkCache(c.env.KV, link.id as string);
+      await invalidateLinkCache(kv, id);
+      await invalidateLinkCache(kv, link.id as string);
     } catch (cacheError) {
       getLogger(c)
         .child({ module: 'links' })

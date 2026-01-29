@@ -35,6 +35,9 @@ let devServerProcess = null;
 let testsPassed = 0;
 let testsFailed = 0;
 
+// Global auth token for entity/link tests (initialized in runTests)
+let globalAuthToken = null;
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -93,6 +96,37 @@ async function makeRequest(method, path, body = null) {
     data,
     headers: response.headers,
   };
+}
+
+/**
+ * Make an authenticated request using the global auth token.
+ * Used for entity/link modification tests that require authentication.
+ */
+async function makeAuthRequest(method, path, body = null) {
+  if (!globalAuthToken) {
+    throw new Error('Global auth token not initialized. Call initGlobalAuthToken first.');
+  }
+  return makeRequestWithHeaders(method, path, { Authorization: `Bearer ${globalAuthToken}` }, body);
+}
+
+/**
+ * Initialize the global auth token for tests that require authentication.
+ * This creates a test user that can be used across all entity/link tests.
+ */
+async function initGlobalAuthToken() {
+  const uniqueId = Date.now();
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: `test-global-user-${uniqueId}@example.com`,
+    password: 'TestPassword123!',
+    display_name: 'Global Test User',
+  });
+
+  if (registerResponse.status !== 201 || !registerResponse.data?.data?.access_token) {
+    throw new Error('Failed to initialize global auth token: ' + JSON.stringify(registerResponse.data));
+  }
+
+  globalAuthToken = registerResponse.data.data.access_token;
+  logInfo('Global auth token initialized');
 }
 
 async function makeRequestWithHeaders(method, path, customHeaders = {}, body = null) {
@@ -2026,7 +2060,7 @@ async function testUpdateEntity() {
   const entityId = createResponse.data.data.id;
 
   // Update the entity
-  const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const response = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Name', value: 2, newField: 'added' },
   });
 
@@ -2055,7 +2089,7 @@ async function testUpdateEntity() {
 async function testUpdateEntityNotFound() {
   logTest('Entity CRUD - Update Non-existent Entity Returns 404');
 
-  const response = await makeRequest('PUT', '/api/entities/00000000-0000-0000-0000-000000000000', {
+  const response = await makeAuthRequest('PUT', '/api/entities/00000000-0000-0000-0000-000000000000', {
     properties: { name: 'Test' },
   });
 
@@ -2080,7 +2114,7 @@ async function testDeleteEntity() {
   const entityId = createResponse.data.data.id;
 
   // Delete the entity
-  const response = await makeRequest('DELETE', `/api/entities/${entityId}`);
+  const response = await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.success, true, 'Should have success: true');
@@ -2095,7 +2129,7 @@ async function testDeleteEntity() {
 async function testDeleteEntityNotFound() {
   logTest('Entity CRUD - Delete Non-existent Entity Returns 404');
 
-  const response = await makeRequest(
+  const response = await makeAuthRequest(
     'DELETE',
     '/api/entities/00000000-0000-0000-0000-000000000000'
   );
@@ -2120,10 +2154,10 @@ async function testDeleteEntityAlreadyDeleted() {
   });
   const entityId = createResponse.data.data.id;
 
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Try to delete again
-  const response = await makeRequest('DELETE', `/api/entities/${entityId}`);
+  const response = await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   assertEquals(response.status, 409, 'Status code should be 409 Conflict');
   assertEquals(response.data.code, 'ALREADY_DELETED', 'Should have ALREADY_DELETED error code');
@@ -2146,10 +2180,10 @@ async function testRestoreEntity() {
   const entityId = createResponse.data.data.id;
 
   // Delete the entity
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Restore the entity
-  const response = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+  const response = await makeAuthRequest('POST', `/api/entities/${entityId}/restore`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.success, true, 'Should have success: true');
@@ -2185,7 +2219,7 @@ async function testRestoreEntityNotDeleted() {
   const entityId = createResponse.data.data.id;
 
   // Try to restore (not deleted)
-  const response = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+  const response = await makeAuthRequest('POST', `/api/entities/${entityId}/restore`);
 
   assertEquals(response.status, 409, 'Status code should be 409 Conflict');
   assertEquals(response.data.code, 'NOT_DELETED', 'Should have NOT_DELETED error code');
@@ -2194,7 +2228,7 @@ async function testRestoreEntityNotDeleted() {
 async function testRestoreEntityNotFound() {
   logTest('Entity CRUD - Restore Non-existent Entity Returns 404');
 
-  const response = await makeRequest(
+  const response = await makeAuthRequest(
     'POST',
     '/api/entities/00000000-0000-0000-0000-000000000000/restore'
   );
@@ -2219,10 +2253,10 @@ async function testUpdateDeletedEntity() {
   });
   const entityId = createResponse.data.data.id;
 
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Try to update deleted entity
-  const response = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const response = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated' },
   });
 
@@ -2253,7 +2287,7 @@ async function testListEntitiesExcludesDeleted() {
   const entity2Id = entity2.data.data.id;
 
   // Delete second entity
-  await makeRequest('DELETE', `/api/entities/${entity2Id}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entity2Id}`);
 
   // List entities without include_deleted
   const response = await makeRequest('GET', `/api/entities?type_id=${typeId}`);
@@ -2283,7 +2317,7 @@ async function testListEntitiesIncludesDeleted() {
   const entityId = createResponse.data.data.id;
 
   // Delete the entity
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // List entities with include_deleted=true
   const response = await makeRequest('GET', `/api/entities?type_id=${typeId}&include_deleted=true`);
@@ -2326,12 +2360,12 @@ async function testGetEntityVersions() {
   const entityId = createResponse.data.data.id;
 
   // Update the entity to create version 2
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Version 2', count: 2 },
   });
 
   // Update again to create version 3
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Version 3', count: 3 },
   });
 
@@ -2402,11 +2436,11 @@ async function testGetSpecificEntityVersion() {
   const entityId = createResponse.data.data.id;
 
   // Update twice
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Once', value: 200 },
   });
 
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Twice', value: 300 },
   });
 
@@ -2495,7 +2529,7 @@ async function testGetEntityHistory() {
   const entityId = createResponse.data.data.id;
 
   // Update 1: Change name and count, add new field
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: {
       name: 'Updated Name',
       description: 'Original description',
@@ -2505,7 +2539,7 @@ async function testGetEntityHistory() {
   });
 
   // Update 2: Remove description, change status
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: {
       name: 'Updated Name',
       count: 2,
@@ -2581,15 +2615,15 @@ async function testGetVersionsWithDeletedEntity() {
   const entityId = createResponse.data.data.id;
 
   // Update
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated' },
   });
 
   // Delete
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Restore
-  await makeRequest('POST', `/api/entities/${entityId}/restore`);
+  await makeAuthRequest('POST', `/api/entities/${entityId}/restore`);
 
   // Get all versions
   const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
@@ -2919,7 +2953,7 @@ async function testUpdateLink() {
   const linkId = createResponse.data.data.id;
 
   // Update the link
-  const response = await makeRequest('PUT', `/api/links/${linkId}`, {
+  const response = await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { strength: 'strong', weight: 10, newField: 'added' },
   });
 
@@ -2977,7 +3011,7 @@ async function testDeleteLink() {
   const linkId = createResponse.data.data.id;
 
   // Delete the link
-  const response = await makeRequest('DELETE', `/api/links/${linkId}`);
+  const response = await makeAuthRequest('DELETE', `/api/links/${linkId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.success, true, 'Should have success: true');
@@ -3026,10 +3060,10 @@ async function testRestoreLink() {
   const linkId = createResponse.data.data.id;
 
   // Delete the link
-  await makeRequest('DELETE', `/api/links/${linkId}`);
+  await makeAuthRequest('DELETE', `/api/links/${linkId}`);
 
   // Restore the link
-  const response = await makeRequest('POST', `/api/links/${linkId}/restore`);
+  const response = await makeAuthRequest('POST', `/api/links/${linkId}/restore`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.success, true, 'Should have success: true');
@@ -3083,10 +3117,10 @@ async function testUpdateDeletedLink() {
   });
   const linkId = createResponse.data.data.id;
 
-  await makeRequest('DELETE', `/api/links/${linkId}`);
+  await makeAuthRequest('DELETE', `/api/links/${linkId}`);
 
   // Try to update deleted link
-  const response = await makeRequest('PUT', `/api/links/${linkId}`, {
+  const response = await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { name: 'Updated' },
   });
 
@@ -3136,12 +3170,12 @@ async function testGetLinkVersions() {
   const linkId = createResponse.data.data.id;
 
   // Update the link to create version 2
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { strength: 'medium', version: 2 },
   });
 
   // Update again to create version 3
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { strength: 'strong', version: 3 },
   });
 
@@ -3232,11 +3266,11 @@ async function testGetSpecificLinkVersion() {
   const linkId = createResponse.data.data.id;
 
   // Update twice
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { weight: 200 },
   });
 
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { weight: 300 },
   });
 
@@ -3380,7 +3414,7 @@ async function testGetLinkHistory() {
   const linkId = createResponse.data.data.id;
 
   // Update 1: Change strength and weight, add new field
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: {
       strength: 'medium',
       description: 'Original description',
@@ -3390,7 +3424,7 @@ async function testGetLinkHistory() {
   });
 
   // Update 2: Remove description, change status
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: {
       strength: 'medium',
       weight: 5,
@@ -3486,15 +3520,15 @@ async function testGetLinkVersionsWithDeletedLink() {
   const linkId = createResponse.data.data.id;
 
   // Update
-  await makeRequest('PUT', `/api/links/${linkId}`, {
+  await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { name: 'Updated' },
   });
 
   // Delete
-  await makeRequest('DELETE', `/api/links/${linkId}`);
+  await makeAuthRequest('DELETE', `/api/links/${linkId}`);
 
   // Restore
-  await makeRequest('POST', `/api/links/${linkId}/restore`);
+  await makeAuthRequest('POST', `/api/links/${linkId}/restore`);
 
   // Get all versions
   const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
@@ -3779,7 +3813,7 @@ async function testGetOutboundLinksExcludesDeleted() {
   });
 
   // Delete the first link
-  await makeRequest('DELETE', `/api/links/${link1Id}`);
+  await makeAuthRequest('DELETE', `/api/links/${link1Id}`);
 
   // Test: Get outbound links (should exclude deleted)
   const response = await makeRequest('GET', `/api/entities/${sourceEntityId}/outbound`);
@@ -4060,7 +4094,7 @@ async function testGetInboundLinksExcludesDeleted() {
   });
 
   // Delete the first link
-  await makeRequest('DELETE', `/api/links/${link1Id}`);
+  await makeAuthRequest('DELETE', `/api/links/${link1Id}`);
 
   // Test: Get inbound links (should exclude deleted)
   const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound`);
@@ -7508,7 +7542,7 @@ async function testBulkUpdateDeletedEntity() {
   });
   const entityId = entity.data.data.id;
 
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Try to bulk update the deleted entity
   const response = await makeRequest('PUT', '/api/bulk/entities', {
@@ -7783,7 +7817,7 @@ async function testExportIncludeDeleted() {
   });
   const entityId = entityResponse.data.data.id;
 
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Export without deleted
   const response1 = await makeRequest('GET', '/api/export');
@@ -8256,7 +8290,7 @@ async function testSchemaValidationUpdateEntity() {
   const entityId = createResponse.data.data.id;
 
   // Try to update with invalid properties
-  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: {
       name: '', // empty string, violates minLength: 1
       price: 29.99,
@@ -8782,7 +8816,7 @@ async function testAuditLogEntityUpdateLogged() {
   const entityId = entityResponse.data.data.id;
 
   // Update the entity
-  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Name' },
   });
   const newEntityId = updateResponse.data.data.id;
@@ -8824,7 +8858,7 @@ async function testAuditLogEntityDeleteLogged() {
   const entityId = entityResponse.data.data.id;
 
   // Delete the entity
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Check audit logs for delete operation
   const auditResponse = await fetch(
@@ -9356,7 +9390,7 @@ async function testSanitizationUpdate() {
   const entityId = createResponse.data.data.id;
 
   // Update with XSS payload
-  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: {
       name: '<script>document.cookie</script>',
       extra: 'javascript:alert(1)',
@@ -9617,7 +9651,7 @@ async function testUIEntityListShowDeleted() {
   });
   const entityId = entityResponse.data.data.id;
 
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Request with show_deleted=true
   const response = await fetch(`${DEV_SERVER_URL}/ui/entities?show_deleted=true`);
@@ -9649,7 +9683,7 @@ async function testUIEntityListShowAllVersions() {
   const entityId = entityResponse.data.data.id;
 
   // Update to create version 2
-  await makeRequest('PUT', `/api/entities/${entityId}`, {
+  await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Name' },
   });
 
@@ -9852,7 +9886,7 @@ async function testUIEntityDetailVersionHistory() {
   const entityId = createResponse.data.data.id;
 
   // Update the entity to create a new version
-  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated Name', status: 'published' },
   });
   const newEntityId = updateResponse.data.data.id;
@@ -9888,7 +9922,7 @@ async function testUIEntityDetailDeletedEntity() {
   const entityId = createResponse.data.data.id;
 
   // Delete the entity
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Get the deleted version
   const listResponse = await makeRequest(
@@ -9928,7 +9962,7 @@ async function testUIEntityDetailOldVersion() {
   const version1Id = createResponse.data.data.id;
 
   // Update to create version 2
-  await makeRequest('PUT', `/api/entities/${version1Id}`, {
+  await makeAuthRequest('PUT', `/api/entities/${version1Id}`, {
     properties: { name: 'Version 2' },
   });
 
@@ -10136,7 +10170,7 @@ async function testCachingEntityInvalidationOnUpdate() {
   assertEquals(response1.data.data.properties.name, 'Original', 'Should have original name');
 
   // Update the entity
-  const updateResponse = await makeRequest('PUT', `/api/entities/${entityId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
     properties: { name: 'Updated', status: 'inactive' },
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
@@ -10176,7 +10210,7 @@ async function testCachingEntityInvalidationOnDelete() {
   assertEquals(response1.data.data.is_deleted, false, 'Should not be deleted initially');
 
   // Delete the entity
-  const deleteResponse = await makeRequest('DELETE', `/api/entities/${entityId}`);
+  const deleteResponse = await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
   assertEquals(deleteResponse.status, 200, 'Delete should succeed');
 
   // GET again - should show deleted status (cache should be invalidated)
@@ -10208,7 +10242,7 @@ async function testCachingEntityInvalidationOnRestore() {
   const entityId = createResponse.data.data.id;
 
   // Delete it
-  await makeRequest('DELETE', `/api/entities/${entityId}`);
+  await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // GET to populate cache with deleted state
   const response1 = await makeRequest('GET', `/api/entities/${entityId}`);
@@ -10216,7 +10250,7 @@ async function testCachingEntityInvalidationOnRestore() {
   assertEquals(response1.data.data.is_deleted, true, 'Should show as deleted');
 
   // Restore the entity
-  const restoreResponse = await makeRequest('POST', `/api/entities/${entityId}/restore`);
+  const restoreResponse = await makeAuthRequest('POST', `/api/entities/${entityId}/restore`);
   assertEquals(restoreResponse.status, 200, 'Restore should succeed');
 
   // GET again - should show restored status (cache should be invalidated)
@@ -10333,7 +10367,7 @@ async function testCachingLinkInvalidationOnUpdate() {
   assertEquals(response1.data.data.properties.weight, 1, 'Should have original weight');
 
   // Update the link
-  const updateResponse = await makeRequest('PUT', `/api/links/${linkId}`, {
+  const updateResponse = await makeAuthRequest('PUT', `/api/links/${linkId}`, {
     properties: { weight: 5 },
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
@@ -13312,6 +13346,9 @@ async function testUIEntityAclSectionOldVersion() {
 
 async function runTests() {
   logSection('Running Integration Tests');
+
+  // Initialize global auth token for entity/link tests that require authentication
+  await initGlobalAuthToken();
 
   const tests = [
     testHealthEndpoint,

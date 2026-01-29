@@ -274,18 +274,29 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
   4. Associates the entity/link with the ACL ID
 - This ensures entities/links with identical permissions share the same ACL ID
 
-#### 🟦 Permission Checking
+#### ✅ Permission Checking
 
 - For single-resource operations (GET /api/entities/:id, PUT, DELETE):
   - Retrieve the resource's ACL ID
   - Check if current user or any of their effective groups has required permission
   - Write permission implies read permission
-  - Resources with NULL acl_id are accessible to all authenticated users
+  - Resources with NULL acl_id are public (accessible to all users, including unauthenticated)
+  - Write operations (PUT, DELETE, restore) require authentication
+  - Read operations (GET, list) use optional authentication for filtering
 
 - For list operations (GET /api/entities, search endpoints):
   - Pre-compute the set of ACL IDs that grant the current user read access
   - Include `WHERE acl_id IN (...) OR acl_id IS NULL` in the query
   - This allows efficient index-based filtering without per-row permission checks
+  - Falls back to per-row filtering when accessible ACL set exceeds 1000 entries
+
+- Utility functions in `src/utils/acl.ts`:
+  - `getEffectiveGroupsForUser(db, kv, userId)` - Gets all groups user belongs to (with caching)
+  - `getAccessibleAclIds(db, kv, userId, permission)` - Gets all ACL IDs user can access
+  - `hasPermission(db, kv, userId, resourceType, resourceId, permission)` - Checks permission on resource
+  - `hasPermissionByAclId(db, kv, userId, aclId, permission)` - Checks permission when ACL ID is known
+  - `buildAclFilterClause(db, kv, userId, permission, aclIdColumn)` - Builds SQL filter for list queries
+  - `filterByAclPermission(items, accessibleAclIds)` - Per-row filtering fallback
 
 #### 🟦 Permission Inheritance
 

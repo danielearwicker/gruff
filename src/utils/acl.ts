@@ -6,9 +6,11 @@
  * - Getting or creating ACLs by hash
  * - Managing ACL entries
  * - Checking permissions
+ * - Permission-based filtering for list operations
  */
 
-import type { AclEntry, EnrichedAclEntry } from '../schemas/acl.js';
+import type { AclEntry, EnrichedAclEntry, Permission } from '../schemas/acl.js';
+import { getCache, setCache, getVersionedEffectiveGroupsCacheKey, CACHE_TTL } from './cache.js';
 
 /**
  * Compute a canonical hash for an ACL
@@ -456,4 +458,322 @@ export async function validateAclPrincipals(
     valid: errors.length === 0,
     errors,
   };
+}
+
+// ============================================================================
+// Permission Checking Functions
+// ============================================================================
+
+/**
+ * Maximum number of ACL IDs to use in an IN clause before falling back to per-row checking.
+ * For users with access to many ACLs, SQL IN clause with thousands of values can be slow.
+ */
+const MAX_ACL_IDS_FOR_IN_CLAUSE = 1000;
+
+/**
+ * Get all groups a user belongs to (directly or through nested group membership)
+ * with caching in KV.
+ *
+ * This is the core function for resolving a user's effective group membership.
+ * Results are cached for 5 minutes and invalidated when group membership changes.
+ *
+ * @param db - D1 database
+ * @param kv - KV namespace for caching
+ * @param userId - User ID to resolve groups for
+ * @returns Promise<Set<string>> - Set of group IDs the user belongs to
+ */
+export async function getEffectiveGroupsForUser(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string
+): Promise<Set<string>> {
+  // Try to get from cache first
+  const cacheKey = await getVersionedEffectiveGroupsCacheKey(kv, userId);
+  const cached = await getCache<string[]>(kv, cacheKey);
+
+  if (cached) {
+    return new Set(cached);
+  }
+
+  // Cache miss: compute effective groups
+  const groupIds = new Set<string>();
+  const visited = new Set<string>();
+
+  // Get groups the user directly belongs to
+  const directGroups = await db
+    .prepare(
+      `SELECT group_id FROM group_members
+       WHERE member_type = 'user' AND member_id = ?`
+    )
+    .bind(userId)
+    .all<{ group_id: string }>();
+
+  // Helper function to recursively get parent groups
+  async function addParentGroups(groupId: string): Promise<void> {
+    if (visited.has(groupId)) return;
+    visited.add(groupId);
+    groupIds.add(groupId);
+
+    // Get groups that contain this group as a member
+    const parentGroups = await db
+      .prepare(
+        `SELECT group_id FROM group_members
+         WHERE member_type = 'group' AND member_id = ?`
+      )
+      .bind(groupId)
+      .all<{ group_id: string }>();
+
+    for (const parent of parentGroups.results || []) {
+      await addParentGroups(parent.group_id);
+    }
+  }
+
+  // Process all direct groups and their parents
+  for (const group of directGroups.results || []) {
+    await addParentGroups(group.group_id);
+  }
+
+  // Cache the result
+  const groupIdArray = Array.from(groupIds);
+  setCache(kv, cacheKey, groupIdArray, CACHE_TTL.EFFECTIVE_GROUPS).catch(() => {
+    // Silently ignore cache write errors
+  });
+
+  return groupIds;
+}
+
+/**
+ * Get all ACL IDs that grant a user a specific permission.
+ *
+ * This function considers:
+ * - Direct user permissions in ACL entries
+ * - Permissions granted through group membership
+ * - Write permission implies read permission
+ *
+ * Results are not cached as they depend on ACL state which can change frequently.
+ *
+ * @param db - D1 database
+ * @param kv - KV namespace for caching effective groups
+ * @param userId - User ID to check permissions for
+ * @param permission - Permission level to check ('read' or 'write')
+ * @returns Promise<Set<number>> - Set of ACL IDs that grant the requested permission
+ */
+export async function getAccessibleAclIds(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string,
+  permission: Permission
+): Promise<Set<number>> {
+  // Get user's effective groups
+  const effectiveGroups = await getEffectiveGroupsForUser(db, kv, userId);
+
+  // Build list of principals to check (user + all effective groups)
+  const userPrincipals: Array<{ type: 'user' | 'group'; id: string }> = [
+    { type: 'user', id: userId },
+  ];
+
+  for (const groupId of effectiveGroups) {
+    userPrincipals.push({ type: 'group', id: groupId });
+  }
+
+  // Query ACL entries for all principals
+  // For 'read' permission, we need to check both 'read' and 'write' entries
+  // because 'write' implies 'read'
+  const permissionsToCheck = permission === 'read' ? ['read', 'write'] : ['write'];
+
+  // Build the query with proper placeholders
+  // We need to check: (principal_type, principal_id) IN ((type1, id1), (type2, id2), ...)
+  // AND permission IN (perm1, perm2, ...)
+  const principalConditions = userPrincipals
+    .map(() => '(principal_type = ? AND principal_id = ?)')
+    .join(' OR ');
+
+  const permissionPlaceholders = permissionsToCheck.map(() => '?').join(', ');
+
+  const sql = `
+    SELECT DISTINCT acl_id
+    FROM acl_entries
+    WHERE (${principalConditions})
+    AND permission IN (${permissionPlaceholders})
+  `;
+
+  // Build bindings: first all principal pairs, then permissions
+  const bindings: unknown[] = [];
+  for (const principal of userPrincipals) {
+    bindings.push(principal.type, principal.id);
+  }
+  bindings.push(...permissionsToCheck);
+
+  const results = await db
+    .prepare(sql)
+    .bind(...bindings)
+    .all<{ acl_id: number }>();
+
+  const aclIds = new Set<number>();
+  for (const row of results.results || []) {
+    aclIds.add(row.acl_id);
+  }
+
+  return aclIds;
+}
+
+/**
+ * Check if a user has a specific permission on a resource (entity or link).
+ *
+ * Permission checking rules:
+ * 1. Resources with NULL acl_id are accessible to all authenticated users
+ * 2. Write permission implies read permission
+ * 3. User must have the required permission directly or through a group
+ *
+ * @param db - D1 database
+ * @param kv - KV namespace for caching
+ * @param userId - User ID to check permissions for
+ * @param resourceType - Type of resource ('entity' or 'link')
+ * @param resourceId - ID of the resource
+ * @param permission - Permission level required ('read' or 'write')
+ * @returns Promise<boolean> - true if user has the required permission
+ */
+export async function hasPermission(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string,
+  resourceType: 'entity' | 'link',
+  resourceId: string,
+  permission: Permission
+): Promise<boolean> {
+  // Get the resource's ACL ID
+  const aclId =
+    resourceType === 'entity'
+      ? await getEntityAclId(db, resourceId)
+      : await getLinkAclId(db, resourceId);
+
+  // NULL acl_id means public/unrestricted - accessible to all authenticated users
+  if (aclId === null) {
+    return true;
+  }
+
+  // Get all ACL IDs accessible to the user for the requested permission
+  const accessibleAclIds = await getAccessibleAclIds(db, kv, userId, permission);
+
+  return accessibleAclIds.has(aclId);
+}
+
+/**
+ * Check if a user has permission on a resource based on its ACL ID.
+ * This is a more efficient version when you already have the ACL ID.
+ *
+ * @param db - D1 database
+ * @param kv - KV namespace for caching
+ * @param userId - User ID to check permissions for
+ * @param aclId - ACL ID of the resource (null means public)
+ * @param permission - Permission level required ('read' or 'write')
+ * @returns Promise<boolean> - true if user has the required permission
+ */
+export async function hasPermissionByAclId(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string,
+  aclId: number | null,
+  permission: Permission
+): Promise<boolean> {
+  // NULL acl_id means public/unrestricted
+  if (aclId === null) {
+    return true;
+  }
+
+  const accessibleAclIds = await getAccessibleAclIds(db, kv, userId, permission);
+  return accessibleAclIds.has(aclId);
+}
+
+/**
+ * Result of building an ACL filter for list queries
+ */
+export interface AclFilterResult {
+  /** Whether filtering should be used (false if user has access to too many ACLs) */
+  useFilter: boolean;
+  /** SQL WHERE clause fragment to add (empty string if useFilter is false) */
+  whereClause: string;
+  /** Bindings for the WHERE clause */
+  bindings: unknown[];
+  /** Set of accessible ACL IDs (for per-row checking if useFilter is false) */
+  accessibleAclIds: Set<number>;
+}
+
+/**
+ * Build an SQL WHERE clause to filter entities/links by ACL permissions.
+ *
+ * This function generates a filter for list queries that includes:
+ * - Resources with NULL acl_id (public)
+ * - Resources with acl_id in the user's accessible ACL IDs
+ *
+ * For users with access to many ACLs (>1000), returns useFilter=false
+ * and the caller should fall back to per-row permission checking.
+ *
+ * @param db - D1 database
+ * @param kv - KV namespace for caching
+ * @param userId - User ID to build filter for
+ * @param permission - Permission level required ('read' or 'write')
+ * @param aclIdColumn - Column name for acl_id (default: 'acl_id')
+ * @returns Promise<AclFilterResult> - Filter clause and bindings
+ */
+export async function buildAclFilterClause(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: string,
+  permission: Permission,
+  aclIdColumn: string = 'acl_id'
+): Promise<AclFilterResult> {
+  const accessibleAclIds = await getAccessibleAclIds(db, kv, userId, permission);
+
+  // If user has access to too many ACLs, fallback to per-row checking
+  if (accessibleAclIds.size > MAX_ACL_IDS_FOR_IN_CLAUSE) {
+    return {
+      useFilter: false,
+      whereClause: '',
+      bindings: [],
+      accessibleAclIds,
+    };
+  }
+
+  // If user has no accessible ACLs, only return public resources
+  if (accessibleAclIds.size === 0) {
+    return {
+      useFilter: true,
+      whereClause: `${aclIdColumn} IS NULL`,
+      bindings: [],
+      accessibleAclIds,
+    };
+  }
+
+  // Build IN clause for accessible ACL IDs
+  const aclIdArray = Array.from(accessibleAclIds);
+  const placeholders = aclIdArray.map(() => '?').join(', ');
+
+  return {
+    useFilter: true,
+    whereClause: `(${aclIdColumn} IS NULL OR ${aclIdColumn} IN (${placeholders}))`,
+    bindings: aclIdArray,
+    accessibleAclIds,
+  };
+}
+
+/**
+ * Filter an array of items by ACL permission (for per-row checking).
+ * Use this when buildAclFilterClause returns useFilter=false.
+ *
+ * @param items - Array of items with acl_id property
+ * @param accessibleAclIds - Set of ACL IDs the user can access
+ * @returns Array of items the user can access
+ */
+export function filterByAclPermission<T extends { acl_id?: number | null }>(
+  items: T[],
+  accessibleAclIds: Set<number>
+): T[] {
+  return items.filter(item => {
+    // NULL acl_id means public
+    if (item.acl_id === null || item.acl_id === undefined) {
+      return true;
+    }
+    return accessibleAclIds.has(item.acl_id);
+  });
 }

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   createEntitySchema,
   updateEntitySchema,
@@ -26,11 +27,13 @@ import {
   ENTITY_ALLOWED_FIELDS,
 } from '../utils/field-selection.js';
 import {
-  getEntityAclId,
   getEnrichedAclEntries,
   getOrCreateAcl,
   setEntityAcl,
   validateAclPrincipals,
+  buildAclFilterClause,
+  filterByAclPermission,
+  hasPermissionByAclId,
 } from '../utils/acl.js';
 
 type Bindings = {
@@ -180,16 +183,39 @@ entities.post('/', validateJson(createEntitySchema), async c => {
 /**
  * GET /api/entities
  * List entities with optional filtering and cursor-based pagination
+ *
+ * ACL filtering is applied when authenticated:
+ * - Authenticated users see entities they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-entities.get('/', validateQuery(entityQuerySchema), async c => {
+entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
   const query = c.get('validated_query') as EntityQuery;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   try {
     let sql = 'SELECT * FROM entities WHERE is_latest = 1';
     const bindings: unknown[] = [];
 
-    // Apply filters
+    // Apply ACL filtering based on authentication status
+    let aclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      aclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read');
+
+      if (aclFilter.useFilter) {
+        sql += ` AND ${aclFilter.whereClause}`;
+        bindings.push(...aclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      sql += ' AND acl_id IS NULL';
+    }
+
+    // Apply other filters
     if (!query.include_deleted) {
       sql += ' AND is_deleted = 0';
     }
@@ -259,18 +285,29 @@ entities.get('/', validateQuery(entityQuerySchema), async c => {
     sql += ' ORDER BY created_at DESC, id DESC';
 
     // Fetch limit + 1 to check if there are more results
+    // If using per-row ACL filtering, fetch more to account for filtered items
     const limit = query.limit || 20;
+    const fetchLimit = aclFilter && !aclFilter.useFilter ? (limit + 1) * 3 : limit + 1;
     sql += ' LIMIT ?';
-    bindings.push(limit + 1);
+    bindings.push(fetchLimit);
 
     const { results } = await db
       .prepare(sql)
       .bind(...bindings)
       .all();
 
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredResults = results;
+    if (aclFilter && !aclFilter.useFilter) {
+      filteredResults = filterByAclPermission(
+        results as Array<{ acl_id?: number | null }>,
+        aclFilter.accessibleAclIds
+      );
+    }
+
     // Check if there are more results
-    const hasMore = results.length > limit;
-    const items = hasMore ? results.slice(0, limit) : results;
+    const hasMore = filteredResults.length > limit;
+    const items = hasMore ? filteredResults.slice(0, limit) : filteredResults;
 
     // Parse properties for each entity
     const entitiesData = items.map(entity => ({
@@ -324,15 +361,42 @@ entities.get('/', validateQuery(entityQuerySchema), async c => {
  * Caching: Individual entity lookups are cached for fast repeated access.
  * Cache is invalidated when entity is updated, deleted, or restored.
  * Note: Field selection is applied after cache retrieval for consistency.
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the entity
+ * - Entities with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access entities with NULL acl_id
  */
-entities.get('/:id', async c => {
+entities.get('/:id', optionalAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
   const kv = c.env.KV;
   const fieldsParam = c.req.query('fields');
+  const user = c.get('user');
 
   try {
-    // Try to get from cache first
+    const entity = await findLatestVersion(db, id);
+
+    if (!entity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission
+    const aclId = entity.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (aclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+      }
+    }
+
+    // Try to get from cache (only for authenticated users with permission or public entities)
     const cacheKey = getEntityCacheKey(id);
     const cached = await getCache<Record<string, unknown>>(kv, cacheKey);
     if (cached) {
@@ -356,12 +420,6 @@ entities.get('/:id', async c => {
         return c.json(response.success(fieldSelection.data));
       }
       return c.json(cached);
-    }
-
-    const entity = await findLatestVersion(db, id);
-
-    if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
     }
 
     // Parse properties back to object
@@ -411,13 +469,17 @@ entities.get('/:id', async c => {
 /**
  * PUT /api/entities/:id
  * Update entity (creates new version)
+ *
+ * Requires authentication and write permission on the entity.
  */
-entities.put('/:id', validateJson(updateEntitySchema), async c => {
+entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateEntity;
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -425,6 +487,13 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to update this entity'), 403);
     }
 
     // Check if entity is soft-deleted
@@ -472,12 +541,12 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
       .bind(currentVersion.id)
       .run();
 
-    // Then insert new version with new ID
+    // Then insert new version with new ID, preserving the acl_id
     await db
       .prepare(
         `
-      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
+      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
     `
       )
       .bind(
@@ -487,7 +556,8 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
         newVersion,
         currentVersion.id, // previous_version_id references the previous row's id
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
@@ -503,7 +573,7 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
 
     // Log the update operation
     try {
-      await logEntityOperation(db, c, 'update', newId, systemUserId, {
+      await logEntityOperation(db, c, 'update', newId, userId, {
         previous_version_id: currentVersion.id,
         old_properties: currentVersion.properties
           ? JSON.parse(currentVersion.properties as string)
@@ -521,8 +591,8 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
     // since both can be used to look up this entity
     try {
       await Promise.all([
-        invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id as string),
+        invalidateEntityCache(kv, id),
+        invalidateEntityCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -542,12 +612,16 @@ entities.put('/:id', validateJson(updateEntitySchema), async c => {
 /**
  * DELETE /api/entities/:id
  * Soft delete entity (creates new version with is_deleted = true)
+ *
+ * Requires authentication and write permission on the entity.
  */
-entities.delete('/:id', async c => {
+entities.delete('/:id', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -555,6 +629,13 @@ entities.delete('/:id', async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to delete this entity'), 403);
     }
 
     // Check if already soft-deleted
@@ -571,12 +652,12 @@ entities.delete('/:id', async c => {
       .bind(currentVersion.id)
       .run();
 
-    // Insert new version with is_deleted = 1 and new ID
+    // Insert new version with is_deleted = 1 and new ID, preserving acl_id
     await db
       .prepare(
         `
-      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
+      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
     `
       )
       .bind(
@@ -586,13 +667,14 @@ entities.delete('/:id', async c => {
         newVersion,
         currentVersion.id,
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
     // Log the delete operation
     try {
-      await logEntityOperation(db, c, 'delete', newId, systemUserId, {
+      await logEntityOperation(db, c, 'delete', newId, userId, {
         previous_version_id: currentVersion.id,
         type_id: currentVersion.type_id,
         version: newVersion,
@@ -606,8 +688,8 @@ entities.delete('/:id', async c => {
     // Invalidate cache for both the original ID and the old version ID
     try {
       await Promise.all([
-        invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id as string),
+        invalidateEntityCache(kv, id),
+        invalidateEntityCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -627,12 +709,16 @@ entities.delete('/:id', async c => {
 /**
  * POST /api/entities/:id/restore
  * Restore a soft-deleted entity (creates new version with is_deleted = false)
+ *
+ * Requires authentication and write permission on the entity.
  */
-entities.post('/:id/restore', async c => {
+entities.post('/:id/restore', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // Get the current latest version
@@ -640,6 +726,13 @@ entities.post('/:id/restore', async c => {
 
     if (!currentVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check write permission
+    const aclId = currentVersion.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to restore this entity'), 403);
     }
 
     // Check if entity is not deleted
@@ -656,12 +749,12 @@ entities.post('/:id/restore', async c => {
       .bind(currentVersion.id)
       .run();
 
-    // Insert new version with is_deleted = 0 and new ID
+    // Insert new version with is_deleted = 0 and new ID, preserving acl_id
     await db
       .prepare(
         `
-      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
+      INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
     `
       )
       .bind(
@@ -671,7 +764,8 @@ entities.post('/:id/restore', async c => {
         newVersion,
         currentVersion.id,
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
@@ -687,7 +781,7 @@ entities.post('/:id/restore', async c => {
 
     // Log the restore operation
     try {
-      await logEntityOperation(db, c, 'restore', newId, systemUserId, {
+      await logEntityOperation(db, c, 'restore', newId, userId, {
         previous_version_id: currentVersion.id,
         type_id: currentVersion.type_id,
         version: newVersion,
@@ -701,8 +795,8 @@ entities.post('/:id/restore', async c => {
     // Invalidate cache for both the original ID and the old version ID
     try {
       await Promise.all([
-        invalidateEntityCache(c.env.KV, id),
-        invalidateEntityCache(c.env.KV, currentVersion.id as string),
+        invalidateEntityCache(kv, id),
+        invalidateEntityCache(kv, currentVersion.id as string),
       ]);
     } catch (cacheError) {
       getLogger(c)
@@ -1307,10 +1401,15 @@ entities.get('/:id/neighbors', async c => {
  * Returns the list of principals (users and groups) that have read or write
  * permission on this entity. If the entity has no ACL (null acl_id), it means
  * the entity is public and accessible to all authenticated users.
+ *
+ * Requires authentication and read permission on the entity.
  */
-entities.get('/:id/acl', async c => {
+entities.get('/:id/acl', requireAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // First, verify the entity exists
@@ -1320,8 +1419,12 @@ entities.get('/:id/acl', async c => {
       return c.json(response.notFound('Entity'), 404);
     }
 
-    // Get the ACL ID for this entity
-    const aclId = await getEntityAclId(db, entity.id as string);
+    // Check read permission
+    const aclId = entity.acl_id as number | null;
+    const canRead = await hasPermissionByAclId(db, kv, userId, aclId, 'read');
+    if (!canRead) {
+      return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+    }
 
     // If no ACL, return empty entries (public)
     if (aclId === null) {
@@ -1359,6 +1462,8 @@ entities.get('/:id/acl', async c => {
  * - Setting entries creates/reuses a deduplicated ACL
  * - Creates a new version of the entity with the updated ACL
  *
+ * Requires authentication and write permission on the entity.
+ *
  * ACL request format:
  * {
  *   "entries": [
@@ -1367,13 +1472,13 @@ entities.get('/:id/acl', async c => {
  *   ]
  * }
  */
-entities.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
+entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as SetAclRequest;
   const db = c.env.DB;
-
-  // For now, we'll use the test user ID. In the future, this comes from auth middleware
-  const systemUserId = 'test-user-001';
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
 
   try {
     // First, verify the entity exists
@@ -1381,6 +1486,13 @@ entities.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
 
     if (!entity) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check write permission
+    const currentAclId = entity.acl_id as number | null;
+    const canWrite = await hasPermissionByAclId(db, kv, userId, currentAclId, 'write');
+    if (!canWrite) {
+      return c.json(response.forbidden('You do not have permission to modify this entity'), 403);
     }
 
     // Check if entity is soft-deleted
@@ -1411,7 +1523,7 @@ entities.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
     const aclId = await getOrCreateAcl(db, data.entries);
 
     // Set the ACL on the entity (creates new version)
-    await setEntityAcl(db, entity.id as string, aclId, systemUserId);
+    await setEntityAcl(db, entity.id as string, aclId, userId);
 
     // Get the updated ACL for response
     let responseEntries: unknown[] = [];
@@ -1421,8 +1533,8 @@ entities.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
 
     // Invalidate cache
     try {
-      await invalidateEntityCache(c.env.KV, id);
-      await invalidateEntityCache(c.env.KV, entity.id as string);
+      await invalidateEntityCache(kv, id);
+      await invalidateEntityCache(kv, entity.id as string);
     } catch (cacheError) {
       getLogger(c)
         .child({ module: 'entities' })
