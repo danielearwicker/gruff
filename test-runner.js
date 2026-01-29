@@ -12570,6 +12570,556 @@ async function testUIGroupNavigation() {
 }
 
 // ============================================================================
+// ACL Management Tests
+// ============================================================================
+
+// Helper to get auth token and create test data for ACL tests
+async function getAclTestAuthToken() {
+  const email = `acltest-${Date.now()}@example.com`;
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email,
+    password: 'password123',
+    display_name: 'ACL Test User',
+  });
+  return {
+    token: registerResponse.data.data.access_token,
+    userId: registerResponse.data.data.user.id,
+  };
+}
+
+async function createTestEntityForAcl(token, typeId) {
+  const response = await makeRequestWithHeaders(
+    'POST',
+    '/api/entities',
+    { Authorization: `Bearer ${token}` },
+    {
+      type_id: typeId,
+      properties: { name: 'ACL Test Entity' },
+    }
+  );
+  return response.data.data.id;
+}
+
+async function createTestLinkForAcl(token, typeId, sourceId, targetId) {
+  const response = await makeRequestWithHeaders(
+    'POST',
+    '/api/links',
+    { Authorization: `Bearer ${token}` },
+    {
+      type_id: typeId,
+      source_entity_id: sourceId,
+      target_entity_id: targetId,
+      properties: { weight: 1 },
+    }
+  );
+  return response.data.data.id;
+}
+
+async function testEntityAclGetEmpty() {
+  logTest('ACL Management - Get ACL for entity with no ACL (public)');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Get ACL (should be empty/public)
+  const response = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assert(response.data.data, 'Should return data object');
+  assertEquals(response.data.data.acl_id, null, 'ACL ID should be null (public)');
+  assert(Array.isArray(response.data.data.entries), 'Entries should be an array');
+  assertEquals(response.data.data.entries.length, 0, 'Entries should be empty');
+}
+
+async function testEntityAclSetAndGet() {
+  logTest('ACL Management - Set and get ACL for entity');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create another user for ACL entry
+  const otherEmail = `aclother-${Date.now()}@example.com`;
+  const otherRegister = await makeRequest('POST', '/api/auth/register', {
+    email: otherEmail,
+    password: 'password123',
+    display_name: 'Other ACL User',
+  });
+  const otherUserId = otherRegister.data.data.user.id;
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType2-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Set ACL
+  const setResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${entityId}/acl`,
+    headers,
+    {
+      entries: [
+        { principal_type: 'user', principal_id: userId, permission: 'write' },
+        { principal_type: 'user', principal_id: otherUserId, permission: 'read' },
+      ],
+    }
+  );
+
+  assertEquals(setResponse.status, 200, 'Set ACL status code should be 200');
+  assert(setResponse.data.data, 'Should return data object');
+  assert(setResponse.data.data.acl_id !== null, 'ACL ID should not be null');
+  assertEquals(setResponse.data.data.entries.length, 2, 'Should have 2 entries');
+
+  // Get ACL and verify
+  const getResponse = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(getResponse.status, 200, 'Get ACL status code should be 200');
+  assertEquals(getResponse.data.data.entries.length, 2, 'Should have 2 entries');
+
+  // Verify entries
+  const writeEntry = getResponse.data.data.entries.find(
+    e => e.principal_id === userId && e.permission === 'write'
+  );
+  assert(writeEntry, 'Should have write permission for current user');
+
+  const readEntry = getResponse.data.data.entries.find(
+    e => e.principal_id === otherUserId && e.permission === 'read'
+  );
+  assert(readEntry, 'Should have read permission for other user');
+}
+
+async function testEntityAclSetWithGroup() {
+  logTest('ACL Management - Set ACL with group principal');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: `ACL Test Group ${Date.now()}`,
+    description: 'Test group for ACL',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType3-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Set ACL with group
+  const setResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${entityId}/acl`,
+    headers,
+    {
+      entries: [
+        { principal_type: 'user', principal_id: userId, permission: 'write' },
+        { principal_type: 'group', principal_id: groupId, permission: 'read' },
+      ],
+    }
+  );
+
+  assertEquals(setResponse.status, 200, 'Set ACL status code should be 200');
+  assertEquals(setResponse.data.data.entries.length, 2, 'Should have 2 entries');
+
+  // Verify group entry with enriched name
+  const groupEntry = setResponse.data.data.entries.find(
+    e => e.principal_id === groupId && e.principal_type === 'group'
+  );
+  assert(groupEntry, 'Should have read permission for group');
+  assert(groupEntry.principal_name, 'Group entry should have enriched name');
+}
+
+async function testEntityAclMakePublic() {
+  logTest('ACL Management - Remove ACL (make public)');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType4-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Set ACL first
+  await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  // Remove ACL (make public) by setting empty entries
+  const setResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${entityId}/acl`,
+    headers,
+    { entries: [] }
+  );
+
+  assertEquals(setResponse.status, 200, 'Set ACL status code should be 200');
+  assertEquals(setResponse.data.data.acl_id, null, 'ACL ID should be null (public)');
+  assertEquals(setResponse.data.data.entries.length, 0, 'Entries should be empty');
+}
+
+async function testEntityAclDeduplication() {
+  logTest('ACL Management - ACL deduplication (same permissions share ACL)');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType5-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create two entities
+  const entityId1 = await createTestEntityForAcl(token, typeId);
+  const entityId2 = await createTestEntityForAcl(token, typeId);
+
+  // Set same ACL on both entities
+  const acl = {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  };
+
+  const set1 = await makeRequestWithHeaders('PUT', `/api/entities/${entityId1}/acl`, headers, acl);
+  const set2 = await makeRequestWithHeaders('PUT', `/api/entities/${entityId2}/acl`, headers, acl);
+
+  assertEquals(set1.status, 200, 'First set ACL should succeed');
+  assertEquals(set2.status, 200, 'Second set ACL should succeed');
+  assertEquals(
+    set1.data.data.acl_id,
+    set2.data.data.acl_id,
+    'Both entities should share the same ACL ID (deduplication)'
+  );
+}
+
+async function testEntityAclInvalidPrincipal() {
+  logTest('ACL Management - Reject invalid principal ID');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType6-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Try to set ACL with non-existent user
+  const response = await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [
+      {
+        principal_type: 'user',
+        principal_id: '00000000-0000-0000-0000-000000000000',
+        permission: 'read',
+      },
+    ],
+  });
+
+  assertEquals(response.status, 400, 'Status code should be 400');
+  assertEquals(response.data.code, 'INVALID_PRINCIPALS', 'Error code should be INVALID_PRINCIPALS');
+  assert(response.data.details.errors, 'Should include error details');
+}
+
+async function testEntityAclNotFound() {
+  logTest('ACL Management - Entity not found for ACL operations');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const nonExistentId = '00000000-0000-0000-0000-000000000000';
+
+  // GET ACL for non-existent entity
+  const getResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/entities/${nonExistentId}/acl`,
+    headers
+  );
+  assertEquals(getResponse.status, 404, 'GET ACL should return 404');
+
+  // PUT ACL for non-existent entity
+  const putResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${nonExistentId}/acl`,
+    headers,
+    { entries: [] }
+  );
+  assertEquals(putResponse.status, 404, 'PUT ACL should return 404');
+}
+
+async function testEntityAclOnDeletedEntity() {
+  logTest('ACL Management - Cannot set ACL on deleted entity');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType7-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create and delete an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+  await makeRequestWithHeaders('DELETE', `/api/entities/${entityId}`, headers);
+
+  // Try to set ACL on deleted entity
+  const response = await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'ENTITY_DELETED', 'Error code should be ENTITY_DELETED');
+}
+
+async function testLinkAclGetEmpty() {
+  logTest('ACL Management - Get ACL for link with no ACL (public)');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create entity and link types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType8-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestLinkType1-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities
+  const sourceId = await createTestEntityForAcl(token, entityTypeId);
+  const targetId = await createTestEntityForAcl(token, entityTypeId);
+
+  // Create a link
+  const linkId = await createTestLinkForAcl(token, linkTypeId, sourceId, targetId);
+
+  // Get ACL (should be empty/public)
+  const response = await makeRequestWithHeaders('GET', `/api/links/${linkId}/acl`, headers);
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.acl_id, null, 'ACL ID should be null (public)');
+  assertEquals(response.data.data.entries.length, 0, 'Entries should be empty');
+}
+
+async function testLinkAclSetAndGet() {
+  logTest('ACL Management - Set and get ACL for link');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create entity and link types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType9-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestLinkType2-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities and a link
+  const sourceId = await createTestEntityForAcl(token, entityTypeId);
+  const targetId = await createTestEntityForAcl(token, entityTypeId);
+  const linkId = await createTestLinkForAcl(token, linkTypeId, sourceId, targetId);
+
+  // Set ACL
+  const setResponse = await makeRequestWithHeaders('PUT', `/api/links/${linkId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  assertEquals(setResponse.status, 200, 'Set ACL status code should be 200');
+  assert(setResponse.data.data.acl_id !== null, 'ACL ID should not be null');
+  assertEquals(setResponse.data.data.entries.length, 1, 'Should have 1 entry');
+
+  // Get ACL and verify
+  const getResponse = await makeRequestWithHeaders('GET', `/api/links/${linkId}/acl`, headers);
+
+  assertEquals(getResponse.status, 200, 'Get ACL status code should be 200');
+  assertEquals(getResponse.data.data.entries.length, 1, 'Should have 1 entry');
+  assertEquals(
+    getResponse.data.data.entries[0].principal_id,
+    userId,
+    'Entry should be for current user'
+  );
+}
+
+async function testLinkAclMakePublic() {
+  logTest('ACL Management - Remove ACL from link (make public)');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create entity and link types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType10-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestLinkType3-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities and a link
+  const sourceId = await createTestEntityForAcl(token, entityTypeId);
+  const targetId = await createTestEntityForAcl(token, entityTypeId);
+  const linkId = await createTestLinkForAcl(token, linkTypeId, sourceId, targetId);
+
+  // Set ACL first
+  await makeRequestWithHeaders('PUT', `/api/links/${linkId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  // Remove ACL (make public)
+  const response = await makeRequestWithHeaders('PUT', `/api/links/${linkId}/acl`, headers, {
+    entries: [],
+  });
+
+  assertEquals(response.status, 200, 'Status code should be 200');
+  assertEquals(response.data.data.acl_id, null, 'ACL ID should be null (public)');
+  assertEquals(response.data.data.entries.length, 0, 'Entries should be empty');
+}
+
+async function testLinkAclNotFound() {
+  logTest('ACL Management - Link not found for ACL operations');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const nonExistentId = '00000000-0000-0000-0000-000000000000';
+
+  // GET ACL for non-existent link
+  const getResponse = await makeRequestWithHeaders(
+    'GET',
+    `/api/links/${nonExistentId}/acl`,
+    headers
+  );
+  assertEquals(getResponse.status, 404, 'GET ACL should return 404');
+
+  // PUT ACL for non-existent link
+  const putResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/links/${nonExistentId}/acl`,
+    headers,
+    { entries: [] }
+  );
+  assertEquals(putResponse.status, 404, 'PUT ACL should return 404');
+}
+
+async function testLinkAclOnDeletedLink() {
+  logTest('ACL Management - Cannot set ACL on deleted link');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create entity and link types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType11-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestLinkType4-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities and a link
+  const sourceId = await createTestEntityForAcl(token, entityTypeId);
+  const targetId = await createTestEntityForAcl(token, entityTypeId);
+  const linkId = await createTestLinkForAcl(token, linkTypeId, sourceId, targetId);
+
+  // Delete the link
+  await makeRequestWithHeaders('DELETE', `/api/links/${linkId}`, headers);
+
+  // Try to set ACL on deleted link
+  const response = await makeRequestWithHeaders('PUT', `/api/links/${linkId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  assertEquals(response.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(response.data.code, 'LINK_DELETED', 'Error code should be LINK_DELETED');
+}
+
+async function testAclValidationSchema() {
+  logTest('ACL Management - Validation of ACL request schema');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `ACLTestEntityType12-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity
+  const entityId = await createTestEntityForAcl(token, typeId);
+
+  // Test invalid permission value
+  const response1 = await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [{ principal_type: 'user', principal_id: 'some-uuid', permission: 'invalid' }],
+  });
+  assertEquals(response1.status, 400, 'Should reject invalid permission');
+
+  // Test invalid principal_type
+  const response2 = await makeRequestWithHeaders('PUT', `/api/entities/${entityId}/acl`, headers, {
+    entries: [{ principal_type: 'invalid', principal_id: 'some-uuid', permission: 'read' }],
+  });
+  assertEquals(response2.status, 400, 'Should reject invalid principal_type');
+
+  // Test missing entries field
+  const response3 = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${entityId}/acl`,
+    headers,
+    {}
+  );
+  assertEquals(response3.status, 400, 'Should reject missing entries field');
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -13064,6 +13614,22 @@ async function runTests() {
     testUIGroupEditForm,
     testUIGroupEditFormNotFound,
     testUIGroupNavigation,
+
+    // ACL Management tests
+    testEntityAclGetEmpty,
+    testEntityAclSetAndGet,
+    testEntityAclSetWithGroup,
+    testEntityAclMakePublic,
+    testEntityAclDeduplication,
+    testEntityAclInvalidPrincipal,
+    testEntityAclNotFound,
+    testEntityAclOnDeletedEntity,
+    testLinkAclGetEmpty,
+    testLinkAclSetAndGet,
+    testLinkAclMakePublic,
+    testLinkAclNotFound,
+    testLinkAclOnDeletedLink,
+    testAclValidationSchema,
   ];
 
   for (const test of tests) {

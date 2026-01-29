@@ -8,6 +8,7 @@ import {
   UpdateLink,
   LinkQuery,
 } from '../schemas/index.js';
+import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -24,6 +25,13 @@ import {
   applyFieldSelectionToArray,
   LINK_ALLOWED_FIELDS,
 } from '../utils/field-selection.js';
+import {
+  getLinkAclId,
+  getEnrichedAclEntries,
+  getOrCreateAcl,
+  setLinkAcl,
+  validateAclPrincipals,
+} from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -1017,5 +1025,151 @@ function calculateDiff(
 
   return diff;
 }
+
+/**
+ * GET /api/links/:id/acl
+ * Get the current ACL (access control list) for a link
+ *
+ * Returns the list of principals (users and groups) that have read or write
+ * permission on this link. If the link has no ACL (null acl_id), it means
+ * the link is public and accessible to all authenticated users.
+ */
+links.get('/:id/acl', async c => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, verify the link exists
+    const link = await findLatestVersion(db, id);
+
+    if (!link) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Get the ACL ID for this link
+    const aclId = await getLinkAclId(db, link.id as string);
+
+    // If no ACL, return empty entries (public)
+    if (aclId === null) {
+      return c.json(
+        response.success({
+          entries: [],
+          acl_id: null,
+        })
+      );
+    }
+
+    // Get enriched ACL entries
+    const entries = await getEnrichedAclEntries(db, aclId);
+
+    return c.json(
+      response.success({
+        entries,
+        acl_id: aclId,
+      })
+    );
+  } catch (error) {
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error fetching link ACL', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
+
+/**
+ * PUT /api/links/:id/acl
+ * Set the ACL (access control list) for a link
+ *
+ * This endpoint allows setting permissions for users and groups on a link.
+ * - Empty entries array removes the ACL (makes link public)
+ * - Setting entries creates/reuses a deduplicated ACL
+ * - Creates a new version of the link with the updated ACL
+ *
+ * ACL request format:
+ * {
+ *   "entries": [
+ *     { "principal_type": "user", "principal_id": "uuid", "permission": "write" },
+ *     { "principal_type": "group", "principal_id": "uuid", "permission": "read" }
+ *   ]
+ * }
+ */
+links.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
+  const id = c.req.param('id');
+  const data = c.get('validated_json') as SetAclRequest;
+  const db = c.env.DB;
+
+  // For now, we'll use the test user ID. In the future, this comes from auth middleware
+  const systemUserId = 'test-user-001';
+
+  try {
+    // First, verify the link exists
+    const link = await findLatestVersion(db, id);
+
+    if (!link) {
+      return c.json(response.notFound('Link'), 404);
+    }
+
+    // Check if link is soft-deleted
+    if (link.is_deleted === 1) {
+      return c.json(
+        response.error(
+          'Cannot set ACL on deleted link. Use restore endpoint first.',
+          'LINK_DELETED'
+        ),
+        409
+      );
+    }
+
+    // Validate that all principals exist
+    if (data.entries.length > 0) {
+      const validation = await validateAclPrincipals(db, data.entries);
+      if (!validation.valid) {
+        return c.json(
+          response.error('Invalid principals in ACL', 'INVALID_PRINCIPALS', {
+            errors: validation.errors,
+          }),
+          400
+        );
+      }
+    }
+
+    // Get or create the ACL
+    const aclId = await getOrCreateAcl(db, data.entries);
+
+    // Set the ACL on the link (creates new version)
+    await setLinkAcl(db, link.id as string, aclId, systemUserId);
+
+    // Get the updated ACL for response
+    let responseEntries: unknown[] = [];
+    if (aclId !== null) {
+      responseEntries = await getEnrichedAclEntries(db, aclId);
+    }
+
+    // Invalidate cache
+    try {
+      await invalidateLinkCache(c.env.KV, id);
+      await invalidateLinkCache(c.env.KV, link.id as string);
+    } catch (cacheError) {
+      getLogger(c)
+        .child({ module: 'links' })
+        .warn('Failed to invalidate cache', { error: cacheError });
+    }
+
+    return c.json(
+      response.success(
+        {
+          entries: responseEntries,
+          acl_id: aclId,
+        },
+        'ACL updated successfully'
+      )
+    );
+  } catch (error) {
+    getLogger(c)
+      .child({ module: 'links' })
+      .error('Error setting link ACL', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
 
 export default links;

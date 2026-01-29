@@ -530,7 +530,7 @@ GET    /api/users/{id}/groups        # List groups a user belongs to
 GET    /api/users/{id}/effective-groups  # List all groups (recursive)
 ```
 
-### 🟦 ACL Management Endpoints
+### ✅ ACL Management Endpoints
 
 ```
 GET    /api/entities/{id}/acl        # Get current ACL for entity

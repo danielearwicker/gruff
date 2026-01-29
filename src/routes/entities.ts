@@ -8,6 +8,7 @@ import {
   UpdateEntity,
   EntityQuery,
 } from '../schemas/index.js';
+import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -24,6 +25,13 @@ import {
   applyFieldSelectionToArray,
   ENTITY_ALLOWED_FIELDS,
 } from '../utils/field-selection.js';
+import {
+  getEntityAclId,
+  getEnrichedAclEntries,
+  getOrCreateAcl,
+  setEntityAcl,
+  validateAclPrincipals,
+} from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -1288,6 +1296,152 @@ entities.get('/:id/neighbors', async c => {
     getLogger(c)
       .child({ module: 'entities' })
       .error('Error fetching neighbors', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
+
+/**
+ * GET /api/entities/:id/acl
+ * Get the current ACL (access control list) for an entity
+ *
+ * Returns the list of principals (users and groups) that have read or write
+ * permission on this entity. If the entity has no ACL (null acl_id), it means
+ * the entity is public and accessible to all authenticated users.
+ */
+entities.get('/:id/acl', async c => {
+  const id = c.req.param('id');
+  const db = c.env.DB;
+
+  try {
+    // First, verify the entity exists
+    const entity = await findLatestVersion(db, id);
+
+    if (!entity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Get the ACL ID for this entity
+    const aclId = await getEntityAclId(db, entity.id as string);
+
+    // If no ACL, return empty entries (public)
+    if (aclId === null) {
+      return c.json(
+        response.success({
+          entries: [],
+          acl_id: null,
+        })
+      );
+    }
+
+    // Get enriched ACL entries
+    const entries = await getEnrichedAclEntries(db, aclId);
+
+    return c.json(
+      response.success({
+        entries,
+        acl_id: aclId,
+      })
+    );
+  } catch (error) {
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error fetching entity ACL', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
+
+/**
+ * PUT /api/entities/:id/acl
+ * Set the ACL (access control list) for an entity
+ *
+ * This endpoint allows setting permissions for users and groups on an entity.
+ * - Empty entries array removes the ACL (makes entity public)
+ * - Setting entries creates/reuses a deduplicated ACL
+ * - Creates a new version of the entity with the updated ACL
+ *
+ * ACL request format:
+ * {
+ *   "entries": [
+ *     { "principal_type": "user", "principal_id": "uuid", "permission": "write" },
+ *     { "principal_type": "group", "principal_id": "uuid", "permission": "read" }
+ *   ]
+ * }
+ */
+entities.put('/:id/acl', validateJson(setAclRequestSchema), async c => {
+  const id = c.req.param('id');
+  const data = c.get('validated_json') as SetAclRequest;
+  const db = c.env.DB;
+
+  // For now, we'll use the test user ID. In the future, this comes from auth middleware
+  const systemUserId = 'test-user-001';
+
+  try {
+    // First, verify the entity exists
+    const entity = await findLatestVersion(db, id);
+
+    if (!entity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check if entity is soft-deleted
+    if (entity.is_deleted === 1) {
+      return c.json(
+        response.error(
+          'Cannot set ACL on deleted entity. Use restore endpoint first.',
+          'ENTITY_DELETED'
+        ),
+        409
+      );
+    }
+
+    // Validate that all principals exist
+    if (data.entries.length > 0) {
+      const validation = await validateAclPrincipals(db, data.entries);
+      if (!validation.valid) {
+        return c.json(
+          response.error('Invalid principals in ACL', 'INVALID_PRINCIPALS', {
+            errors: validation.errors,
+          }),
+          400
+        );
+      }
+    }
+
+    // Get or create the ACL
+    const aclId = await getOrCreateAcl(db, data.entries);
+
+    // Set the ACL on the entity (creates new version)
+    await setEntityAcl(db, entity.id as string, aclId, systemUserId);
+
+    // Get the updated ACL for response
+    let responseEntries: unknown[] = [];
+    if (aclId !== null) {
+      responseEntries = await getEnrichedAclEntries(db, aclId);
+    }
+
+    // Invalidate cache
+    try {
+      await invalidateEntityCache(c.env.KV, id);
+      await invalidateEntityCache(c.env.KV, entity.id as string);
+    } catch (cacheError) {
+      getLogger(c)
+        .child({ module: 'entities' })
+        .warn('Failed to invalidate cache', { error: cacheError });
+    }
+
+    return c.json(
+      response.success(
+        {
+          entries: responseEntries,
+          acl_id: aclId,
+        },
+        'ACL updated successfully'
+      )
+    );
+  } catch (error) {
+    getLogger(c)
+      .child({ module: 'entities' })
+      .error('Error setting entity ACL', error instanceof Error ? error : undefined);
     throw error;
   }
 });
