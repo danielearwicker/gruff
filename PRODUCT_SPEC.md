@@ -264,7 +264,7 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
 
 ### Access Control Lists (ACLs)
 
-#### 🟦 ACL Deduplication
+#### ✅ ACL Deduplication
 
 - ACLs are stored in a normalized, deduplicated table
 - When setting permissions on an entity or link, the system:
@@ -273,6 +273,10 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
   3. Looks up existing ACL by hash, or creates a new one if not found
   4. Associates the entity/link with the ACL ID
 - This ensures entities/links with identical permissions share the same ACL ID
+- Implemented in `src/utils/acl.ts`:
+  - `computeAclHash(entries)` - Computes SHA-256 hash of sorted, canonical ACL entries
+  - `deduplicateAclEntries(entries)` - Removes duplicate entries before hashing
+  - `getOrCreateAcl(db, entries)` - Returns existing ACL ID by hash or creates new ACL
 
 #### ✅ Permission Checking
 
@@ -1459,14 +1463,19 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - CacheStatsTracker for monitoring
 - Integration with types, entities, and links routes
 
-### 🟦 ACL Query Optimization
+### ✅ ACL Query Optimization
 
-- User's accessible ACL IDs are computed once per request and cached
-- `getAccessibleAclIds(userId, permission)` returns Set of ACL IDs
+- User's accessible ACL IDs computed per request via `getAccessibleAclIds(db, kv, userId, permission)`
+- Returns Set of ACL IDs the user can access for a given permission level
 - For list queries, ACL filter is added as `WHERE acl_id IN (?, ?, ...) OR acl_id IS NULL`
 - Index on `acl_id` columns ensures efficient filtering
-- For users with access to many ACLs (>1000), fallback to per-row checking
-- Effective group membership cached in KV with 5-minute TTL
+- For users with access to many ACLs (>1000), fallback to per-row checking via `filterByAclPermission()`
+- Effective group membership cached in KV with 5-minute TTL via `getEffectiveGroupsForUser()`
+- Implemented in `src/utils/acl.ts`:
+  - `getAccessibleAclIds(db, kv, userId, permission)` - Gets all ACL IDs user can access
+  - `buildAclFilterClause(db, kv, userId, permission, aclIdColumn)` - Builds SQL WHERE clause for list queries
+  - `filterByAclPermission(items, accessibleAclIds)` - Per-row filtering fallback for large ACL sets
+- Used in entity and link list endpoints (`GET /api/entities`, `GET /api/links`)
 
 ### API Response Optimization
 
