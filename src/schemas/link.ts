@@ -8,6 +8,7 @@ import {
   sanitizedJsonPropertiesSchema,
   paginationQuerySchema,
 } from './common.js';
+import { aclEntrySchema } from './acl.js';
 
 // Link database model schema
 export const linkSchema = z.object({
@@ -30,6 +31,10 @@ export const createLinkSchema = z.object({
   source_entity_id: uuidSchema,
   target_entity_id: uuidSchema,
   properties: sanitizedJsonPropertiesSchema.default({}),
+  // Optional ACL to set at creation time
+  // If not provided, creator will get write permission by default
+  // If empty array is provided, resource will be public (no ACL)
+  acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
 });
 
 // Link update schema (with sanitization for XSS prevention)

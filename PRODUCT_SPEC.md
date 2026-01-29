@@ -298,11 +298,13 @@ Each ACL entry grants a specific permission (read or write) to a principal (user
   - `buildAclFilterClause(db, kv, userId, permission, aclIdColumn)` - Builds SQL filter for list queries
   - `filterByAclPermission(items, accessibleAclIds)` - Per-row filtering fallback
 
-#### 🟦 Permission Inheritance
+#### ✅ Permission Inheritance
 
-- New entities and links inherit a default ACL (configurable per type or system-wide)
-- The creator is automatically granted write permission
-- Explicit ACL can be specified at creation time
+- New entities and links created without explicit ACL get creator write permission
+- The creator is automatically granted write permission on all created resources
+- Explicit ACL can be specified at creation time via `acl` field
+- Empty ACL array (`acl: []`) creates a public resource (no ACL restrictions)
+- If explicit ACL is provided, creator write permission is automatically added if not present
 
 ### OAuth2 Integration
 

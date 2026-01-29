@@ -136,6 +136,61 @@ export async function getOrCreateAcl(db: D1Database, entries: AclEntry[]): Promi
 }
 
 /**
+ * Create an ACL for a new resource with creator having write permission.
+ *
+ * If explicit ACL entries are provided, ensures the creator has write permission
+ * by adding it if not already present.
+ *
+ * If no ACL entries are provided (undefined), creates a default ACL with only
+ * the creator having write permission.
+ *
+ * If an empty array is provided, returns null (public resource).
+ *
+ * @param db - D1 database
+ * @param creatorId - User ID of the creator
+ * @param explicitAcl - Optional explicit ACL entries (undefined = creator-only, [] = public)
+ * @returns Promise<number | null> - ACL ID, or null for public resources
+ */
+export async function createResourceAcl(
+  db: D1Database,
+  creatorId: string,
+  explicitAcl?: AclEntry[]
+): Promise<number | null> {
+  // If explicitly set to empty array, make resource public
+  if (explicitAcl !== undefined && explicitAcl.length === 0) {
+    return null;
+  }
+
+  // Start with creator write permission
+  const creatorEntry: AclEntry = {
+    principal_type: 'user',
+    principal_id: creatorId,
+    permission: 'write',
+  };
+
+  let entries: AclEntry[];
+
+  if (explicitAcl === undefined) {
+    // No explicit ACL: just creator with write permission
+    entries = [creatorEntry];
+  } else {
+    // Explicit ACL provided: ensure creator has write permission
+    const hasCreatorWrite = explicitAcl.some(
+      e => e.principal_type === 'user' && e.principal_id === creatorId && e.permission === 'write'
+    );
+
+    if (hasCreatorWrite) {
+      entries = explicitAcl;
+    } else {
+      // Add creator write permission to the explicit ACL
+      entries = [creatorEntry, ...explicitAcl];
+    }
+  }
+
+  return getOrCreateAcl(db, entries);
+}
+
+/**
  * Get ACL entries for an ACL ID
  *
  * @param db - D1 database

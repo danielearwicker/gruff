@@ -34,6 +34,7 @@ import {
   buildAclFilterClause,
   filterByAclPermission,
   hasPermissionByAclId,
+  createResourceAcl,
 } from '../utils/acl.js';
 
 type Bindings = {
@@ -94,16 +95,22 @@ async function findLatestVersion(
 /**
  * POST /api/links
  * Create a new link
+ *
+ * Authentication required. The creator is automatically granted write permission.
+ *
+ * Permission inheritance:
+ * - If `acl` is not provided: creator gets write permission (private to creator)
+ * - If `acl` is an empty array: link is public (no ACL restrictions)
+ * - If `acl` is provided with entries: uses those entries, ensuring creator has write permission
  */
-links.post('/', validateJson(createLinkSchema), async c => {
+links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
   const data = c.get('validated_json') as CreateLink;
   const db = c.env.DB;
+  const user = c.get('user');
 
   const id = generateUUID();
   const now = getCurrentTimestamp();
-
-  // For now, we'll use the test user ID from seed data. In the future, this will come from auth middleware
-  const systemUserId = 'test-user-001';
+  const userId = user.user_id;
 
   try {
     // Check if type_id exists and get its json_schema
@@ -159,15 +166,32 @@ links.post('/', validateJson(createLinkSchema), async c => {
       );
     }
 
+    // Validate explicit ACL principals if provided
+    if (data.acl && data.acl.length > 0) {
+      const validation = await validateAclPrincipals(db, data.acl);
+      if (!validation.valid) {
+        return c.json(
+          response.error(`Invalid ACL entries: ${validation.errors.join(', ')}`, 'INVALID_ACL'),
+          400
+        );
+      }
+    }
+
+    // Create ACL for the new link with permission inheritance
+    // - undefined acl: creator gets write permission
+    // - empty array: public (no ACL)
+    // - explicit entries: uses entries + ensures creator has write
+    const aclId = await createResourceAcl(db, userId, data.acl);
+
     // Convert properties to string
     const propertiesString = JSON.stringify(data.properties);
 
-    // Insert the new link (version 1)
+    // Insert the new link (version 1) with ACL
     await db
       .prepare(
         `
-      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-      VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1)
+      INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+      VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1, ?)
     `
       )
       .bind(
@@ -177,7 +201,8 @@ links.post('/', validateJson(createLinkSchema), async c => {
         data.target_entity_id,
         propertiesString,
         now,
-        systemUserId
+        userId,
+        aclId
       )
       .run();
 
@@ -194,11 +219,12 @@ links.post('/', validateJson(createLinkSchema), async c => {
 
     // Log the create operation
     try {
-      await logLinkOperation(db, c, 'create', id, systemUserId, {
+      await logLinkOperation(db, c, 'create', id, userId, {
         type_id: data.type_id,
         source_entity_id: data.source_entity_id,
         target_entity_id: data.target_entity_id,
         properties: data.properties,
+        acl_id: aclId,
       });
     } catch (auditError) {
       getLogger(c)

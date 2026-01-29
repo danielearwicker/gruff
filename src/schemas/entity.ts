@@ -8,6 +8,7 @@ import {
   sanitizedJsonPropertiesSchema,
   paginationQuerySchema,
 } from './common.js';
+import { aclEntrySchema } from './acl.js';
 
 // Entity database model schema
 export const entitySchema = z.object({
@@ -26,6 +27,10 @@ export const entitySchema = z.object({
 export const createEntitySchema = z.object({
   type_id: typeIdSchema,
   properties: sanitizedJsonPropertiesSchema.optional().default({}),
+  // Optional ACL to set at creation time
+  // If not provided, creator will get write permission by default
+  // If empty array is provided, resource will be public (no ACL)
+  acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
 });
 
 // Entity update schema (with sanitization for XSS prevention)

@@ -122,7 +122,9 @@ async function initGlobalAuthToken() {
   });
 
   if (registerResponse.status !== 201 || !registerResponse.data?.data?.access_token) {
-    throw new Error('Failed to initialize global auth token: ' + JSON.stringify(registerResponse.data));
+    throw new Error(
+      'Failed to initialize global auth token: ' + JSON.stringify(registerResponse.data)
+    );
   }
 
   globalAuthToken = registerResponse.data.data.access_token;
@@ -1902,7 +1904,7 @@ async function testCreateEntity() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const response = await makeRequest('POST', '/api/entities', {
+  const response = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Test Entity',
@@ -1941,7 +1943,7 @@ async function testCreateEntity() {
 async function testCreateEntityWithoutType() {
   logTest('Entity CRUD - Create Entity with Non-existent Type Returns 404');
 
-  const response = await makeRequest('POST', '/api/entities', {
+  const response = await makeAuthRequest('POST', '/api/entities', {
     type_id: '00000000-0000-0000-0000-000000000000',
     properties: { name: 'Test' },
   });
@@ -1954,7 +1956,7 @@ async function testCreateEntityWithoutType() {
 async function testCreateEntityValidation() {
   logTest('Entity CRUD - Validate Required Fields');
 
-  const response = await makeRequest('POST', '/api/entities', {
+  const response = await makeAuthRequest('POST', '/api/entities', {
     // missing type_id
     properties: {},
   });
@@ -1985,7 +1987,7 @@ async function testListEntitiesFilterByType() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { test: 'value' },
   });
@@ -2012,9 +2014,10 @@ async function testGetEntityById() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Get Test Entity' },
+    acl: [], // Public for unauthenticated access
   });
   const entityId = createResponse.data.data.id;
 
@@ -2053,9 +2056,10 @@ async function testUpdateEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original Name', value: 1 },
+    acl: [], // Public for unauthenticated access
   });
   const entityId = createResponse.data.data.id;
 
@@ -2089,9 +2093,13 @@ async function testUpdateEntity() {
 async function testUpdateEntityNotFound() {
   logTest('Entity CRUD - Update Non-existent Entity Returns 404');
 
-  const response = await makeAuthRequest('PUT', '/api/entities/00000000-0000-0000-0000-000000000000', {
-    properties: { name: 'Test' },
-  });
+  const response = await makeAuthRequest(
+    'PUT',
+    '/api/entities/00000000-0000-0000-0000-000000000000',
+    {
+      properties: { name: 'Test' },
+    }
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2107,9 +2115,10 @@ async function testDeleteEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'To Be Deleted' },
+    acl: [], // Public for unauthenticated access
   });
   const entityId = createResponse.data.data.id;
 
@@ -2148,7 +2157,7 @@ async function testDeleteEntityAlreadyDeleted() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2173,9 +2182,10 @@ async function testRestoreEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Restored Entity' },
+    acl: [], // Public for unauthenticated access
   });
   const entityId = createResponse.data.data.id;
 
@@ -2212,7 +2222,7 @@ async function testRestoreEntityNotDeleted() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2247,7 +2257,7 @@ async function testUpdateDeletedEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2274,12 +2284,12 @@ async function testListEntitiesExcludesDeleted() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Active Entity' },
   });
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Deleted Entity' },
   });
@@ -2310,9 +2320,10 @@ async function testListEntitiesIncludesDeleted() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Will Be Deleted' },
+    acl: [], // Public for unauthenticated listing
   });
   const entityId = createResponse.data.data.id;
 
@@ -2353,7 +2364,7 @@ async function testGetEntityVersions() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Version 1', count: 1 },
   });
@@ -2429,7 +2440,7 @@ async function testGetSpecificEntityVersion() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original', value: 100 },
   });
@@ -2470,7 +2481,7 @@ async function testGetSpecificEntityVersionNotFound() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2494,7 +2505,7 @@ async function testGetSpecificEntityVersionInvalidNumber() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2518,7 +2529,7 @@ async function testGetEntityHistory() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Original Name',
@@ -2608,7 +2619,7 @@ async function testGetVersionsWithDeletedEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test' },
   });
@@ -2668,20 +2679,20 @@ async function testCreateLink() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create two entities to link
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
   // Create a link
-  const response = await makeRequest('POST', '/api/links', {
+  const response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -2739,19 +2750,19 @@ async function testCreateLinkWithInvalidType() {
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const response = await makeRequest('POST', '/api/links', {
+  const response = await makeAuthRequest('POST', '/api/links', {
     type_id: '00000000-0000-0000-0000-000000000000',
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -2778,13 +2789,13 @@ async function testCreateLinkWithInvalidSourceEntity() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity = await makeRequest('POST', '/api/entities', {
+  const entity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity' },
   });
   const entityId = entity.data.data.id;
 
-  const response = await makeRequest('POST', '/api/links', {
+  const response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: '00000000-0000-0000-0000-000000000000',
     target_entity_id: entityId,
@@ -2827,20 +2838,20 @@ async function testListLinksFilterByType() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entity2Id = entity2.data.data.id;
 
   // Create a link
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -2875,23 +2886,26 @@ async function testGetLinkById() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { name: 'Test Link' },
+    acl: [], // Public for unauthenticated access
   });
   const linkId = createResponse.data.data.id;
 
@@ -2932,23 +2946,26 @@ async function testUpdateLink() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { strength: 'weak', weight: 1 },
+    acl: [], // Public for unauthenticated access
   });
   const linkId = createResponse.data.data.id;
 
@@ -2990,23 +3007,26 @@ async function testDeleteLink() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { name: 'To Be Deleted' },
+    acl: [], // Public for unauthenticated access
   });
   const linkId = createResponse.data.data.id;
 
@@ -3039,23 +3059,26 @@ async function testRestoreLink() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { name: 'Restored Link' },
+    acl: [], // Public for unauthenticated access
   });
   const linkId = createResponse.data.data.id;
 
@@ -3097,19 +3120,19 @@ async function testUpdateDeletedLink() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3148,20 +3171,20 @@ async function testGetLinkVersions() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
   // Create a link
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3245,19 +3268,19 @@ async function testGetSpecificLinkVersion() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3301,19 +3324,19 @@ async function testGetSpecificLinkVersionNotFound() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3345,19 +3368,19 @@ async function testGetSpecificLinkVersionInvalidNumber() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3389,19 +3412,19 @@ async function testGetLinkHistory() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3499,19 +3522,19 @@ async function testGetLinkVersionsWithDeletedLink() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -3576,26 +3599,26 @@ async function testGetOutboundLinks() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create three entities: source and two targets
-  const sourceEntity = await makeRequest('POST', '/api/entities', {
+  const sourceEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source Entity' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
-  const targetEntity1 = await makeRequest('POST', '/api/entities', {
+  const targetEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
-  const targetEntity2 = await makeRequest('POST', '/api/entities', {
+  const targetEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
   // Create two outbound links from source entity
-  const link1Response = await makeRequest('POST', '/api/links', {
+  const link1Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
@@ -3603,7 +3626,7 @@ async function testGetOutboundLinks() {
   });
   const link1Id = link1Response.data.data.id;
 
-  const link2Response = await makeRequest('POST', '/api/links', {
+  const link2Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
@@ -3612,13 +3635,13 @@ async function testGetOutboundLinks() {
   const link2Id = link2Response.data.data.id;
 
   // Create an inbound link (should NOT appear in outbound results)
-  const inboundEntity = await makeRequest('POST', '/api/entities', {
+  const inboundEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Inbound Source' },
   });
   const inboundEntityId = inboundEntity.data.data.id;
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: inboundEntityId,
     target_entity_id: sourceEntityId,
@@ -3700,33 +3723,33 @@ async function testGetOutboundLinksFilterByType() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
-  const sourceEntity = await makeRequest('POST', '/api/entities', {
+  const sourceEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
-  const targetEntity1 = await makeRequest('POST', '/api/entities', {
+  const targetEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
-  const targetEntity2 = await makeRequest('POST', '/api/entities', {
+  const targetEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
   // Create links of different types
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
     properties: { type: 'type1' },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
@@ -3778,26 +3801,26 @@ async function testGetOutboundLinksExcludesDeleted() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const sourceEntity = await makeRequest('POST', '/api/entities', {
+  const sourceEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source' },
   });
   const sourceEntityId = sourceEntity.data.data.id;
 
-  const targetEntity1 = await makeRequest('POST', '/api/entities', {
+  const targetEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target 1' },
   });
   const targetEntity1Id = targetEntity1.data.data.id;
 
-  const targetEntity2 = await makeRequest('POST', '/api/entities', {
+  const targetEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target 2' },
   });
   const targetEntity2Id = targetEntity2.data.data.id;
 
   // Create two links
-  const link1Response = await makeRequest('POST', '/api/links', {
+  const link1Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity1Id,
@@ -3805,7 +3828,7 @@ async function testGetOutboundLinksExcludesDeleted() {
   });
   const link1Id = link1Response.data.data.id;
 
-  const link2Response = await makeRequest('POST', '/api/links', {
+  const link2Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: sourceEntityId,
     target_entity_id: targetEntity2Id,
@@ -3865,26 +3888,26 @@ async function testGetInboundLinks() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create three entities: target and two sources
-  const targetEntity = await makeRequest('POST', '/api/entities', {
+  const targetEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
-  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source Entity 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
-  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source Entity 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
   // Create two inbound links to target entity
-  const link1Response = await makeRequest('POST', '/api/links', {
+  const link1Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
@@ -3892,7 +3915,7 @@ async function testGetInboundLinks() {
   });
   const link1Id = link1Response.data.data.id;
 
-  const link2Response = await makeRequest('POST', '/api/links', {
+  const link2Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
@@ -3901,13 +3924,13 @@ async function testGetInboundLinks() {
   const link2Id = link2Response.data.data.id;
 
   // Create an outbound link (should NOT appear in inbound results)
-  const outboundEntity = await makeRequest('POST', '/api/entities', {
+  const outboundEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Outbound Target' },
   });
   const outboundEntityId = outboundEntity.data.data.id;
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: targetEntityId,
     target_entity_id: outboundEntityId,
@@ -3981,33 +4004,33 @@ async function testGetInboundLinksFilterByType() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
-  const targetEntity = await makeRequest('POST', '/api/entities', {
+  const targetEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
-  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
-  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
   // Create links of different types
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
     properties: { type: 'type1' },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
@@ -4059,26 +4082,26 @@ async function testGetInboundLinksExcludesDeleted() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const targetEntity = await makeRequest('POST', '/api/entities', {
+  const targetEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target' },
   });
   const targetEntityId = targetEntity.data.data.id;
 
-  const sourceEntity1 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source 1' },
   });
   const sourceEntity1Id = sourceEntity1.data.data.id;
 
-  const sourceEntity2 = await makeRequest('POST', '/api/entities', {
+  const sourceEntity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source 2' },
   });
   const sourceEntity2Id = sourceEntity2.data.data.id;
 
   // Create two links
-  const link1Response = await makeRequest('POST', '/api/links', {
+  const link1Response = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: sourceEntity1Id,
     target_entity_id: targetEntityId,
@@ -4086,7 +4109,7 @@ async function testGetInboundLinksExcludesDeleted() {
   });
   const link1Id = link1Response.data.data.id;
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: sourceEntity2Id,
     target_entity_id: targetEntityId,
@@ -4146,45 +4169,45 @@ async function testGetNeighbors() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create five entities: center, two inbound sources, and two outbound targets
-  const centerEntity = await makeRequest('POST', '/api/entities', {
+  const centerEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Center Entity' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
-  const inboundSource1 = await makeRequest('POST', '/api/entities', {
+  const inboundSource1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Inbound Source 1' },
   });
   const inboundSource1Id = inboundSource1.data.data.id;
 
-  const inboundSource2 = await makeRequest('POST', '/api/entities', {
+  const inboundSource2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Inbound Source 2' },
   });
   const inboundSource2Id = inboundSource2.data.data.id;
 
-  const outboundTarget1 = await makeRequest('POST', '/api/entities', {
+  const outboundTarget1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Outbound Target 1' },
   });
   const outboundTarget1Id = outboundTarget1.data.data.id;
 
-  const outboundTarget2 = await makeRequest('POST', '/api/entities', {
+  const outboundTarget2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Outbound Target 2' },
   });
   const outboundTarget2Id = outboundTarget2.data.data.id;
 
   // Create inbound links (pointing TO center entity)
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: inboundSource1Id,
     target_entity_id: centerEntityId,
     properties: { relationship: 'follows' },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: inboundSource2Id,
     target_entity_id: centerEntityId,
@@ -4192,14 +4215,14 @@ async function testGetNeighbors() {
   });
 
   // Create outbound links (FROM center entity)
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTarget1Id,
     properties: { relationship: 'likes' },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTarget2Id,
@@ -4258,33 +4281,33 @@ async function testGetNeighborsFilterByDirection() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const centerEntity = await makeRequest('POST', '/api/entities', {
+  const centerEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Center' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
-  const inboundSource = await makeRequest('POST', '/api/entities', {
+  const inboundSource = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Inbound Source' },
   });
   const inboundSourceId = inboundSource.data.data.id;
 
-  const outboundTarget = await makeRequest('POST', '/api/entities', {
+  const outboundTarget = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Outbound Target' },
   });
   const outboundTargetId = outboundTarget.data.data.id;
 
   // Create links
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: inboundSourceId,
     target_entity_id: centerEntityId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: centerEntityId,
     target_entity_id: outboundTargetId,
@@ -4333,33 +4356,33 @@ async function testGetNeighborsFilterByLinkType() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities
-  const centerEntity = await makeRequest('POST', '/api/entities', {
+  const centerEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Center' },
   });
   const centerEntityId = centerEntity.data.data.id;
 
-  const neighbor1 = await makeRequest('POST', '/api/entities', {
+  const neighbor1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Neighbor 1' },
   });
   const neighbor1Id = neighbor1.data.data.id;
 
-  const neighbor2 = await makeRequest('POST', '/api/entities', {
+  const neighbor2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Neighbor 2' },
   });
   const neighbor2Id = neighbor2.data.data.id;
 
   // Create links of different types
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: centerEntityId,
     target_entity_id: neighbor1Id,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: centerEntityId,
     target_entity_id: neighbor2Id,
@@ -4410,46 +4433,46 @@ async function testShortestPath() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a linear path: A -> B -> C -> D
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
-  const entityD = await makeRequest('POST', '/api/entities', {
+  const entityD = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
   // Create links: A->B, B->C, C->D
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: { step: 1 },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
     properties: { step: 2 },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityDId,
@@ -4483,7 +4506,7 @@ async function testShortestPathSameEntity() {
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create a single entity
-  const entity = await makeRequest('POST', '/api/entities', {
+  const entity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Same Entity' },
   });
@@ -4510,13 +4533,13 @@ async function testShortestPathNoPath() {
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create two disconnected entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Isolated Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Isolated Entity 2' },
   });
@@ -4553,40 +4576,40 @@ async function testShortestPathWithLinkTypeFilter() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities: A -> B -> C (using type1), and A -> C (using type2)
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   // Create links
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: entityAId,
     target_entity_id: entityCId,
@@ -4618,7 +4641,7 @@ async function testShortestPathInvalidSourceEntity() {
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const entity = await makeRequest('POST', '/api/entities', {
+  const entity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Valid Entity' },
   });
@@ -4643,7 +4666,7 @@ async function testShortestPathInvalidTargetEntity() {
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const entity = await makeRequest('POST', '/api/entities', {
+  const entity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Valid Entity' },
   });
@@ -4675,59 +4698,59 @@ async function testMultiHopTraversal() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a tree structure: A -> B, A -> C, B -> D, B -> E
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
-  const entityD = await makeRequest('POST', '/api/entities', {
+  const entityD = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
-  const entityE = await makeRequest('POST', '/api/entities', {
+  const entityE = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity E' },
   });
   const entityEId = entityE.data.data.id;
 
   // Create links: A->B, A->C, B->D, B->E
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityCId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityDId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityEId,
@@ -4774,46 +4797,46 @@ async function testMultiHopTraversalWithDepthLimit() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create a chain: A -> B -> C -> D
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
-  const entityD = await makeRequest('POST', '/api/entities', {
+  const entityD = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity D' },
   });
   const entityDId = entityD.data.data.id;
 
   // Create links: A->B, B->C, C->D
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityDId,
@@ -4854,33 +4877,33 @@ async function testMultiHopTraversalBidirectional() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create: A -> B <- C
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   // Create links: A->B, C->B
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entityCId,
     target_entity_id: entityBId,
@@ -4932,33 +4955,33 @@ async function testMultiHopTraversalWithTypeFilters() {
   const linkType2Id = linkType2Response.data.data.id;
 
   // Create entities: A (type1) -> B (type1) -> C (type2)
-  const entityA = await makeRequest('POST', '/api/entities', {
+  const entityA = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType1Id,
     properties: { name: 'Entity A' },
   });
   const entityAId = entityA.data.data.id;
 
-  const entityB = await makeRequest('POST', '/api/entities', {
+  const entityB = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType1Id,
     properties: { name: 'Entity B' },
   });
   const entityBId = entityB.data.data.id;
 
-  const entityC = await makeRequest('POST', '/api/entities', {
+  const entityC = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType2Id,
     properties: { name: 'Entity C' },
   });
   const entityCId = entityC.data.data.id;
 
   // Create links: A->B (linkType1), B->C (linkType2)
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType1Id,
     source_entity_id: entityAId,
     target_entity_id: entityBId,
     properties: {},
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkType2Id,
     source_entity_id: entityBId,
     target_entity_id: entityCId,
@@ -5015,27 +5038,27 @@ async function testGetNeighborsBidirectionalConnection() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create two entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
   const entity2Id = entity2.data.data.id;
 
   // Create bidirectional links
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { direction: 'forward' },
   });
 
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2Id,
     target_entity_id: entity1Id,
@@ -5075,7 +5098,7 @@ async function testEntitiesPaginationLimit() {
 
   // Create 5 entities
   for (let i = 0; i < 5; i++) {
-    await makeRequest('POST', '/api/entities', {
+    await makeAuthRequest('POST', '/api/entities', {
       type_id: typeId,
       properties: { index: i },
     });
@@ -5137,11 +5160,11 @@ async function testLinksPaginationLimit() {
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create 2 entities to link
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
@@ -5151,7 +5174,7 @@ async function testLinksPaginationLimit() {
 
   // Create 5 links
   for (let i = 0; i < 5; i++) {
-    await makeRequest('POST', '/api/links', {
+    await makeAuthRequest('POST', '/api/links', {
       type_id: linkTypeId,
       source_entity_id: entityId1,
       target_entity_id: entityId2,
@@ -5293,13 +5316,13 @@ async function testFilterEntitiesByJsonPropertyString() {
   assert(personType, 'Person type should exist in seed data');
 
   // Create entities with different string properties
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Alice', role: 'Engineer' },
   });
   assert(entity1.ok, 'Should create first entity');
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Bob', role: 'Manager' },
   });
@@ -5322,13 +5345,13 @@ async function testFilterEntitiesByJsonPropertyNumber() {
   const personType = typesResponse.data.items.find(t => t.name === 'Person');
 
   // Create entities with numeric properties
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Charlie', age: 25 },
   });
   assert(entity1.ok, 'Should create first entity');
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Diana', age: 30 },
   });
@@ -5351,13 +5374,13 @@ async function testFilterEntitiesByJsonPropertyBoolean() {
   const personType = typesResponse.data.items.find(t => t.name === 'Person');
 
   // Create entities with boolean properties
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Eve', active: true },
   });
   assert(entity1.ok, 'Should create first entity');
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Frank', active: false },
   });
@@ -5382,17 +5405,17 @@ async function testFilterLinksByJsonPropertyString() {
   const knowsType = typesResponse.data.items.find(t => t.name === 'Knows');
 
   // Create entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'George' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Hannah' },
   });
 
   // Create links with different properties
-  const link1 = await makeRequest('POST', '/api/links', {
+  const link1 = await makeAuthRequest('POST', '/api/links', {
     type_id: knowsType.id,
     source_entity_id: entity1.data.id,
     target_entity_id: entity2.data.id,
@@ -5401,11 +5424,11 @@ async function testFilterLinksByJsonPropertyString() {
   assert(link1.ok, 'Should create first link');
 
   // Create another pair to have multiple links
-  const entity3 = await makeRequest('POST', '/api/entities', {
+  const entity3 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Ian' },
   });
-  const link2 = await makeRequest('POST', '/api/links', {
+  const link2 = await makeAuthRequest('POST', '/api/links', {
     type_id: knowsType.id,
     source_entity_id: entity1.data.id,
     target_entity_id: entity3.data.id,
@@ -5435,19 +5458,19 @@ async function testFilterEntitiesByMultipleProperties() {
   const personType = typesResponse.data.items.find(t => t.name === 'Person');
 
   // Create entities with multiple properties
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Jack', department: 'Engineering', level: 3 },
   });
   assert(entity1.ok, 'Should create first entity');
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Karen', department: 'Engineering', level: 5 },
   });
   assert(entity2.ok, 'Should create second entity');
 
-  const entity3 = await makeRequest('POST', '/api/entities', {
+  const entity3 = await makeAuthRequest('POST', '/api/entities', {
     type_id: personType.id,
     properties: { name: 'Laura', department: 'Marketing', level: 3 },
   });
@@ -5499,15 +5522,15 @@ async function testSearchEntitiesByType() {
   const companyTypeId = companyType.data.data.id;
 
   // Create test entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: personTypeId,
     properties: { name: 'Alice' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: personTypeId,
     properties: { name: 'Bob' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: companyTypeId,
     properties: { name: 'Acme Corp' },
   });
@@ -5536,15 +5559,15 @@ async function testSearchEntitiesByProperty() {
   const employeeTypeId = employeeType.data.data.id;
 
   // Create test entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
     properties: { name: 'Charlie', department: 'Engineering', salary: 100000 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
     properties: { name: 'Diana', department: 'Marketing', salary: 90000 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: employeeTypeId,
     properties: { name: 'Eve', department: 'Engineering', salary: 95000 },
   });
@@ -5587,15 +5610,15 @@ async function testSearchEntitiesByMultipleProperties() {
   const productTypeId = productType.data.data.id;
 
   // Create test entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: productTypeId,
     properties: { name: 'Laptop', category: 'Electronics', inStock: true, price: 1200 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: productTypeId,
     properties: { name: 'Mouse', category: 'Electronics', inStock: false, price: 25 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: productTypeId,
     properties: { name: 'Keyboard', category: 'Electronics', inStock: true, price: 80 },
   });
@@ -5633,7 +5656,7 @@ async function testSearchEntitiesPagination() {
 
   // Create multiple test entities
   for (let i = 0; i < 25; i++) {
-    await makeRequest('POST', '/api/entities', {
+    await makeAuthRequest('POST', '/api/entities', {
       type_id: itemTypeId,
       properties: { name: `Item ${i}` },
     });
@@ -5683,11 +5706,11 @@ async function testSearchLinksBasic() {
   const friendshipTypeId = friendshipType.data.data.id;
 
   // Create test entities
-  const user1 = await makeRequest('POST', '/api/entities', {
+  const user1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: userTypeId,
     properties: { name: 'Frank' },
   });
-  const user2 = await makeRequest('POST', '/api/entities', {
+  const user2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: userTypeId,
     properties: { name: 'Grace' },
   });
@@ -5696,7 +5719,7 @@ async function testSearchLinksBasic() {
   const user2Id = user2.data.data.id;
 
   // Create test links
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: friendshipTypeId,
     source_entity_id: user1Id,
     target_entity_id: user2Id,
@@ -5738,19 +5761,19 @@ async function testSearchLinksBySourceEntity() {
   const wroteTypeId = wroteType.data.data.id;
 
   // Create test entities
-  const author1 = await makeRequest('POST', '/api/entities', {
+  const author1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: authorTypeId,
     properties: { name: 'Author One' },
   });
-  const author2 = await makeRequest('POST', '/api/entities', {
+  const author2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: authorTypeId,
     properties: { name: 'Author Two' },
   });
-  const book1 = await makeRequest('POST', '/api/entities', {
+  const book1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: { title: 'Book A' },
   });
-  const book2 = await makeRequest('POST', '/api/entities', {
+  const book2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: { title: 'Book B' },
   });
@@ -5761,20 +5784,20 @@ async function testSearchLinksBySourceEntity() {
   const book2Id = book2.data.data.id;
 
   // Create links - author1 wrote book1 and book2
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: wroteTypeId,
     source_entity_id: author1Id,
     target_entity_id: book1Id,
     properties: {},
   });
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: wroteTypeId,
     source_entity_id: author1Id,
     target_entity_id: book2Id,
     properties: {},
   });
   // author2 wrote book2
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: wroteTypeId,
     source_entity_id: author2Id,
     target_entity_id: book2Id,
@@ -5811,11 +5834,11 @@ async function testSearchLinksWithEntityInfo() {
   const roadTypeId = roadType.data.data.id;
 
   // Create test entities
-  const city1 = await makeRequest('POST', '/api/entities', {
+  const city1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'New York' },
   });
-  const city2 = await makeRequest('POST', '/api/entities', {
+  const city2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'Boston' },
   });
@@ -5824,7 +5847,7 @@ async function testSearchLinksWithEntityInfo() {
   const city2Id = city2.data.data.id;
 
   // Create link
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: roadTypeId,
     source_entity_id: city1Id,
     target_entity_id: city2Id,
@@ -5858,19 +5881,19 @@ async function testTypeAheadSuggestions() {
   const cityTypeId = cityType.data.data.id;
 
   // Create test entities with names for matching
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'San Francisco' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'San Diego' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'Santa Clara' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: cityTypeId,
     properties: { name: 'Los Angeles' },
   });
@@ -5907,15 +5930,15 @@ async function testTypeAheadSuggestionsWithTypeFilter() {
   const bikeTypeId = bikeType.data.data.id;
 
   // Create entities of different types with similar names
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: carTypeId,
     properties: { name: 'Honda Civic' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: carTypeId,
     properties: { name: 'Honda Accord' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: bikeTypeId,
     properties: { name: 'Honda CB500' },
   });
@@ -5947,7 +5970,7 @@ async function testTypeAheadSuggestionsLimit() {
   // Create many entities
   const colors = ['Red', 'Rose', 'Ruby', 'Rust', 'Raspberry', 'Rouge', 'Redwood', 'Reddish'];
   for (const color of colors) {
-    await makeRequest('POST', '/api/entities', {
+    await makeAuthRequest('POST', '/api/entities', {
       type_id: colorTypeId,
       properties: { name: color },
     });
@@ -5974,21 +5997,21 @@ async function testTypeAheadSuggestionsCustomProperty() {
   const bookTypeId = bookType.data.data.id;
 
   // Create entities with different properties
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: {
       title: 'The Great Gatsby',
       author: 'F. Scott Fitzgerald',
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: {
       title: '1984',
       author: 'George Orwell',
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: bookTypeId,
     properties: {
       title: 'Animal Farm',
@@ -6311,11 +6334,11 @@ async function testPropertyFilterEquals() {
   const typeId = typeResponse.data.data.id;
 
   // Create test entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Alice', age: 25 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Bob', age: 30 },
   });
@@ -6341,15 +6364,15 @@ async function testPropertyFilterGreaterThan() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Product A', price: 10 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Product B', price: 20 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Product C', price: 30 },
   });
@@ -6391,15 +6414,15 @@ async function testPropertyFilterLike() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { email: 'alice@example.com' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { email: 'bob@test.com' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { email: 'charlie@example.com' },
   });
@@ -6461,15 +6484,15 @@ async function testPropertyFilterIn() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { status: 'active' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { status: 'pending' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { status: 'inactive' },
   });
@@ -6497,11 +6520,11 @@ async function testPropertyFilterExists() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Entity 1', optional_field: 'value' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Entity 2' },
   });
@@ -6541,7 +6564,7 @@ async function testPropertyFilterMultipleConditions() {
   const typeId = typeResponse.data.data[0].id;
 
   // Create another entity
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Charlie', age: 25 },
   });
@@ -6577,23 +6600,23 @@ async function testPropertyFilterOnLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
 
   // Create links with weight property
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
     properties: { weight: 5 },
   });
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2.data.data.id,
     target_entity_id: entity1.data.data.id,
@@ -6638,21 +6661,21 @@ async function testNestedPropertyPathDotNotation() {
   const typeId = typeResponse.data.data.id;
 
   // Create entities with nested address properties
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Alice',
       address: { city: 'New York', country: 'USA', zip: '10001' },
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Bob',
       address: { city: 'Los Angeles', country: 'USA', zip: '90001' },
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Charlie',
@@ -6682,7 +6705,7 @@ async function testNestedPropertyPathDeepNesting() {
   const typeId = typeResponse.data.data.id;
 
   // Create entities with deeply nested properties
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       user: {
@@ -6695,7 +6718,7 @@ async function testNestedPropertyPathDeepNesting() {
       },
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       user: {
@@ -6730,14 +6753,14 @@ async function testNestedPropertyPathArrayIndexBracket() {
   const typeId = typeResponse.data.data.id;
 
   // Create entities with array properties
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Entity A',
       tags: ['featured', 'new', 'popular'],
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Entity B',
@@ -6785,7 +6808,7 @@ async function testNestedPropertyPathMixedNotation() {
   const typeId = typeResponse.data.data.id;
 
   // Create entities with complex nested structure
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       order_id: 'ORD-001',
@@ -6795,7 +6818,7 @@ async function testNestedPropertyPathMixedNotation() {
       ],
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       order_id: 'ORD-002',
@@ -6849,21 +6872,21 @@ async function testNestedPropertyPathExists() {
   const typeId = typeResponse.data.data.id;
 
   // Create entities with varying nested structure
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Complete Profile',
       profile: { bio: 'A software developer', website: 'https://example.com' },
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Partial Profile',
       profile: { bio: 'Another developer' },
     },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'No Profile',
@@ -6960,17 +6983,17 @@ async function testNestedPropertyPathOnLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
 
   // Create links with nested properties
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
@@ -6979,7 +7002,7 @@ async function testNestedPropertyPathOnLinks() {
       metadata: { strength: 5, since: '2020-01-01' },
     },
   });
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2.data.data.id,
     target_entity_id: entity1.data.data.id,
@@ -7018,15 +7041,15 @@ async function testFilterExpressionSimple() {
   const typeId = typeResponse.data.data.id;
 
   // Create test entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Alice', status: 'active', age: 25 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Bob', status: 'active', age: 30 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Charlie', status: 'inactive', age: 35 },
   });
@@ -7153,11 +7176,11 @@ async function testFilterExpressionWithExistsOperator() {
   });
   const typeId = typeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'WithEmail', email: 'test@example.com' },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'WithoutEmail' },
   });
@@ -7194,23 +7217,23 @@ async function testFilterExpressionOnLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 1' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Entity 2' },
   });
 
   // Create links with different properties
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
     properties: { type: 'friend', strength: 10 },
   });
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2.data.data.id,
     target_entity_id: entity1.data.data.id,
@@ -7369,19 +7392,19 @@ async function testBulkCreateLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Source 1' },
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Target 1' },
   });
   const entity2Id = entity2Response.data.data.id;
 
-  const entity3Response = await makeRequest('POST', '/api/entities', {
+  const entity3Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Target 2' },
   });
@@ -7427,7 +7450,7 @@ async function testBulkCreateLinksInvalidEntity() {
   const entityTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestEntityType');
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
-  const validEntityResponse = await makeRequest('POST', '/api/entities', {
+  const validEntityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Valid Entity for Link' },
   });
@@ -7463,20 +7486,20 @@ async function testBulkUpdateEntities() {
   const typeId = typeResponse.data.data[0].id;
 
   // Create entities to update
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Update Test 1', value: 10 },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Update Test 2', value: 20 },
   });
   const entity2Id = entity2.data.data.id;
 
   // Bulk update
-  const response = await makeRequest('PUT', '/api/bulk/entities', {
+  const response = await makeAuthRequest('PUT', '/api/bulk/entities', {
     entities: [
       { id: entity1Id, properties: { name: 'Updated 1', value: 100 } },
       { id: entity2Id, properties: { name: 'Updated 2', value: 200 } },
@@ -7508,7 +7531,7 @@ async function testBulkUpdateEntitiesNotFound() {
   const typeResponse = await makeRequest('GET', '/api/types?name=BulkTestEntityType');
   const typeId = typeResponse.data.data[0].id;
 
-  const validEntity = await makeRequest('POST', '/api/entities', {
+  const validEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Valid for Bulk Update' },
   });
@@ -7516,7 +7539,7 @@ async function testBulkUpdateEntitiesNotFound() {
 
   const invalidEntityId = '00000000-0000-0000-0000-000000000000';
 
-  const response = await makeRequest('PUT', '/api/bulk/entities', {
+  const response = await makeAuthRequest('PUT', '/api/bulk/entities', {
     entities: [
       { id: validEntityId, properties: { name: 'Updated Valid' } },
       { id: invalidEntityId, properties: { name: 'Should Fail' } },
@@ -7536,7 +7559,7 @@ async function testBulkUpdateDeletedEntity() {
   const typeId = typeResponse.data.data[0].id;
 
   // Create and delete an entity
-  const entity = await makeRequest('POST', '/api/entities', {
+  const entity = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Will Be Deleted' },
   });
@@ -7545,7 +7568,7 @@ async function testBulkUpdateDeletedEntity() {
   await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Try to bulk update the deleted entity
-  const response = await makeRequest('PUT', '/api/bulk/entities', {
+  const response = await makeAuthRequest('PUT', '/api/bulk/entities', {
     entities: [{ id: entityId, properties: { name: 'Should Fail' } }],
   });
 
@@ -7569,20 +7592,20 @@ async function testBulkUpdateLinks() {
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
   // Create entities
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Update Source' },
   });
   const entity1Id = entity1.data.data.id;
 
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Update Target' },
   });
   const entity2Id = entity2.data.data.id;
 
   // Create links
-  const link1 = await makeRequest('POST', '/api/links', {
+  const link1 = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -7590,7 +7613,7 @@ async function testBulkUpdateLinks() {
   });
   const link1Id = link1.data.data.id;
 
-  const link2 = await makeRequest('POST', '/api/links', {
+  const link2 = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity2Id,
     target_entity_id: entity1Id,
@@ -7599,7 +7622,7 @@ async function testBulkUpdateLinks() {
   const link2Id = link2.data.data.id;
 
   // Bulk update links
-  const response = await makeRequest('PUT', '/api/bulk/links', {
+  const response = await makeAuthRequest('PUT', '/api/bulk/links', {
     links: [
       { id: link1Id, properties: { weight: 100, label: 'Updated' } },
       { id: link2Id, properties: { weight: 200, label: 'Also Updated' } },
@@ -7630,16 +7653,16 @@ async function testBulkUpdateLinksNotFound() {
   const entityTypeResponse = await makeRequest('GET', '/api/types?name=BulkLinkTestEntityType');
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
-  const entity1 = await makeRequest('POST', '/api/entities', {
+  const entity1 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Valid Link Source' },
   });
-  const entity2 = await makeRequest('POST', '/api/entities', {
+  const entity2 = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Valid Link Target' },
   });
 
-  const validLink = await makeRequest('POST', '/api/links', {
+  const validLink = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1.data.data.id,
     target_entity_id: entity2.data.data.id,
@@ -7649,7 +7672,7 @@ async function testBulkUpdateLinksNotFound() {
 
   const invalidLinkId = '00000000-0000-0000-0000-000000000000';
 
-  const response = await makeRequest('PUT', '/api/bulk/links', {
+  const response = await makeAuthRequest('PUT', '/api/bulk/links', {
     links: [
       { id: validLinkId, properties: { weight: 50 } },
       { id: invalidLinkId, properties: { weight: 999 } },
@@ -7696,11 +7719,11 @@ async function testExportEntities() {
   const typeId = typeResponse.data.data.id;
 
   // Create some entities
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Export Entity 1', value: 100 },
   });
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Export Entity 2', value: 200 },
   });
@@ -7733,7 +7756,7 @@ async function testExportWithTypeFilter() {
   });
   const otherTypeId = otherTypeResponse.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: otherTypeId,
     properties: { name: 'Other Type Entity' },
   });
@@ -7763,20 +7786,20 @@ async function testExportWithLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source Entity' },
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity' },
   });
   const entity2Id = entity2Response.data.data.id;
 
   // Create a link
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
@@ -7811,7 +7834,7 @@ async function testExportIncludeDeleted() {
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
   // Create and delete an entity
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'To Be Deleted' },
   });
@@ -8088,20 +8111,20 @@ async function testExportImportRoundTrip() {
   const linkTypeId = linkTypeResponse.data.data[0].id;
 
   // Create test entities
-  const e1Response = await makeRequest('POST', '/api/entities', {
+  const e1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'RoundTrip Entity 1', score: 85 },
   });
   const e1Id = e1Response.data.data.id;
 
-  const e2Response = await makeRequest('POST', '/api/entities', {
+  const e2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'RoundTrip Entity 2', score: 90 },
   });
   const e2Id = e2Response.data.data.id;
 
   // Create a link between them
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: e1Id,
     target_entity_id: e2Id,
@@ -8175,7 +8198,7 @@ async function testSchemaValidationCreateEntitySuccess() {
   const typeId = typeResponse.data.data.id;
 
   // Create entity with valid properties
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Test Product',
@@ -8198,7 +8221,7 @@ async function testSchemaValidationCreateEntityMissingRequired() {
   const typeId = typeResponse.data.data[0].id;
 
   // Try to create entity without required 'price' property
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Incomplete Product',
@@ -8226,7 +8249,7 @@ async function testSchemaValidationCreateEntityWrongType() {
   const typeId = typeResponse.data.data[0].id;
 
   // Try to create entity with wrong type for 'price' (string instead of number)
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Bad Product',
@@ -8251,7 +8274,7 @@ async function testSchemaValidationCreateEntityMinimumViolation() {
   const typeId = typeResponse.data.data[0].id;
 
   // Try to create entity with negative price (violates minimum: 0)
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Negative Price Product',
@@ -8279,7 +8302,7 @@ async function testSchemaValidationUpdateEntity() {
   const typeId = typeResponse.data.data[0].id;
 
   // Create a valid entity first
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Update Test Product',
@@ -8331,20 +8354,20 @@ async function testSchemaValidationCreateLinkSuccess() {
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
   // Create two entities
-  const e1Response = await makeRequest('POST', '/api/entities', {
+  const e1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Source', price: 10 },
   });
   const e1Id = e1Response.data.data.id;
 
-  const e2Response = await makeRequest('POST', '/api/entities', {
+  const e2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Target', price: 20 },
   });
   const e2Id = e2Response.data.data.id;
 
   // Create link with valid properties
-  const linkResponse = await makeRequest('POST', '/api/links', {
+  const linkResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: e1Id,
     target_entity_id: e2Id,
@@ -8370,20 +8393,20 @@ async function testSchemaValidationCreateLinkInvalidEnum() {
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
   // Create two entities
-  const e1Response = await makeRequest('POST', '/api/entities', {
+  const e1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Enum Test Source', price: 10 },
   });
   const e1Id = e1Response.data.data.id;
 
-  const e2Response = await makeRequest('POST', '/api/entities', {
+  const e2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Enum Test Target', price: 20 },
   });
   const e2Id = e2Response.data.data.id;
 
   // Create link with invalid enum value
-  const linkResponse = await makeRequest('POST', '/api/links', {
+  const linkResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: e1Id,
     target_entity_id: e2Id,
@@ -8419,7 +8442,7 @@ async function testSchemaValidationNoSchemaType() {
   const typeId = typeResponse.data.data.id;
 
   // Create entity with any properties (should succeed since no schema)
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       anything: 'goes',
@@ -8691,7 +8714,7 @@ async function testAuditLogResourceHistory() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Audit Test Entity' },
   });
@@ -8772,7 +8795,7 @@ async function testAuditLogEntityCreateLogged() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Logged Entity' },
   });
@@ -8809,7 +8832,7 @@ async function testAuditLogEntityUpdateLogged() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original Name' },
   });
@@ -8851,7 +8874,7 @@ async function testAuditLogEntityDeleteLogged() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'To Be Deleted' },
   });
@@ -9228,7 +9251,7 @@ async function testSanitizationEntityProperties() {
     },
   };
 
-  const createResponse = await makeRequest('POST', '/api/entities', xssPayload);
+  const createResponse = await makeAuthRequest('POST', '/api/entities', xssPayload);
 
   assertEquals(createResponse.status, 201, 'Should create entity successfully');
 
@@ -9283,7 +9306,7 @@ async function testSanitizationLinkProperties() {
     },
   };
 
-  const createResponse = await makeRequest('POST', '/api/links', xssPayload);
+  const createResponse = await makeAuthRequest('POST', '/api/links', xssPayload);
 
   assertEquals(createResponse.status, 201, 'Should create link successfully');
 
@@ -9382,7 +9405,7 @@ async function testSanitizationUpdate() {
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
   const entityType = typesResponse.data.data.items[0];
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Safe name' },
   });
@@ -9426,7 +9449,7 @@ async function testSanitizationSpecialCharactersPreserved() {
     },
   };
 
-  const createResponse = await makeRequest('POST', '/api/entities', payload);
+  const createResponse = await makeAuthRequest('POST', '/api/entities', payload);
 
   assertEquals(createResponse.status, 201, 'Should create entity successfully');
 
@@ -9540,7 +9563,7 @@ async function testUIEntityListWithData() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Test Entity for UI', description: 'Testing UI display' },
   });
@@ -9574,12 +9597,12 @@ async function testUIEntityListFiltering() {
   });
   const type2Id = type2Response.data.data.id;
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: type1Id,
     properties: { name: 'Entity Type 1' },
   });
 
-  await makeRequest('POST', '/api/entities', {
+  await makeAuthRequest('POST', '/api/entities', {
     type_id: type2Id,
     properties: { name: 'Entity Type 2' },
   });
@@ -9617,7 +9640,7 @@ async function testUIEntityListPagination() {
 
   // Create 25 entities (more than the default page size of 20)
   for (let i = 0; i < 25; i++) {
-    await makeRequest('POST', '/api/entities', {
+    await makeAuthRequest('POST', '/api/entities', {
       type_id: typeId,
       properties: { name: `Pagination Test Entity ${i}` },
     });
@@ -9645,7 +9668,7 @@ async function testUIEntityListShowDeleted() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Entity To Delete' },
   });
@@ -9676,7 +9699,7 @@ async function testUIEntityListShowAllVersions() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original Name' },
   });
@@ -9765,7 +9788,7 @@ async function testUIEntityDetailBasic() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Detail Test Entity', description: 'Testing detail view' },
   });
@@ -9824,26 +9847,26 @@ async function testUIEntityDetailWithLinks() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create source, target, and main entity
-  const sourceEntity = await makeRequest('POST', '/api/entities', {
+  const sourceEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source Entity' },
   });
   const sourceId = sourceEntity.data.data.id;
 
-  const mainEntity = await makeRequest('POST', '/api/entities', {
+  const mainEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Main Entity' },
   });
   const mainId = mainEntity.data.data.id;
 
-  const targetEntity = await makeRequest('POST', '/api/entities', {
+  const targetEntity = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target Entity' },
   });
   const targetId = targetEntity.data.data.id;
 
   // Create an outbound link from main to target
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: mainId,
     target_entity_id: targetId,
@@ -9851,7 +9874,7 @@ async function testUIEntityDetailWithLinks() {
   });
 
   // Create an inbound link from source to main
-  await makeRequest('POST', '/api/links', {
+  await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: sourceId,
     target_entity_id: mainId,
@@ -9879,7 +9902,7 @@ async function testUIEntityDetailVersionHistory() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original Name', status: 'draft' },
   });
@@ -9915,7 +9938,7 @@ async function testUIEntityDetailDeletedEntity() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'To Be Deleted' },
   });
@@ -9955,7 +9978,7 @@ async function testUIEntityDetailOldVersion() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Version 1' },
   });
@@ -9987,7 +10010,7 @@ async function testUIEntityDetailPropertiesDisplay() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const entityResponse = await makeRequest('POST', '/api/entities', {
+  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: {
       name: 'Complex Entity',
@@ -10118,10 +10141,11 @@ async function testCachingEntityGet() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  // Create a public entity (needs explicit empty ACL)
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'CacheTestEntity' },
+    acl: [], // Make public for unauthenticated cache testing
   });
 
   const entityId = createResponse.data.data.id;
@@ -10157,9 +10181,10 @@ async function testCachingEntityInvalidationOnUpdate() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Original', status: 'active' },
+    acl: [], // Public for unauthenticated access
   });
 
   const entityId = createResponse.data.data.id;
@@ -10197,9 +10222,10 @@ async function testCachingEntityInvalidationOnDelete() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'ToBeDeleted' },
+    acl: [], // Public for unauthenticated access
   });
 
   const entityId = createResponse.data.data.id;
@@ -10234,9 +10260,10 @@ async function testCachingEntityInvalidationOnRestore() {
   const typeId = typeResponse.data.data.id;
 
   // Create and delete an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'ToBeRestored' },
+    acl: [], // Public for unauthenticated access
   });
 
   const entityId = createResponse.data.data.id;
@@ -10280,24 +10307,27 @@ async function testCachingLinkGet() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2Response.data.data.id;
 
   // Create a link
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { relationship: 'connected' },
+    acl: [], // Public for unauthenticated access
   });
 
   const linkId = createResponse.data.data.id;
@@ -10339,24 +10369,27 @@ async function testCachingLinkInvalidationOnUpdate() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2Response.data.data.id;
 
   // Create a link
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { weight: 1 },
+    acl: [], // Public for unauthenticated access
   });
 
   const linkId = createResponse.data.data.id;
@@ -10420,9 +10453,10 @@ async function testETagHeaderOnEntityGet() {
   const typeId = typeResponse.data.data.id;
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'ETagTest Entity' },
+    acl: [], // Public for unauthenticated access
   });
 
   const entityId = createResponse.data.data.id;
@@ -10452,24 +10486,27 @@ async function testETagHeaderOnLinkGet() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Source' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Target' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2Response.data.data.id;
 
   // Create a link
-  const createResponse = await makeRequest('POST', '/api/links', {
+  const createResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { relationship: 'connected' },
+    acl: [], // Public for unauthenticated access
   });
 
   const linkId = createResponse.data.data.id;
@@ -10857,7 +10894,7 @@ async function testGeneratedColumnsQueryPerformance() {
 
   // Create entities with name property
   for (let i = 0; i < 5; i++) {
-    await makeRequest('POST', '/api/entities', {
+    await makeAuthRequest('POST', '/api/entities', {
       type_id: entityType.id,
       properties: {
         name: `GenColTest Entity ${i}`,
@@ -10898,7 +10935,7 @@ async function testFieldSelectionEntityGet() {
   const entityType = typesResponse.data.data.items[0];
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Field Selection Test Entity' },
   });
@@ -10943,7 +10980,7 @@ async function testFieldSelectionEntityInvalidField() {
   const entityType = typesResponse.data.data.items[0];
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Invalid Field Test Entity' },
   });
@@ -11014,24 +11051,27 @@ async function testFieldSelectionLinkGet() {
   const linkTypeId = linkTypeResponse.data.data.id;
 
   // Create two entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Test Entity 1' },
+    acl: [], // Public for unauthenticated access
   });
   const entity1Id = entity1Response.data.data.id;
 
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityTypeId,
     properties: { name: 'Link Test Entity 2' },
+    acl: [], // Public for unauthenticated access
   });
   const entity2Id = entity2Response.data.data.id;
 
   // Create a link
-  const linkResponse = await makeRequest('POST', '/api/links', {
+  const linkResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkTypeId,
     source_entity_id: entity1Id,
     target_entity_id: entity2Id,
     properties: { weight: 5 },
+    acl: [], // Public for unauthenticated access
   });
   const linkId = linkResponse.data.data.id;
 
@@ -11076,7 +11116,7 @@ async function testFieldSelectionEmptyFieldsReturnsAll() {
   const entityType = typesResponse.data.data.items[0];
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Empty Fields Test Entity' },
   });
@@ -11102,7 +11142,7 @@ async function testFieldSelectionWithWhitespace() {
   const entityType = typesResponse.data.data.items[0];
 
   // Create an entity
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Whitespace Fields Test Entity' },
   });
@@ -11145,7 +11185,7 @@ async function testResponseTimeHeaderOnPost() {
   assert(typesResponse.data.data.length > 0, 'Should have entity types');
   const entityType = typesResponse.data.data[0];
 
-  const response = await makeRequest('POST', '/api/entities', {
+  const response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Response Time Test Entity' },
   });
@@ -11429,9 +11469,10 @@ async function testQueryPerformanceTrackingMiddlewareActive() {
   const entityType = typesResponse.data.data[0];
 
   // Create an entity (triggers database queries that should be tracked)
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Query Performance Test Entity' },
+    acl: [], // Public for unauthenticated access
   });
 
   assertEquals(
@@ -11485,11 +11526,11 @@ async function testQueryPerformanceTrackingGraphOperations() {
   const linkType = linkTypesResponse.data.data[0];
 
   // Create two entities
-  const entity1Response = await makeRequest('POST', '/api/entities', {
+  const entity1Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Query Tracking Graph Node 1' },
   });
-  const entity2Response = await makeRequest('POST', '/api/entities', {
+  const entity2Response = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Query Tracking Graph Node 2' },
   });
@@ -11498,7 +11539,7 @@ async function testQueryPerformanceTrackingGraphOperations() {
   assertEquals(entity2Response.status, 201, 'Second entity should be created');
 
   // Create a link between them
-  const linkResponse = await makeRequest('POST', '/api/links', {
+  const linkResponse = await makeAuthRequest('POST', '/api/links', {
     type_id: linkType.id,
     source_entity_id: entity1Response.data.data.id,
     target_entity_id: entity2Response.data.data.id,
@@ -11539,7 +11580,7 @@ async function testQueryPerformanceTrackingSearchOperations() {
   const entityType = typesResponse.data.data[0];
 
   // Create an entity with searchable properties
-  const createResponse = await makeRequest('POST', '/api/entities', {
+  const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'SearchableQueryTrackingEntity', status: 'active' },
   });
@@ -12650,7 +12691,7 @@ async function createTestLinkForAcl(token, typeId, sourceId, targetId) {
 }
 
 async function testEntityAclGetEmpty() {
-  logTest('ACL Management - Get ACL for entity with no ACL (public)');
+  logTest('ACL Management - Get ACL for entity created with explicit empty ACL (public)');
 
   const { token } = await getAclTestAuthToken();
   const headers = { Authorization: `Bearer ${token}` };
@@ -12662,8 +12703,13 @@ async function testEntityAclGetEmpty() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
-  const entityId = await createTestEntityForAcl(token, typeId);
+  // Create an entity with explicit empty ACL (public)
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'ACL Test Entity (Public)' },
+    acl: [], // Explicit empty array = public
+  });
+  const entityId = entityResponse.data.data.id;
 
   // Get ACL (should be empty/public)
   const response = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
@@ -12936,7 +12982,7 @@ async function testEntityAclOnDeletedEntity() {
 }
 
 async function testLinkAclGetEmpty() {
-  logTest('ACL Management - Get ACL for link with no ACL (public)');
+  logTest('ACL Management - Get ACL for link created with explicit empty ACL (public)');
 
   const { token } = await getAclTestAuthToken();
   const headers = { Authorization: `Bearer ${token}` };
@@ -12954,12 +13000,30 @@ async function testLinkAclGetEmpty() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  // Create two entities
-  const sourceId = await createTestEntityForAcl(token, entityTypeId);
-  const targetId = await createTestEntityForAcl(token, entityTypeId);
+  // Create two entities with explicit empty ACL (public)
+  const sourceResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Source (Public)' },
+    acl: [],
+  });
+  const sourceId = sourceResponse.data.data.id;
 
-  // Create a link
-  const linkId = await createTestLinkForAcl(token, linkTypeId, sourceId, targetId);
+  const targetResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Target (Public)' },
+    acl: [],
+  });
+  const targetId = targetResponse.data.data.id;
+
+  // Create a link with explicit empty ACL (public)
+  const linkResponse = await makeRequestWithHeaders('POST', '/api/links', headers, {
+    type_id: linkTypeId,
+    source_entity_id: sourceId,
+    target_entity_id: targetId,
+    properties: { weight: 1 },
+    acl: [], // Explicit empty array = public
+  });
+  const linkId = linkResponse.data.data.id;
 
   // Get ACL (should be empty/public)
   const response = await makeRequestWithHeaders('GET', `/api/links/${linkId}/acl`, headers);
@@ -13154,6 +13218,290 @@ async function testAclValidationSchema() {
 }
 
 // ============================================================================
+// Permission Inheritance Tests
+// ============================================================================
+
+async function testEntityCreationWithDefaultAcl() {
+  logTest('Permission Inheritance - Entity created without ACL has creator write permission');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType1-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity without specifying ACL
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Default ACL Test Entity' },
+    // No acl field specified - should get creator write permission
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity should be created successfully');
+  const entityId = entityResponse.data.data.id;
+
+  // Get ACL and verify creator has write permission
+  const aclResponse = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(aclResponse.status, 200, 'Should get ACL successfully');
+  assert(aclResponse.data.data.acl_id !== null, 'ACL ID should not be null (has permissions)');
+  assertEquals(aclResponse.data.data.entries.length, 1, 'Should have exactly 1 ACL entry');
+
+  const creatorEntry = aclResponse.data.data.entries[0];
+  assertEquals(creatorEntry.principal_type, 'user', 'Principal type should be user');
+  assertEquals(creatorEntry.principal_id, userId, 'Principal ID should be creator ID');
+  assertEquals(creatorEntry.permission, 'write', 'Permission should be write');
+}
+
+async function testEntityCreationWithExplicitEmptyAcl() {
+  logTest('Permission Inheritance - Entity created with empty ACL array is public');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType2-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity with explicit empty ACL
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Public Entity' },
+    acl: [], // Explicit empty array = public
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity should be created successfully');
+  const entityId = entityResponse.data.data.id;
+
+  // Get ACL and verify it's public
+  const aclResponse = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(aclResponse.status, 200, 'Should get ACL successfully');
+  assertEquals(aclResponse.data.data.acl_id, null, 'ACL ID should be null (public)');
+  assertEquals(aclResponse.data.data.entries.length, 0, 'Should have no ACL entries');
+}
+
+async function testEntityCreationWithExplicitAclIncludesCreator() {
+  logTest(
+    'Permission Inheritance - Entity with explicit ACL also includes creator write permission'
+  );
+
+  // Create two users - one to be the creator, one to be granted read access
+  const authResponse1 = await makeRequest('POST', '/api/auth/register', {
+    email: `perm-test-creator-${Date.now()}@example.com`,
+    password: 'password123',
+    display_name: 'Creator User',
+  });
+  const creatorToken = authResponse1.data.data.access_token;
+  const creatorId = authResponse1.data.data.user.id;
+
+  const authResponse2 = await makeRequest('POST', '/api/auth/register', {
+    email: `perm-test-reader-${Date.now()}@example.com`,
+    password: 'password123',
+    display_name: 'Reader User',
+  });
+  const readerId = authResponse2.data.data.user.id;
+
+  const headers = { Authorization: `Bearer ${creatorToken}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType3-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity with explicit ACL that only grants reader read permission
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Explicit ACL Entity' },
+    acl: [{ principal_type: 'user', principal_id: readerId, permission: 'read' }],
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity should be created successfully');
+  const entityId = entityResponse.data.data.id;
+
+  // Get ACL and verify creator has write + reader has read
+  const aclResponse = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(aclResponse.status, 200, 'Should get ACL successfully');
+  assert(aclResponse.data.data.acl_id !== null, 'ACL ID should not be null');
+  assertEquals(aclResponse.data.data.entries.length, 2, 'Should have 2 ACL entries');
+
+  const creatorEntry = aclResponse.data.data.entries.find(
+    e => e.principal_id === creatorId && e.permission === 'write'
+  );
+  assert(creatorEntry, 'Should have creator write permission');
+
+  const readerEntry = aclResponse.data.data.entries.find(
+    e => e.principal_id === readerId && e.permission === 'read'
+  );
+  assert(readerEntry, 'Should have reader read permission');
+}
+
+async function testEntityCreationWithExplicitCreatorWriteNotDuplicated() {
+  logTest(
+    'Permission Inheritance - Creator write permission not duplicated when already in explicit ACL'
+  );
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType4-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity with explicit ACL that already includes creator write permission
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'No Duplicate Entity' },
+    acl: [{ principal_type: 'user', principal_id: userId, permission: 'write' }],
+  });
+
+  assertEquals(entityResponse.status, 201, 'Entity should be created successfully');
+  const entityId = entityResponse.data.data.id;
+
+  // Get ACL and verify no duplicate
+  const aclResponse = await makeRequestWithHeaders('GET', `/api/entities/${entityId}/acl`, headers);
+
+  assertEquals(aclResponse.status, 200, 'Should get ACL successfully');
+  assertEquals(
+    aclResponse.data.data.entries.length,
+    1,
+    'Should have exactly 1 ACL entry (no dupe)'
+  );
+  assertEquals(aclResponse.data.data.entries[0].principal_id, userId, 'Should be creator');
+  assertEquals(aclResponse.data.data.entries[0].permission, 'write', 'Should be write permission');
+}
+
+async function testLinkCreationWithDefaultAcl() {
+  logTest('Permission Inheritance - Link created without ACL has creator write permission');
+
+  const { token, userId } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create types
+  const entityTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType5-${Date.now()}`,
+    category: 'entity',
+  });
+  const entityTypeId = entityTypeResponse.data.data.id;
+
+  const linkTypeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritLinkType1-${Date.now()}`,
+    category: 'link',
+  });
+  const linkTypeId = linkTypeResponse.data.data.id;
+
+  // Create two entities
+  const sourceResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Source' },
+  });
+  const sourceId = sourceResponse.data.data.id;
+
+  const targetResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: entityTypeId,
+    properties: { name: 'Target' },
+  });
+  const targetId = targetResponse.data.data.id;
+
+  // Create a link without specifying ACL
+  const linkResponse = await makeRequestWithHeaders('POST', '/api/links', headers, {
+    type_id: linkTypeId,
+    source_entity_id: sourceId,
+    target_entity_id: targetId,
+    properties: { weight: 1 },
+    // No acl field specified - should get creator write permission
+  });
+
+  assertEquals(linkResponse.status, 201, 'Link should be created successfully');
+  const linkId = linkResponse.data.data.id;
+
+  // Get ACL and verify creator has write permission
+  const aclResponse = await makeRequestWithHeaders('GET', `/api/links/${linkId}/acl`, headers);
+
+  assertEquals(aclResponse.status, 200, 'Should get ACL successfully');
+  assert(aclResponse.data.data.acl_id !== null, 'ACL ID should not be null');
+  assertEquals(aclResponse.data.data.entries.length, 1, 'Should have exactly 1 ACL entry');
+  assertEquals(aclResponse.data.data.entries[0].principal_id, userId, 'Should be creator ID');
+  assertEquals(aclResponse.data.data.entries[0].permission, 'write', 'Should be write permission');
+}
+
+async function testEntityCreationRequiresAuth() {
+  logTest('Permission Inheritance - Entity creation requires authentication');
+
+  // Try to create an entity without authentication
+  const typeResponse = await makeRequest('POST', '/api/types', {
+    name: `TestTypeNoAuth-${Date.now()}`,
+    category: 'entity',
+  });
+  // Note: Type creation also requires auth, but we're just testing we get 401
+
+  // Try creating an entity without auth (should fail)
+  const response = await makeRequest('POST', '/api/entities', {
+    type_id: '00000000-0000-0000-0000-000000000001',
+    properties: { name: 'Unauthorized Entity' },
+  });
+
+  assertEquals(response.status, 401, 'Should return 401 Unauthorized');
+}
+
+async function testLinkCreationRequiresAuth() {
+  logTest('Permission Inheritance - Link creation requires authentication');
+
+  // Try creating a link without auth (should fail)
+  const response = await makeRequest('POST', '/api/links', {
+    type_id: '00000000-0000-0000-0000-000000000001',
+    source_entity_id: '00000000-0000-0000-0000-000000000002',
+    target_entity_id: '00000000-0000-0000-0000-000000000003',
+    properties: { weight: 1 },
+  });
+
+  assertEquals(response.status, 401, 'Should return 401 Unauthorized');
+}
+
+async function testEntityCreationWithInvalidAclPrincipal() {
+  logTest('Permission Inheritance - Entity creation with invalid ACL principal returns error');
+
+  const { token } = await getAclTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create an entity type
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: `PermInheritEntityType6-${Date.now()}`,
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Try to create an entity with invalid user ID in ACL
+  const response = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Invalid ACL Entity' },
+    acl: [
+      {
+        principal_type: 'user',
+        principal_id: '00000000-0000-0000-0000-000000000000', // Non-existent user
+        permission: 'read',
+      },
+    ],
+  });
+
+  assertEquals(response.status, 400, 'Should return 400 Bad Request');
+  assertEquals(response.data.code, 'INVALID_ACL', 'Error code should be INVALID_ACL');
+}
+
+// ============================================================================
 // UI ACL Editor Tests
 // ============================================================================
 
@@ -13175,10 +13523,11 @@ async function testUIEntityAclSection() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
+  // Create a public entity (explicit empty ACL)
   const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
     type_id: typeId,
-    properties: { name: 'ACL Test Entity' },
+    properties: { name: 'ACL Test Entity (Public)' },
+    acl: [], // Explicit empty ACL makes it public
   });
   const entityId = entityResponse.data.data.id;
 
@@ -13188,7 +13537,7 @@ async function testUIEntityAclSection() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Access Control'), 'Should have Access Control section heading');
-  assert(html.includes('public'), 'Should show entity is public by default');
+  assert(html.includes('public'), 'Should show entity is public');
   assert(html.includes('Add Permission'), 'Should have Add Permission form');
   assert(html.includes('Make Private'), 'Should have Make Private button for public entity');
   assert(html.includes('principal-type'), 'Should have principal type selector');
@@ -13267,25 +13616,28 @@ async function testUILinkAclSection() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  // Create source and target entities
+  // Create source and target entities (public)
   const sourceResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
     type_id: entityTypeId,
     properties: { name: 'Source Entity' },
+    acl: [], // Public
   });
   const sourceId = sourceResponse.data.data.id;
 
   const targetResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
     type_id: entityTypeId,
     properties: { name: 'Target Entity' },
+    acl: [], // Public
   });
   const targetId = targetResponse.data.data.id;
 
-  // Create a link
+  // Create a public link (explicit empty ACL)
   const linkResponse = await makeRequestWithHeaders('POST', '/api/links', headers, {
     type_id: linkTypeId,
     source_entity_id: sourceId,
     target_entity_id: targetId,
     properties: { weight: 1 },
+    acl: [], // Public
   });
   const linkId = linkResponse.data.data.id;
 
@@ -13295,7 +13647,7 @@ async function testUILinkAclSection() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Access Control'), 'Should have Access Control section heading');
-  assert(html.includes('public'), 'Should show link is public by default');
+  assert(html.includes('public'), 'Should show link is public');
   assert(html.includes('Add Permission'), 'Should have Add Permission form');
   assert(html.includes('Make Private'), 'Should have Make Private button for public link');
 }
@@ -13854,6 +14206,16 @@ async function runTests() {
     testLinkAclNotFound,
     testLinkAclOnDeletedLink,
     testAclValidationSchema,
+
+    // Permission Inheritance tests
+    testEntityCreationWithDefaultAcl,
+    testEntityCreationWithExplicitEmptyAcl,
+    testEntityCreationWithExplicitAclIncludesCreator,
+    testEntityCreationWithExplicitCreatorWriteNotDuplicated,
+    testLinkCreationWithDefaultAcl,
+    testEntityCreationRequiresAuth,
+    testLinkCreationRequiresAuth,
+    testEntityCreationWithInvalidAclPrincipal,
 
     // UI ACL Editor tests
     testUIEntityAclSection,
