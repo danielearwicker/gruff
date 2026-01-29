@@ -82,6 +82,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - created_by (TEXT, FK -> users.id)
 - is_deleted (INTEGER, DEFAULT 0) -- SQLite boolean
 - is_latest (INTEGER, DEFAULT 1) -- Optimization for queries
+- acl_id (INTEGER, FK -> acls.id, NULL) -- 🟦 NULL means public/unrestricted
 ```
 
 #### `links` Table
@@ -98,7 +99,53 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - created_by (TEXT, FK -> users.id)
 - is_deleted (INTEGER, DEFAULT 0) -- SQLite boolean
 - is_latest (INTEGER, DEFAULT 1)
+- acl_id (INTEGER, FK -> acls.id, NULL) -- 🟦 NULL means public/unrestricted
 ```
+
+#### 🟦 `groups` Table
+
+```sql
+- id (TEXT, PK) -- UUID stored as TEXT
+- name (TEXT, UNIQUE, NOT NULL)
+- description (TEXT)
+- created_at (INTEGER) -- Unix timestamp
+- created_by (TEXT, FK -> users.id)
+```
+
+#### 🟦 `group_members` Table
+
+```sql
+- group_id (TEXT, FK -> groups.id, NOT NULL)
+- member_type (TEXT CHECK(member_type IN ('user', 'group')), NOT NULL)
+- member_id (TEXT, NOT NULL) -- FK to users.id or groups.id depending on member_type
+- created_at (INTEGER) -- Unix timestamp
+- created_by (TEXT, FK -> users.id)
+- PRIMARY KEY (group_id, member_type, member_id)
+```
+
+Groups form a hierarchy: a group can contain users and other groups. Cycles are prevented by validation on insert.
+
+#### 🟦 `acls` Table
+
+```sql
+- id (INTEGER, PK, AUTOINCREMENT)
+- hash (TEXT, UNIQUE, NOT NULL) -- SHA-256 hash of normalized ACL definition
+- created_at (INTEGER) -- Unix timestamp
+```
+
+ACLs are deduplicated: when an entity or link's access control is modified, the system computes a canonical hash of the requested permissions. If an ACL with that hash already exists, its ID is reused; otherwise a new ACL is created. This allows efficient filtering via integer foreign keys.
+
+#### 🟦 `acl_entries` Table
+
+```sql
+- acl_id (INTEGER, FK -> acls.id, NOT NULL)
+- principal_type (TEXT CHECK(principal_type IN ('user', 'group')), NOT NULL)
+- principal_id (TEXT, NOT NULL) -- FK to users.id or groups.id
+- permission (TEXT CHECK(permission IN ('read', 'write')), NOT NULL)
+- PRIMARY KEY (acl_id, principal_type, principal_id, permission)
+```
+
+Each ACL entry grants a specific permission (read or write) to a principal (user or group). Write permission implicitly includes read permission.
 
 ### ✅ Database Indexes
 
@@ -108,6 +155,12 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Indexes on JSON fields using generated columns for frequently queried properties
 - Index on `entities.created_by` and `links.created_by` for user queries
 - Index on `entities.created_at` and `links.created_at` for time-based queries
+
+### 🟦 Authorization Indexes
+
+- Index on `group_members(member_type, member_id)` for reverse membership lookups
+- Index on `acl_entries(principal_type, principal_id)` for finding ACLs that grant access to a principal
+- Index on `entities(acl_id)` and `links(acl_id)` for ACL-based filtering
 
 ### Database Constraints and Triggers
 
@@ -193,6 +246,52 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Apply authentication middleware to protected endpoints
 - Consistent error responses for unauthorized requests
 - Optional vs required authentication support
+
+### Group Management
+
+#### 🟦 Group Hierarchy
+
+- Groups contain members which can be users or other groups
+- Recursive membership resolution: if User A is in Group X, and Group X is in Group Y, then User A is effectively a member of Group Y
+- Cycle detection prevents circular group membership
+- Maximum nesting depth of 10 levels to prevent performance issues
+
+#### 🟦 Effective Membership Resolution
+
+- `getEffectiveGroups(userId)` returns all groups a user belongs to (directly or transitively)
+- Results are cached in KV with TTL of 5 minutes
+- Cache is invalidated when group membership changes
+
+### Access Control Lists (ACLs)
+
+#### 🟦 ACL Deduplication
+
+- ACLs are stored in a normalized, deduplicated table
+- When setting permissions on an entity or link, the system:
+  1. Computes a canonical representation of the requested ACL (sorted entries)
+  2. Generates a SHA-256 hash of this representation
+  3. Looks up existing ACL by hash, or creates a new one if not found
+  4. Associates the entity/link with the ACL ID
+- This ensures entities/links with identical permissions share the same ACL ID
+
+#### 🟦 Permission Checking
+
+- For single-resource operations (GET /api/entities/:id, PUT, DELETE):
+  - Retrieve the resource's ACL ID
+  - Check if current user or any of their effective groups has required permission
+  - Write permission implies read permission
+  - Resources with NULL acl_id are accessible to all authenticated users
+
+- For list operations (GET /api/entities, search endpoints):
+  - Pre-compute the set of ACL IDs that grant the current user read access
+  - Include `WHERE acl_id IN (...) OR acl_id IS NULL` in the query
+  - This allows efficient index-based filtering without per-row permission checks
+
+#### 🟦 Permission Inheritance
+
+- New entities and links inherit a default ACL (configurable per type or system-wide)
+- The creator is automatically granted write permission
+- Explicit ACL can be specified at creation time
 
 ### OAuth2 Integration
 
@@ -413,6 +512,42 @@ GET    /api/users                  # List users (admin)
 GET    /api/users/{id}             # Get user details
 PUT    /api/users/{id}             # Update user profile
 GET    /api/users/{id}/activity    # Get user's creation/edit history
+```
+
+### 🟦 Group Management Endpoints
+
+```
+POST   /api/groups                   # Create a new group
+GET    /api/groups                   # List all groups (paginated)
+GET    /api/groups/{id}              # Get group details with members
+PUT    /api/groups/{id}              # Update group name/description
+DELETE /api/groups/{id}              # Delete group (fails if has members)
+POST   /api/groups/{id}/members      # Add member (user or group) to group
+DELETE /api/groups/{id}/members/{memberType}/{memberId}  # Remove member
+GET    /api/groups/{id}/members      # List direct members
+GET    /api/groups/{id}/effective-members  # List all members (recursive)
+GET    /api/users/{id}/groups        # List groups a user belongs to
+GET    /api/users/{id}/effective-groups  # List all groups (recursive)
+```
+
+### 🟦 ACL Management Endpoints
+
+```
+GET    /api/entities/{id}/acl        # Get current ACL for entity
+PUT    /api/entities/{id}/acl        # Set ACL for entity
+GET    /api/links/{id}/acl           # Get current ACL for link
+PUT    /api/links/{id}/acl           # Set ACL for link
+```
+
+ACL request/response format:
+
+```json
+{
+  "entries": [
+    { "principal_type": "user", "principal_id": "uuid", "permission": "write" },
+    { "principal_type": "group", "principal_id": "uuid", "permission": "read" }
+  ]
+}
 ```
 
 ## Core Features
@@ -868,6 +1003,54 @@ Each entity in the list shows:
 - Results displayed in table format (similar to entity list)
 - Export search results button
 
+### 🟦 Group Administration
+
+**Route:** `GET /ui/groups`
+
+#### Features
+
+- List of all groups with member counts
+- Create new group button
+- Search/filter groups by name
+
+**Route:** `GET /ui/groups/:id`
+
+#### Features
+
+- Group details (name, description, created by/at)
+- List of direct members (users and groups)
+- Expandable view showing effective membership (recursive)
+- Add member form (search for users or groups)
+- Remove member buttons
+- Edit group details button
+- Delete group button (with confirmation)
+
+**Route:** `GET /ui/groups/new` and `GET /ui/groups/:id/edit`
+
+#### Features
+
+- Form for creating/editing group name and description
+
+### 🟦 ACL Editor
+
+The entity and link detail views include an ACL section for managing access control.
+
+**Route:** `GET /ui/entities/:id` and `GET /ui/links/:id` (enhanced)
+
+#### ACL Section Features
+
+- Current permissions displayed as a table:
+  - Principal (user email/name or group name)
+  - Permission level (Read, Write)
+  - Remove button
+- Add permission form:
+  - Principal type selector (User/Group)
+  - Principal search with autocomplete
+  - Permission level selector (Read/Write)
+  - Add button
+- "Make Public" button (removes ACL, allows all authenticated users)
+- "Make Private" button (restricts to owner only)
+
 ### ✅ Authentication Integration
 
 #### Login Page
@@ -914,11 +1097,12 @@ Each entity in the list shows:
 - HttpOnly and Secure flags for production
 - Automatic token refresh when access token expires
 
-#### Permission Levels (Future)
+#### 🟦 Permission Levels
 
-- All authenticated users can read
-- Only specific users can create/edit/delete
-- Admin-only features (user management, type creation)
+- Access controlled via ACLs on entities and links (see Access Control Lists section)
+- Resources with no ACL (NULL acl_id) are accessible to all authenticated users
+- Write permission on a resource implies read permission
+- Admin-only features (user management, type creation, group management) require admin role
 
 ### ✅ Technical Implementation
 
@@ -1034,6 +1218,15 @@ Each entity in the list shows:
 | `/ui/types/:id`                      | GET    | Type detail with usage stats   |
 | `/ui/search`                         | GET    | Search interface               |
 | `/ui/auth/login`                     | GET    | Login page                     |
+
+### 🟦 Group Administration Routes
+
+| Route                 | Method | Description               |
+| --------------------- | ------ | ------------------------- |
+| `/ui/groups`          | GET    | Group list                |
+| `/ui/groups/new`      | GET    | Create group form         |
+| `/ui/groups/:id`      | GET    | Group detail with members |
+| `/ui/groups/:id/edit` | GET    | Edit group form           |
 
 Note: Form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success.
 
@@ -1253,6 +1446,15 @@ GET    /api/schema/query-plan/templates/{name}  # Get specific template details
   - CacheStatsTracker for monitoring
 - Integration with types, entities, and links routes
 
+### 🟦 ACL Query Optimization
+
+- User's accessible ACL IDs are computed once per request and cached
+- `getAccessibleAclIds(userId, permission)` returns Set of ACL IDs
+- For list queries, ACL filter is added as `WHERE acl_id IN (?, ?, ...) OR acl_id IS NULL`
+- Index on `acl_id` columns ensures efficient filtering
+- For users with access to many ACLs (>1000), fallback to per-row checking
+- Effective group membership cached in KV with 5-minute TTL
+
 ### API Response Optimization
 
 #### ✅ Automatic Compression
@@ -1366,7 +1568,6 @@ These features are not marked with 🟦 as they are potential future work:
 - Real-time subscriptions via WebSockets (Durable Objects or Cloudflare Calls)
 - Full-text search using D1's FTS5 extension or external search service
 - Graph visualization endpoints
-- Access control lists (ACLs) per entity/link
 - Event sourcing architecture using Durable Objects
 - Multi-tenancy support with database sharding per tenant
 - GraphQL API alternative using Workers-compatible GraphQL libraries
