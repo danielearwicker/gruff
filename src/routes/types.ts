@@ -134,7 +134,8 @@ types.get('/', validateQuery(typeQuerySchema), async c => {
 
   try {
     // Only cache first page (no cursor) to avoid stale pagination issues
-    const canCache = !query.cursor;
+    // Also don't use cache when field selection is requested (cached data is full)
+    const canCache = !query.cursor && !query.fields;
     let cacheKey: string | null = null;
 
     if (canCache) {

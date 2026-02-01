@@ -284,8 +284,10 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
         }
 
         // Use json_extract to get the value and compare
+        // For strings, json_extract returns the raw value (not JSON-quoted)
+        // For numbers and booleans, json_extract returns the JSON representation
         sql += ' AND json_extract(properties, ?) = ?';
-        bindings.push(`$.${propertyKey}`, JSON.stringify(filterValue));
+        bindings.push(`$.${propertyKey}`, filterValue);
       }
     }
 

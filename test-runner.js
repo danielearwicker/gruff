@@ -5380,30 +5380,34 @@ async function testPaginationMaxLimit() {
 async function testFilterEntitiesByJsonPropertyString() {
   logTest('Filter Entities by JSON Property (String)');
 
-  // First, get the person type ID from seed data
-  const typesResponse = await makeRequest('GET', '/api/types');
-  const personType = typesResponse.data.items.find(t => t.name === 'Person');
-  assert(personType, 'Person type should exist in seed data');
+  // Create our own type for this test
+  const personTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterPersonType',
+    category: 'entity',
+  });
+  const personTypeId = personTypeResponse.data.data.id;
 
-  // Create entities with different string properties
+  // Create public entities with different string properties
   const entity1 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Alice', role: 'Engineer' },
+    acl: [],
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Bob', role: 'Manager' },
+    acl: [],
   });
   assert(entity2.ok, 'Should create second entity');
 
   // Filter by name property
   const filterResponse = await makeRequest('GET', '/api/entities?property_name=Alice');
   assertEquals(filterResponse.status, 200, 'Should return 200');
-  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with name Alice');
+  assert(filterResponse.data.data.length >= 1, 'Should find at least one entity with name Alice');
 
-  const aliceEntity = filterResponse.data.items.find(e => e.properties.name === 'Alice');
+  const aliceEntity = filterResponse.data.data.find(e => e.properties.name === 'Alice');
   assert(aliceEntity, 'Should find Alice in filtered results');
   assertEquals(aliceEntity.properties.role, 'Engineer', 'Should have correct role');
 }
@@ -5411,28 +5415,34 @@ async function testFilterEntitiesByJsonPropertyString() {
 async function testFilterEntitiesByJsonPropertyNumber() {
   logTest('Filter Entities by JSON Property (Number)');
 
-  const typesResponse = await makeRequest('GET', '/api/types');
-  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+  // Create our own type for this test
+  const personTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterNumberPersonType',
+    category: 'entity',
+  });
+  const personTypeId = personTypeResponse.data.data.id;
 
-  // Create entities with numeric properties
+  // Create public entities with numeric properties
   const entity1 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Charlie', age: 25 },
+    acl: [],
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Diana', age: 30 },
+    acl: [],
   });
   assert(entity2.ok, 'Should create second entity');
 
   // Filter by age property
   const filterResponse = await makeRequest('GET', '/api/entities?property_age=25');
   assertEquals(filterResponse.status, 200, 'Should return 200');
-  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with age 25');
+  assert(filterResponse.data.data.length >= 1, 'Should find at least one entity with age 25');
 
-  const charlieEntity = filterResponse.data.items.find(e => e.properties.name === 'Charlie');
+  const charlieEntity = filterResponse.data.data.find(e => e.properties.name === 'Charlie');
   assert(charlieEntity, 'Should find Charlie in filtered results');
   assertEquals(charlieEntity.properties.age, 25, 'Should have correct age');
 }
@@ -5440,28 +5450,34 @@ async function testFilterEntitiesByJsonPropertyNumber() {
 async function testFilterEntitiesByJsonPropertyBoolean() {
   logTest('Filter Entities by JSON Property (Boolean)');
 
-  const typesResponse = await makeRequest('GET', '/api/types');
-  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+  // Create our own type for this test
+  const personTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterBoolPersonType',
+    category: 'entity',
+  });
+  const personTypeId = personTypeResponse.data.data.id;
 
-  // Create entities with boolean properties
+  // Create public entities with boolean properties
   const entity1 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Eve', active: true },
+    acl: [],
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Frank', active: false },
+    acl: [],
   });
   assert(entity2.ok, 'Should create second entity');
 
   // Filter by active property
   const filterResponse = await makeRequest('GET', '/api/entities?property_active=true');
   assertEquals(filterResponse.status, 200, 'Should return 200');
-  assert(filterResponse.data.items.length >= 1, 'Should find at least one entity with active=true');
+  assert(filterResponse.data.data.length >= 1, 'Should find at least one entity with active=true');
 
-  const eveEntity = filterResponse.data.items.find(e => e.properties.name === 'Eve');
+  const eveEntity = filterResponse.data.data.find(e => e.properties.name === 'Eve');
   assert(eveEntity, 'Should find Eve in filtered results');
   assertEquals(eveEntity.properties.active, true, 'Should have active=true');
 }
@@ -5469,40 +5485,53 @@ async function testFilterEntitiesByJsonPropertyBoolean() {
 async function testFilterLinksByJsonPropertyString() {
   logTest('Filter Links by JSON Property (String)');
 
-  // Get type IDs
-  const typesResponse = await makeRequest('GET', '/api/types');
-  const personType = typesResponse.data.items.find(t => t.name === 'Person');
-  const knowsType = typesResponse.data.items.find(t => t.name === 'Knows');
+  // Create our own types for this test
+  const personTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterLinkPersonType',
+    category: 'entity',
+  });
+  const personTypeId = personTypeResponse.data.data.id;
 
-  // Create entities
+  const knowsTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterKnowsType',
+    category: 'link',
+  });
+  const knowsTypeId = knowsTypeResponse.data.data.id;
+
+  // Create public entities
   const entity1 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'George' },
+    acl: [],
   });
   const entity2 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Hannah' },
+    acl: [],
   });
 
-  // Create links with different properties
+  // Create public links with different properties
   const link1 = await makeAuthRequest('POST', '/api/links', {
-    type_id: knowsType.id,
-    source_entity_id: entity1.data.id,
-    target_entity_id: entity2.data.id,
+    type_id: knowsTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity2.data.data.id,
     properties: { relationship: 'colleague', since: 2020 },
+    acl: [],
   });
   assert(link1.ok, 'Should create first link');
 
   // Create another pair to have multiple links
   const entity3 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Ian' },
+    acl: [],
   });
   const link2 = await makeAuthRequest('POST', '/api/links', {
-    type_id: knowsType.id,
-    source_entity_id: entity1.data.id,
-    target_entity_id: entity3.data.id,
+    type_id: knowsTypeId,
+    source_entity_id: entity1.data.data.id,
+    target_entity_id: entity3.data.data.id,
     properties: { relationship: 'friend', since: 2015 },
+    acl: [],
   });
   assert(link2.ok, 'Should create second link');
 
@@ -5510,11 +5539,11 @@ async function testFilterLinksByJsonPropertyString() {
   const filterResponse = await makeRequest('GET', '/api/links?property_relationship=colleague');
   assertEquals(filterResponse.status, 200, 'Should return 200');
   assert(
-    filterResponse.data.items.length >= 1,
+    filterResponse.data.data.length >= 1,
     'Should find at least one link with relationship=colleague'
   );
 
-  const colleagueLink = filterResponse.data.items.find(
+  const colleagueLink = filterResponse.data.data.find(
     l => l.properties.relationship === 'colleague'
   );
   assert(colleagueLink, 'Should find colleague link in filtered results');
@@ -5524,25 +5553,32 @@ async function testFilterLinksByJsonPropertyString() {
 async function testFilterEntitiesByMultipleProperties() {
   logTest('Filter Entities by Multiple JSON Properties');
 
-  const typesResponse = await makeRequest('GET', '/api/types');
-  const personType = typesResponse.data.items.find(t => t.name === 'Person');
+  // Create our own type for this test
+  const personTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
+    name: 'JsonFilterMultiPersonType',
+    category: 'entity',
+  });
+  const personTypeId = personTypeResponse.data.data.id;
 
-  // Create entities with multiple properties
+  // Create public entities with multiple properties
   const entity1 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Jack', department: 'Engineering', level: 3 },
+    acl: [],
   });
   assert(entity1.ok, 'Should create first entity');
 
   const entity2 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Karen', department: 'Engineering', level: 5 },
+    acl: [],
   });
   assert(entity2.ok, 'Should create second entity');
 
   const entity3 = await makeAuthRequest('POST', '/api/entities', {
-    type_id: personType.id,
+    type_id: personTypeId,
     properties: { name: 'Laura', department: 'Marketing', level: 3 },
+    acl: [],
   });
   assert(entity3.ok, 'Should create third entity');
 
@@ -5553,21 +5589,21 @@ async function testFilterEntitiesByMultipleProperties() {
   );
   assertEquals(filterResponse.status, 200, 'Should return 200');
   assert(
-    filterResponse.data.items.length >= 1,
+    filterResponse.data.data.length >= 1,
     'Should find at least one entity matching both filters'
   );
 
-  const jackEntity = filterResponse.data.items.find(e => e.properties.name === 'Jack');
+  const jackEntity = filterResponse.data.data.find(e => e.properties.name === 'Jack');
   assert(jackEntity, 'Should find Jack in filtered results');
   assertEquals(jackEntity.properties.department, 'Engineering', 'Should have correct department');
   assertEquals(jackEntity.properties.level, 3, 'Should have correct level');
 
   // Verify Karen is not in results (different level)
-  const karenEntity = filterResponse.data.items.find(e => e.properties.name === 'Karen');
+  const karenEntity = filterResponse.data.data.find(e => e.properties.name === 'Karen');
   assert(!karenEntity, 'Should not find Karen (wrong level)');
 
   // Verify Laura is not in results (different department)
-  const lauraEntity = filterResponse.data.items.find(e => e.properties.name === 'Laura');
+  const lauraEntity = filterResponse.data.data.find(e => e.properties.name === 'Laura');
   assert(!lauraEntity, 'Should not find Laura (wrong department)');
 }
 
@@ -9298,7 +9334,7 @@ async function testSanitizationEntityProperties() {
 
   // First get a valid entity type
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   // Try to create an entity with XSS in properties
   const xssPayload = {
@@ -9346,10 +9382,10 @@ async function testSanitizationLinkProperties() {
 
   // Get types and entities for the link
   const typesResponse = await makeRequest('GET', '/api/types?category=link');
-  const linkType = typesResponse.data.data.items[0];
+  const linkType = typesResponse.data.data[0];
 
   const entitiesResponse = await makeRequest('GET', '/api/entities?limit=2');
-  const entities = entitiesResponse.data.data.items;
+  const entities = entitiesResponse.data.data;
 
   if (entities.length < 2) {
     logInfo('Skipping: need at least 2 entities');
@@ -9418,7 +9454,7 @@ async function testSanitizationBulkCreate() {
 
   // Get an entity type
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   const bulkPayload = {
     entities: [
@@ -9464,7 +9500,7 @@ async function testSanitizationUpdate() {
 
   // Get an entity type and create an entity
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
@@ -9498,7 +9534,7 @@ async function testSanitizationSpecialCharactersPreserved() {
 
   // Get an entity type
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   // Create entity with normal special chars (should be escaped but still work)
   const payload = {
@@ -9532,7 +9568,7 @@ async function testSanitizationImport() {
 
   // Get an entity type
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   const importPayload = {
     entities: [
@@ -10951,7 +10987,7 @@ async function testGeneratedColumnsQueryPerformance() {
 
   // Create some test entities with the indexed properties
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
   // Create entities with name property
   for (let i = 0; i < 5; i++) {
@@ -10993,12 +11029,13 @@ async function testFieldSelectionEntityGet() {
 
   // Get an entity type first
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
-  // Create an entity
+  // Create a public entity (empty ACL array makes it accessible without auth)
   const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Field Selection Test Entity' },
+    acl: [],
   });
   const entityId = createResponse.data.data.id;
 
@@ -11024,9 +11061,9 @@ async function testFieldSelectionEntityList() {
   const response = await makeRequest('GET', '/api/entities?fields=id,type_id');
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(response.data.data.items.length > 0, 'Should return at least one entity');
+  assert(response.data.data.length > 0, 'Should return at least one entity');
 
-  const firstItem = response.data.data.items[0];
+  const firstItem = response.data.data[0];
   assert(firstItem.id, 'Item should include id');
   assert(firstItem.type_id, 'Item should include type_id');
   assert(!firstItem.properties, 'Item should NOT include properties');
@@ -11038,12 +11075,13 @@ async function testFieldSelectionEntityInvalidField() {
 
   // Get an entity type first
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
-  // Create an entity
+  // Create a public entity (empty ACL array makes it accessible without auth)
   const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Invalid Field Test Entity' },
+    acl: [],
   });
   const entityId = createResponse.data.data.id;
 
@@ -11064,7 +11102,7 @@ async function testFieldSelectionTypeGet() {
 
   // Get types list
   const typesResponse = await makeRequest('GET', '/api/types');
-  const typeId = typesResponse.data.data.items[0].id;
+  const typeId = typesResponse.data.data[0].id;
 
   // Get type with field selection
   const response = await makeRequest('GET', `/api/types/${typeId}?fields=id,name,category`);
@@ -11085,9 +11123,9 @@ async function testFieldSelectionTypeList() {
   const response = await makeRequest('GET', '/api/types?fields=id,name');
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(response.data.data.items.length > 0, 'Should return at least one type');
+  assert(response.data.data.length > 0, 'Should return at least one type');
 
-  const firstItem = response.data.data.items[0];
+  const firstItem = response.data.data[0];
   assert(firstItem.id, 'Item should include id');
   assert(firstItem.name, 'Item should include name');
   assert(!firstItem.category, 'Item should NOT include category');
@@ -11159,8 +11197,8 @@ async function testFieldSelectionLinkList() {
 
   assertEquals(response.status, 200, 'Status code should be 200');
 
-  if (response.data.data.items.length > 0) {
-    const firstItem = response.data.data.items[0];
+  if (response.data.data.length > 0) {
+    const firstItem = response.data.data[0];
     assert(firstItem.id, 'Item should include id');
     assert(firstItem.type_id, 'Item should include type_id');
     assert(firstItem.source_entity_id, 'Item should include source_entity_id');
@@ -11174,12 +11212,13 @@ async function testFieldSelectionEmptyFieldsReturnsAll() {
 
   // Get an entity type first
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
-  // Create an entity
+  // Create a public entity (empty ACL array makes it accessible without auth)
   const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Empty Fields Test Entity' },
+    acl: [],
   });
   const entityId = createResponse.data.data.id;
 
@@ -11200,12 +11239,13 @@ async function testFieldSelectionWithWhitespace() {
 
   // Get an entity type first
   const typesResponse = await makeRequest('GET', '/api/types?category=entity');
-  const entityType = typesResponse.data.data.items[0];
+  const entityType = typesResponse.data.data[0];
 
-  // Create an entity
+  // Create a public entity (empty ACL array makes it accessible without auth)
   const createResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: entityType.id,
     properties: { name: 'Whitespace Fields Test Entity' },
+    acl: [],
   });
   const entityId = createResponse.data.data.id;
 
@@ -12956,7 +12996,7 @@ async function testEntityAclInvalidPrincipal() {
 
   assertEquals(response.status, 400, 'Status code should be 400');
   assertEquals(response.data.code, 'INVALID_PRINCIPALS', 'Error code should be INVALID_PRINCIPALS');
-  assert(response.data.details.errors, 'Should include error details');
+  assert(response.data.data.errors, 'Should include error details');
 }
 
 async function testEntityAclNotFound() {
