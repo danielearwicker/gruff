@@ -178,9 +178,7 @@ async function initAdminAuthToken() {
   });
 
   if (loginResponse.status !== 200 || !loginResponse.data?.data?.access_token) {
-    throw new Error(
-      'Failed to login as admin user: ' + JSON.stringify(loginResponse.data)
-    );
+    throw new Error('Failed to login as admin user: ' + JSON.stringify(loginResponse.data));
   }
 
   adminAuthToken = loginResponse.data.data.access_token;
@@ -1893,9 +1891,13 @@ async function testUpdateTypeNotFound() {
   logTest('Type Management - Update Non-existent Type Returns 404');
 
   // Admin auth required even for non-existent types
-  const response = await makeAdminAuthRequest('PUT', '/api/types/00000000-0000-0000-0000-000000000000', {
-    name: 'NewName',
-  });
+  const response = await makeAdminAuthRequest(
+    'PUT',
+    '/api/types/00000000-0000-0000-0000-000000000000',
+    {
+      name: 'NewName',
+    }
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -1952,7 +1954,10 @@ async function testDeleteTypeNotFound() {
   logTest('Type Management - Delete Non-existent Type Returns 404');
 
   // Admin auth required even for non-existent types
-  const response = await makeAdminAuthRequest('DELETE', '/api/types/00000000-0000-0000-0000-000000000000');
+  const response = await makeAdminAuthRequest(
+    'DELETE',
+    '/api/types/00000000-0000-0000-0000-000000000000'
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -10071,7 +10076,9 @@ async function testUIEntityDetailDeletedEntity() {
     category: 'entity',
   });
   if (typeResponse.status !== 201) {
-    throw new Error(`Type creation failed: ${typeResponse.status} - ${JSON.stringify(typeResponse.data)}`);
+    throw new Error(
+      `Type creation failed: ${typeResponse.status} - ${JSON.stringify(typeResponse.data)}`
+    );
   }
   const typeId = typeResponse.data.data.id;
 
@@ -10081,14 +10088,18 @@ async function testUIEntityDetailDeletedEntity() {
     acl: [], // Make public so unauthenticated list can see it
   });
   if (createResponse.status !== 201) {
-    throw new Error(`Entity creation failed: ${createResponse.status} - ${JSON.stringify(createResponse.data)}`);
+    throw new Error(
+      `Entity creation failed: ${createResponse.status} - ${JSON.stringify(createResponse.data)}`
+    );
   }
   const entityId = createResponse.data.data.id;
 
   // Delete the entity
   const deleteResponse = await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
   if (deleteResponse.status !== 200) {
-    throw new Error(`Entity deletion failed: ${deleteResponse.status} - ${JSON.stringify(deleteResponse.data)}`);
+    throw new Error(
+      `Entity deletion failed: ${deleteResponse.status} - ${JSON.stringify(deleteResponse.data)}`
+    );
   }
 
   // Get the deleted version
@@ -10097,7 +10108,9 @@ async function testUIEntityDetailDeletedEntity() {
     `/api/entities?include_deleted=true&type_id=${typeId}`
   );
   // is_deleted can be true or 1 depending on API format
-  const deletedEntity = listResponse.data.data.find(e => e.is_deleted === true || e.is_deleted === 1);
+  const deletedEntity = listResponse.data.data.find(
+    e => e.is_deleted === true || e.is_deleted === 1
+  );
   if (!deletedEntity) {
     throw new Error('Could not find deleted entity in list');
   }
@@ -11146,7 +11159,10 @@ async function testFieldSelectionEntityInvalidField() {
   assert(response.data.error, 'Response should include error');
   assertEquals(response.data.code, 'INVALID_FIELDS', 'Error code should be INVALID_FIELDS');
   // The error details are in response.data.data (error function stores details in 'data' field)
-  assert(response.data.data && response.data.data.allowed_fields, 'Response should include allowed_fields');
+  assert(
+    response.data.data && response.data.data.allowed_fields,
+    'Response should include allowed_fields'
+  );
 }
 
 async function testFieldSelectionTypeGet() {
@@ -12738,7 +12754,9 @@ async function testUIGroupEditForm() {
   const groupId = groupResponse.data.data.id;
 
   // Fetch the edit form page without authentication - should redirect
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}/edit`, { redirect: 'manual' });
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}/edit`, {
+    redirect: 'manual',
+  });
 
   // Should redirect to login page for unauthenticated users
   assertEquals(response.status, 302, 'Should redirect unauthenticated users');
@@ -12753,7 +12771,9 @@ async function testUIGroupEditFormNotFound() {
 
   // Without authentication, the edit page redirects to login
   // Even for non-existent groups, authentication is checked first
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-id/edit`, { redirect: 'manual' });
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-id/edit`, {
+    redirect: 'manual',
+  });
 
   // Should redirect to login page for unauthenticated users
   assertEquals(response.status, 302, 'Should redirect unauthenticated users');
