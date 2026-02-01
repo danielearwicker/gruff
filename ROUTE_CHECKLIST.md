@@ -24,7 +24,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## User Management Routes (`/api/users`)
 
-- [ ] `GET /api/users` - List all users (admin only, paginated)
+- [✅] `GET /api/users` - List all users (admin only, paginated)
 - [ ] `GET /api/users/{id}` - Get user details by ID
 - [ ] `PUT /api/users/{id}` - Update user profile (admin or self)
 - [ ] `GET /api/users/{id}/activity` - Get user's creation/edit history
