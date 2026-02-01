@@ -8317,7 +8317,7 @@ async function testSchemaValidationCreateEntitySuccess() {
     name: 'SchemaValidatedProduct',
     category: 'entity',
     description: 'A product with strict schema validation',
-    json_schema: JSON.stringify({
+    json_schema: {
       type: 'object',
       properties: {
         name: { type: 'string', minLength: 1 },
@@ -8325,7 +8325,7 @@ async function testSchemaValidationCreateEntitySuccess() {
         inStock: { type: 'boolean' },
       },
       required: ['name', 'price'],
-    }),
+    },
   });
 
   assertEquals(typeResponse.status, 201, 'Type creation should succeed');
@@ -8470,14 +8470,14 @@ async function testSchemaValidationCreateLinkSuccess() {
     name: 'SchemaValidatedConnection',
     category: 'link',
     description: 'A connection with strict schema validation',
-    json_schema: JSON.stringify({
+    json_schema: {
       type: 'object',
       properties: {
         strength: { type: 'string', enum: ['weak', 'medium', 'strong'] },
         createdDate: { type: 'string', format: 'date' },
       },
       required: ['strength'],
-    }),
+    },
   });
 
   assertEquals(linkTypeResponse.status, 201, 'Link type creation should succeed');
@@ -9417,9 +9417,9 @@ async function testSanitizationEntityProperties() {
 async function testSanitizationLinkProperties() {
   logTest('Input Sanitization - Link Properties are Sanitized');
 
-  // Get types and entities for the link
+  // Get types and entities for the link - find one without a schema
   const typesResponse = await makeRequest('GET', '/api/types?category=link');
-  const linkType = typesResponse.data.data[0];
+  const linkType = typesResponse.data.data.find(t => !t.json_schema) || typesResponse.data.data[0];
 
   const entitiesResponse = await makeRequest('GET', '/api/entities?limit=2');
   const entities = entitiesResponse.data.data;
@@ -14340,15 +14340,12 @@ async function runTests() {
     testExportImportRoundTrip,
 
     // Type Schema Validation tests
-    // TODO: testSchemaValidationCreateEntitySuccess fails - type creation returns 400 instead of 201
-    // This appears to be an issue with stringified json_schema handling in type creation
-    // testSchemaValidationCreateEntitySuccess,
+    testSchemaValidationCreateEntitySuccess,
     testSchemaValidationCreateEntityMissingRequired,
     testSchemaValidationCreateEntityWrongType,
     testSchemaValidationCreateEntityMinimumViolation,
     testSchemaValidationUpdateEntity,
-    // TODO: testSchemaValidationCreateLinkSuccess fails - link type creation returns 400 instead of 201
-    // testSchemaValidationCreateLinkSuccess,
+    testSchemaValidationCreateLinkSuccess,
     testSchemaValidationCreateLinkInvalidEnum,
     testSchemaValidationNoSchemaType,
     testSchemaValidationBulkCreateEntitiesWithSchema,

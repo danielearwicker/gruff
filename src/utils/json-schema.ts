@@ -181,9 +181,11 @@ export function validateJsonSchema(
     const actualType = getJsonType(data);
 
     if (!types.includes(actualType)) {
-      // Special case: 'integer' type
+      // Special case: 'integer' type - integers can match 'number' type
       if (types.includes('integer') && actualType === 'number' && Number.isInteger(data)) {
         // Valid integer
+      } else if (types.includes('number') && actualType === 'integer') {
+        // Integers are valid numbers in JSON Schema
       } else {
         errors.push({
           path,
