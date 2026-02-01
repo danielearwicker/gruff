@@ -3345,8 +3345,8 @@ async function testGetLinkVersions() {
     properties: { strength: 'strong', version: 3 },
   });
 
-  // Get all versions
-  const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
+  // Get all versions (requires auth since link has ACL)
+  const response = await makeAuthRequest('GET', `/api/links/${linkId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -3440,8 +3440,8 @@ async function testGetSpecificLinkVersion() {
     properties: { weight: 300 },
   });
 
-  // Get version 2 specifically
-  const response = await makeRequest('GET', `/api/links/${linkId}/versions/2`);
+  // Get version 2 specifically (requires auth since link has ACL)
+  const response = await makeAuthRequest('GET', `/api/links/${linkId}/versions/2`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -3487,8 +3487,8 @@ async function testGetSpecificLinkVersionNotFound() {
   });
   const linkId = createResponse.data.data.id;
 
-  // Try to get version 5 (doesn't exist)
-  const response = await makeRequest('GET', `/api/links/${linkId}/versions/5`);
+  // Try to get version 5 (doesn't exist) - requires auth since link has ACL
+  const response = await makeAuthRequest('GET', `/api/links/${linkId}/versions/5`);
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -3598,8 +3598,8 @@ async function testGetLinkHistory() {
     },
   });
 
-  // Get history with diffs
-  const response = await makeRequest('GET', `/api/links/${linkId}/history`);
+  // Get history with diffs (requires auth since link has ACL)
+  const response = await makeAuthRequest('GET', `/api/links/${linkId}/history`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -3696,8 +3696,8 @@ async function testGetLinkVersionsWithDeletedLink() {
   // Restore
   await makeAuthRequest('POST', `/api/links/${linkId}/restore`);
 
-  // Get all versions
-  const response = await makeRequest('GET', `/api/links/${linkId}/versions`);
+  // Get all versions (requires auth since link has ACL)
+  const response = await makeAuthRequest('GET', `/api/links/${linkId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(
