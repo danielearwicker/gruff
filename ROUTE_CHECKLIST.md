@@ -33,7 +33,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Group Management Routes (`/api/groups`)
 
-- [ ] `POST /api/groups` - Create new group (admin only)
+- [✅] `POST /api/groups` - Create new group (admin only)
 - [ ] `GET /api/groups` - List all groups (paginated)
 - [ ] `GET /api/groups/{id}` - Get group details
 - [ ] `PUT /api/groups/{id}` - Update group name/description (admin only)
