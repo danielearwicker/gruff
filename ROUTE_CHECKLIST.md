@@ -48,7 +48,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `POST /api/types` - Create new type with optional JSON schema (admin only)
 - [✅] `GET /api/types` - List all types (paginated, with field selection)
 - [✅] `GET /api/types/{id}` - Get specific type by ID
-- [ ] `PUT /api/types/{id}` - Update type metadata/schema (admin only)
+- [✅] `PUT /api/types/{id}` - Update type metadata/schema (admin only)
 - [ ] `DELETE /api/types/{id}` - Delete type (admin only, only if not in use)
 
 ## Entity Management Routes (`/api/entities`)
