@@ -20,7 +20,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [ ] `GET /api/auth/google/callback` - Google OAuth2 callback handler
 - [ ] `GET /api/auth/github` - Initiate GitHub OAuth2 sign-in
 - [ ] `GET /api/auth/github/callback` - GitHub OAuth2 callback handler
-- [ ] `GET /api/auth/providers` - List available authentication providers
+- [✅] `GET /api/auth/providers` - List available authentication providers
 
 ## User Management Routes (`/api/users`)
 
