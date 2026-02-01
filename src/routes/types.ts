@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createTypeSchema,
   updateTypeSchema,
@@ -44,17 +45,18 @@ function getCurrentTimestamp(): number {
 
 /**
  * POST /api/types
- * Create a new type
+ * Create a new type (admin only)
  */
-types.post('/', validateJson(createTypeSchema), async c => {
+types.post('/', requireAuth(), requireAdmin(), validateJson(createTypeSchema), async c => {
   const data = c.get('validated_json') as CreateType;
   const db = c.env.DB;
+  const user = c.get('user');
 
   const id = generateUUID();
   const now = getCurrentTimestamp();
 
-  // For now, we'll use the test user ID from seed data. In the future, this will come from auth middleware
-  const systemUserId = 'test-user-001';
+  // Use the authenticated user's ID
+  const createdBy = user.user_id;
 
   try {
     // Check if type name already exists
@@ -85,7 +87,7 @@ types.post('/', validateJson(createTypeSchema), async c => {
         data.description || null,
         jsonSchemaString,
         now,
-        systemUserId
+        createdBy
       )
       .run();
 
@@ -330,9 +332,9 @@ types.get('/:id', async c => {
 
 /**
  * PUT /api/types/:id
- * Update a type's metadata
+ * Update a type's metadata (admin only)
  */
-types.put('/:id', validateJson(updateTypeSchema), async c => {
+types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema), async c => {
   const id = c.req.param('id');
   const data = c.get('validated_json') as UpdateType;
   const db = c.env.DB;
@@ -419,9 +421,9 @@ types.put('/:id', validateJson(updateTypeSchema), async c => {
 
 /**
  * DELETE /api/types/:id
- * Delete a type (only if not in use)
+ * Delete a type (only if not in use) (admin only)
  */
-types.delete('/:id', async c => {
+types.delete('/:id', requireAuth(), requireAdmin(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
 

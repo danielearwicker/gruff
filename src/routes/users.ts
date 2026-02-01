@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
 import { updateUserSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -38,6 +38,7 @@ interface UserRow {
   created_at: number;
   updated_at: number;
   is_active: number;
+  is_admin: number;
 }
 
 const usersRouter = new Hono<{ Bindings: Bindings }>();
@@ -67,104 +68,111 @@ const listUsersQuerySchema = z.object({
 /**
  * GET /api/users
  *
- * List all users (admin functionality - for now, any authenticated user can access)
- * In a production system, this should be restricted to admin users only
+ * List all users (admin only)
+ * This endpoint is restricted to admin users for security
  */
-usersRouter.get('/', requireAuth(), validateQuery(listUsersQuerySchema), async c => {
-  const logger = getLogger(c);
-  const validated = c.get('validated_query') as {
-    limit: number;
-    offset: number;
-    is_active?: boolean;
-    provider?: string;
-    fields?: string;
-  };
+usersRouter.get(
+  '/',
+  requireAuth(),
+  requireAdmin(),
+  validateQuery(listUsersQuerySchema),
+  async c => {
+    const logger = getLogger(c);
+    const validated = c.get('validated_query') as {
+      limit: number;
+      offset: number;
+      is_active?: boolean;
+      provider?: string;
+      fields?: string;
+    };
 
-  const { limit, offset, is_active, provider } = validated;
+    const { limit, offset, is_active, provider } = validated;
 
-  try {
-    // Build the query dynamically based on filters
-    let query =
-      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE 1=1';
-    const params: unknown[] = [];
+    try {
+      // Build the query dynamically based on filters
+      let query =
+        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE 1=1';
+      const params: unknown[] = [];
 
-    if (is_active !== undefined) {
-      query += ' AND is_active = ?';
-      params.push(is_active ? 1 : 0);
-    }
+      if (is_active !== undefined) {
+        query += ' AND is_active = ?';
+        params.push(is_active ? 1 : 0);
+      }
 
-    if (provider) {
-      query += ' AND provider = ?';
-      params.push(provider);
-    }
+      if (provider) {
+        query += ' AND provider = ?';
+        params.push(provider);
+      }
 
-    // Add ordering and pagination
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
+      // Add ordering and pagination
+      query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      params.push(limit, offset);
 
-    // Execute the query
-    const stmt = c.env.DB.prepare(query);
-    const results = await stmt.bind(...params).all();
+      // Execute the query
+      const stmt = c.env.DB.prepare(query);
+      const results = await stmt.bind(...params).all();
 
-    // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
-    const countParams: unknown[] = [];
+      // Get total count for pagination
+      let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
+      const countParams: unknown[] = [];
 
-    if (is_active !== undefined) {
-      countQuery += ' AND is_active = ?';
-      countParams.push(is_active ? 1 : 0);
-    }
+      if (is_active !== undefined) {
+        countQuery += ' AND is_active = ?';
+        countParams.push(is_active ? 1 : 0);
+      }
 
-    if (provider) {
-      countQuery += ' AND provider = ?';
-      countParams.push(provider);
-    }
+      if (provider) {
+        countQuery += ' AND provider = ?';
+        countParams.push(provider);
+      }
 
-    const countStmt = c.env.DB.prepare(countQuery);
-    const countResult = await countStmt.bind(...countParams).first<{ total: number }>();
-    const total = countResult?.total || 0;
+      const countStmt = c.env.DB.prepare(countQuery);
+      const countResult = await countStmt.bind(...countParams).first<{ total: number }>();
+      const total = countResult?.total || 0;
 
-    logger.info('Users listed', { count: results.results?.length || 0, total });
+      logger.info('Users listed', { count: results.results?.length || 0, total });
 
-    // Format the users (exclude sensitive data)
-    const users = ((results.results || []) as unknown as UserRow[]).map(user => ({
-      id: user.id,
-      email: user.email,
-      display_name: user.display_name,
-      provider: user.provider,
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-      is_active: !!user.is_active,
-    }));
+      // Format the users (exclude sensitive data)
+      const users = ((results.results || []) as unknown as UserRow[]).map(user => ({
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+        provider: user.provider,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        is_active: !!user.is_active,
+        is_admin: !!user.is_admin,
+      }));
 
-    // Apply field selection if requested
-    const fieldSelection = applyFieldSelectionToArray(
-      users as Record<string, unknown>[],
-      validated.fields,
-      USER_ALLOWED_FIELDS
-    );
-
-    if (!fieldSelection.success) {
-      return c.json(
-        response.error(
-          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-          'INVALID_FIELDS',
-          { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
-        ),
-        400
+      // Apply field selection if requested
+      const fieldSelection = applyFieldSelectionToArray(
+        users as Record<string, unknown>[],
+        validated.fields,
+        USER_ALLOWED_FIELDS
       );
+
+      if (!fieldSelection.success) {
+        return c.json(
+          response.error(
+            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            'INVALID_FIELDS',
+            { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
+          ),
+          400
+        );
+      }
+
+      // Calculate pagination metadata
+      const page = Math.floor(offset / limit) + 1;
+      const hasMore = offset + limit < total;
+
+      return c.json(response.paginated(fieldSelection.data, limit, page, total, hasMore));
+    } catch (error) {
+      logger.error('Error listing users', error as Error);
+      return c.json(response.error('Failed to list users', 'USER_LIST_FAILED'), 500);
     }
-
-    // Calculate pagination metadata
-    const page = Math.floor(offset / limit) + 1;
-    const hasMore = offset + limit < total;
-
-    return c.json(response.paginated(fieldSelection.data, limit, page, total, hasMore));
-  } catch (error) {
-    logger.error('Error listing users', error as Error);
-    return c.json(response.error('Failed to list users', 'USER_LIST_FAILED'), 500);
   }
-});
+);
 
 /**
  * GET /api/users/{id}
@@ -184,7 +192,7 @@ usersRouter.get('/:id', requireAuth(), async c => {
   try {
     // Fetch the user from the database
     const user = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE id = ?'
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
     )
       .bind(userId)
       .first();
@@ -205,6 +213,7 @@ usersRouter.get('/:id', requireAuth(), async c => {
       created_at: user.created_at,
       updated_at: user.updated_at,
       is_active: !!user.is_active,
+      is_admin: !!user.is_admin,
     };
 
     // Apply field selection if requested
@@ -239,108 +248,111 @@ usersRouter.get('/:id', requireAuth(), async c => {
  * PUT /api/users/{id}
  *
  * Update a user's profile
- * Users can only update their own profile (enforced by checking JWT user_id)
- * Admins could update any profile (not implemented yet)
+ * Users can update their own profile, admins can update any profile
  */
-usersRouter.put('/:id', requireAuth(), validateJson(updateUserSchema), async c => {
-  const logger = getLogger(c);
-  const userId = c.req.param('id');
-  const currentUser = c.get('user');
-  const validated = c.get('validated_json') as {
-    display_name?: string;
-    email?: string;
-    is_active?: number;
-  };
+usersRouter.put(
+  '/:id',
+  requireAuth(),
+  requireAdminOrSelf('id'),
+  validateJson(updateUserSchema),
+  async c => {
+    const logger = getLogger(c);
+    const userId = c.req.param('id');
+    const currentUser = c.get('user');
+    const validated = c.get('validated_json') as {
+      display_name?: string;
+      email?: string;
+      is_active?: number;
+    };
 
-  try {
-    // Check if user is updating their own profile
-    if (currentUser.user_id !== userId) {
-      logger.warn('User attempted to update another user profile', {
-        currentUserId: currentUser.user_id,
-        targetUserId: userId,
-      });
-      return c.json(response.forbidden('You can only update your own profile'), 403);
-    }
-
-    // Check if user exists
-    const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
-      .bind(userId)
-      .first();
-
-    if (!existingUser) {
-      logger.warn('User not found for update', { userId });
-      return c.json(response.notFound('User'), 404);
-    }
-
-    // If email is being updated, check if it's already taken
-    if (validated.email && validated.email !== existingUser.email) {
-      const emailExists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?')
-        .bind(validated.email, userId)
+    try {
+      // Check if user exists
+      const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
+        .bind(userId)
         .first();
 
-      if (emailExists) {
-        logger.warn('Email already in use', { email: validated.email });
-        return c.json(response.error('Email is already in use', 'EMAIL_EXISTS'), 409);
+      if (!existingUser) {
+        logger.warn('User not found for update', { userId });
+        return c.json(response.notFound('User'), 404);
       }
+
+      // If email is being updated, check if it's already taken
+      if (validated.email && validated.email !== existingUser.email) {
+        const emailExists = await c.env.DB.prepare(
+          'SELECT id FROM users WHERE email = ? AND id != ?'
+        )
+          .bind(validated.email, userId)
+          .first();
+
+        if (emailExists) {
+          logger.warn('Email already in use', { email: validated.email });
+          return c.json(response.error('Email is already in use', 'EMAIL_EXISTS'), 409);
+        }
+      }
+
+      // Build update query dynamically
+      const updates: string[] = [];
+      const params: unknown[] = [];
+
+      if (validated.display_name !== undefined) {
+        updates.push('display_name = ?');
+        params.push(validated.display_name);
+      }
+
+      if (validated.email !== undefined) {
+        updates.push('email = ?');
+        params.push(validated.email);
+      }
+
+      if (validated.is_active !== undefined) {
+        updates.push('is_active = ?');
+        params.push(validated.is_active ? 1 : 0);
+      }
+
+      // Always update updated_at
+      updates.push('updated_at = ?');
+      params.push(Math.floor(Date.now() / 1000));
+
+      // Add user ID as the final parameter
+      params.push(userId);
+
+      // Execute update
+      const updateQuery = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+      await c.env.DB.prepare(updateQuery)
+        .bind(...params)
+        .run();
+
+      // Fetch and return updated user
+      const updatedUser = await c.env.DB.prepare(
+        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+      )
+        .bind(userId)
+        .first();
+
+      logger.info('User profile updated', {
+        userId,
+        updatedBy: currentUser.user_id,
+        isAdmin: currentUser.is_admin ?? false,
+      });
+
+      return c.json(
+        response.updated({
+          id: updatedUser!.id,
+          email: updatedUser!.email,
+          display_name: updatedUser!.display_name,
+          provider: updatedUser!.provider,
+          created_at: updatedUser!.created_at,
+          updated_at: updatedUser!.updated_at,
+          is_active: !!updatedUser!.is_active,
+          is_admin: !!updatedUser!.is_admin,
+        })
+      );
+    } catch (error) {
+      logger.error('Error updating user profile', error as Error, { userId });
+      return c.json(response.error('Failed to update user profile', 'USER_UPDATE_FAILED'), 500);
     }
-
-    // Build update query dynamically
-    const updates: string[] = [];
-    const params: unknown[] = [];
-
-    if (validated.display_name !== undefined) {
-      updates.push('display_name = ?');
-      params.push(validated.display_name);
-    }
-
-    if (validated.email !== undefined) {
-      updates.push('email = ?');
-      params.push(validated.email);
-    }
-
-    if (validated.is_active !== undefined) {
-      updates.push('is_active = ?');
-      params.push(validated.is_active ? 1 : 0);
-    }
-
-    // Always update updated_at
-    updates.push('updated_at = ?');
-    params.push(Math.floor(Date.now() / 1000));
-
-    // Add user ID as the final parameter
-    params.push(userId);
-
-    // Execute update
-    const updateQuery = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-    await c.env.DB.prepare(updateQuery)
-      .bind(...params)
-      .run();
-
-    // Fetch and return updated user
-    const updatedUser = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE id = ?'
-    )
-      .bind(userId)
-      .first();
-
-    logger.info('User profile updated', { userId });
-
-    return c.json(
-      response.updated({
-        id: updatedUser!.id,
-        email: updatedUser!.email,
-        display_name: updatedUser!.display_name,
-        provider: updatedUser!.provider,
-        created_at: updatedUser!.created_at,
-        updated_at: updatedUser!.updated_at,
-        is_active: !!updatedUser!.is_active,
-      })
-    );
-  } catch (error) {
-    logger.error('Error updating user profile', error as Error, { userId });
-    return c.json(response.error('Failed to update user profile', 'USER_UPDATE_FAILED'), 500);
   }
-});
+);
 
 /**
  * GET /api/users/{id}/activity
@@ -560,10 +572,6 @@ async function getParentGroups(
     path: string[];
   }>
 > {
-  if (visited.has(groupId)) {
-    return [];
-  }
-
   const result: Array<{
     id: string;
     name: string;

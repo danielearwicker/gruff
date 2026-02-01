@@ -6959,7 +6959,7 @@ ui.get('/groups', async c => {
             <td>
               <div class="button-group compact">
                 <a href="/ui/groups/${group.id}" class="button small">View</a>
-                <a href="/ui/groups/${group.id}/edit" class="button small secondary">Edit</a>
+                ${user?.is_admin ? `<a href="/ui/groups/${group.id}/edit" class="button small secondary">Edit</a>` : ''}
               </div>
             </td>
           </tr>
@@ -6993,13 +6993,19 @@ ui.get('/groups', async c => {
   `
       : '';
 
+  const adminActions = user?.is_admin
+    ? `
+    <div class="button-group">
+      <a href="/ui/groups/new" class="button">Create New Group</a>
+    </div>
+  `
+    : '';
+
   const content = `
     <h2>Groups</h2>
     <p>Manage groups and their memberships. Groups can contain users and other groups.</p>
 
-    <div class="button-group">
-      <a href="/ui/groups/new" class="button">Create New Group</a>
-    </div>
+    ${adminActions}
 
     <h3>Filter Groups</h3>
     ${filterForm}
@@ -7029,9 +7035,14 @@ ui.get('/groups', async c => {
 ui.get('/groups/new', async c => {
   const user = c.get('user');
 
-  // Require authentication
+  // Require admin authentication
   if (!user) {
     return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/groups/new'));
+  }
+
+  if (!user.is_admin) {
+    // Redirect non-admins to groups list with error
+    return c.redirect('/ui/groups?error=' + encodeURIComponent('Admin access required'));
   }
 
   const error = c.req.query('error') || '';
@@ -7132,11 +7143,16 @@ ui.get('/groups/:id/edit', async c => {
   const user = c.get('user');
   const groupId = c.req.param('id');
 
-  // Require authentication
+  // Require admin authentication
   if (!user) {
     return c.redirect(
       '/ui/auth/login?return_to=' + encodeURIComponent(`/ui/groups/${groupId}/edit`)
     );
+  }
+
+  if (!user.is_admin) {
+    // Redirect non-admins to group detail page with error
+    return c.redirect(`/ui/groups/${groupId}?error=` + encodeURIComponent('Admin access required'));
   }
 
   // Fetch group
@@ -7396,10 +7412,16 @@ ui.get('/groups/:id', async c => {
         <dd><span class="badge muted">${members.length}</span> (${userMembers.length} users, ${groupMembers.length} groups)</dd>
       </dl>
 
-      <div class="button-group">
-        <a href="/ui/groups/${escapeHtml(groupId)}/edit" class="button">Edit Group</a>
-        <button type="button" class="button danger" onclick="deleteGroup()">Delete Group</button>
-      </div>
+      ${
+        user?.is_admin
+          ? `
+        <div class="button-group">
+          <a href="/ui/groups/${escapeHtml(groupId)}/edit" class="button">Edit Group</a>
+          <button type="button" class="button danger" onclick="deleteGroup()">Delete Group</button>
+        </div>
+      `
+          : ''
+      }
     </div>
   `;
 
@@ -7413,7 +7435,7 @@ ui.get('/groups/:id', async c => {
           <th>Name</th>
           <th>Email</th>
           <th>Added</th>
-          <th>Actions</th>
+          ${user?.is_admin ? '<th>Actions</th>' : ''}
         </tr>
       </thead>
       <tbody>
@@ -7424,9 +7446,13 @@ ui.get('/groups/:id', async c => {
             <td>${m.name ? escapeHtml(m.name) : '<span class="muted">-</span>'}</td>
             <td><a href="/ui/users/${m.member_id}">${escapeHtml(m.email || m.member_id)}</a></td>
             <td class="muted small">${formatTimestamp(m.created_at)}</td>
-            <td>
-              <button type="button" class="button small danger" onclick="removeMember('user', '${escapeHtml(m.member_id)}')">Remove</button>
-            </td>
+            ${
+              user?.is_admin
+                ? `<td>
+                <button type="button" class="button small danger" onclick="removeMember('user', '${escapeHtml(m.member_id)}')">Remove</button>
+              </td>`
+                : ''
+            }
           </tr>
         `
           )
@@ -7445,7 +7471,7 @@ ui.get('/groups/:id', async c => {
         <tr>
           <th>Group Name</th>
           <th>Added</th>
-          <th>Actions</th>
+          ${user?.is_admin ? '<th>Actions</th>' : ''}
         </tr>
       </thead>
       <tbody>
@@ -7455,9 +7481,13 @@ ui.get('/groups/:id', async c => {
           <tr>
             <td><a href="/ui/groups/${m.member_id}">${escapeHtml(m.name || m.member_id)}</a></td>
             <td class="muted small">${formatTimestamp(m.created_at)}</td>
-            <td>
-              <button type="button" class="button small danger" onclick="removeMember('group', '${escapeHtml(m.member_id)}')">Remove</button>
-            </td>
+            ${
+              user?.is_admin
+                ? `<td>
+                <button type="button" class="button small danger" onclick="removeMember('group', '${escapeHtml(m.member_id)}')">Remove</button>
+              </td>`
+                : ''
+            }
           </tr>
         `
           )
@@ -7616,7 +7646,7 @@ ui.get('/groups/:id', async c => {
     <h3>Nested Group Members (${groupMembers.length})</h3>
     ${groupMembersSection}
 
-    ${addMemberForm}
+    ${user?.is_admin ? addMemberForm : ''}
 
     <div class="button-group">
       <a href="/ui/groups" class="button secondary">Back to Groups</a>

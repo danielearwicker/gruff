@@ -16,6 +16,7 @@ export const userSchema = z.object({
   created_at: timestampSchema,
   updated_at: timestampSchema,
   is_active: sqliteBooleanSchema,
+  is_admin: sqliteBooleanSchema.optional().default(0),
 });
 
 // User creation schema (for registration) - with sanitization for display_name
@@ -49,10 +50,14 @@ export const updateUserSchema = z.object({
 });
 
 // User response schema (without sensitive data)
-export const userResponseSchema = userSchema.omit({
-  password_hash: true,
-  provider_id: true,
-});
+export const userResponseSchema = userSchema
+  .omit({
+    password_hash: true,
+    provider_id: true,
+  })
+  .extend({
+    is_admin: z.boolean().optional(),
+  });
 
 // Login schema
 export const loginSchema = z.object({
@@ -74,6 +79,7 @@ export const logoutSchema = z.object({
 export const jwtPayloadSchema = z.object({
   user_id: uuidSchema,
   email: z.string().email(),
+  is_admin: z.boolean().optional(), // Admin role flag
   iat: z.number(),
   exp: z.number(),
   jti: z.string().optional(), // JWT ID for uniqueness

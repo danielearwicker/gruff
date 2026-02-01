@@ -145,6 +145,7 @@ export const USER_ALLOWED_FIELDS = new Set([
   'created_at',
   'updated_at',
   'is_active',
+  'is_admin',
 ]);
 
 /**

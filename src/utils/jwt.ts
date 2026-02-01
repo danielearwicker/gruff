@@ -36,6 +36,13 @@ interface JwtPayloadInternal extends JwtPayload {
 }
 
 /**
+ * Options for token creation
+ */
+export interface TokenCreationOptions {
+  isAdmin?: boolean;
+}
+
+/**
  * Base64 URL encoding (RFC 4648)
  * Converts base64 to URL-safe format
  */
@@ -167,13 +174,15 @@ async function verifyToken(token: string, secret: string): Promise<JwtPayloadInt
  * @param email - User email
  * @param secret - JWT secret from environment
  * @param config - Optional configuration
+ * @param options - Optional token creation options (e.g., isAdmin)
  * @returns Promise<string> - Signed access token
  */
 export async function createAccessToken(
   userId: string,
   email: string,
   secret: string,
-  config?: JwtConfig
+  config?: JwtConfig,
+  options?: TokenCreationOptions
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const expiresIn = config?.accessTokenExpiry ?? ACCESS_TOKEN_EXPIRY;
@@ -185,6 +194,7 @@ export async function createAccessToken(
   const payload: JwtPayloadInternal = {
     user_id: userId,
     email: email,
+    is_admin: options?.isAdmin ?? false,
     iat: now,
     exp: now + expiresIn,
     jti,
@@ -200,13 +210,15 @@ export async function createAccessToken(
  * @param email - User email
  * @param secret - JWT secret from environment
  * @param config - Optional configuration
+ * @param options - Optional token creation options (e.g., isAdmin)
  * @returns Promise<string> - Signed refresh token
  */
 export async function createRefreshToken(
   userId: string,
   email: string,
   secret: string,
-  config?: JwtConfig
+  config?: JwtConfig,
+  options?: TokenCreationOptions
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const expiresIn = config?.refreshTokenExpiry ?? REFRESH_TOKEN_EXPIRY;
@@ -214,6 +226,7 @@ export async function createRefreshToken(
   const payload: JwtPayloadInternal = {
     user_id: userId,
     email: email,
+    is_admin: options?.isAdmin ?? false,
     iat: now,
     exp: now + expiresIn,
     refresh: true, // Mark this as a refresh token
@@ -229,17 +242,19 @@ export async function createRefreshToken(
  * @param email - User email
  * @param secret - JWT secret from environment
  * @param config - Optional configuration
+ * @param options - Optional token creation options (e.g., isAdmin)
  * @returns Promise<TokenPair> - Access and refresh tokens with expiry
  */
 export async function createTokenPair(
   userId: string,
   email: string,
   secret: string,
-  config?: JwtConfig
+  config?: JwtConfig,
+  options?: TokenCreationOptions
 ): Promise<TokenPair> {
   const [accessToken, refreshToken] = await Promise.all([
-    createAccessToken(userId, email, secret, config),
-    createRefreshToken(userId, email, secret, config),
+    createAccessToken(userId, email, secret, config, options),
+    createRefreshToken(userId, email, secret, config, options),
   ]);
 
   return {

@@ -91,6 +91,74 @@ export function requireAuth() {
 }
 
 /**
+ * Admin Authorization Middleware
+ *
+ * Validates that the authenticated user has admin privileges.
+ * Must be used after requireAuth() middleware.
+ * Returns 403 if user is not an admin.
+ */
+export function requireAdmin() {
+  return async (c: Context<{ Bindings: Bindings }>, next: Next) => {
+    const logger = getLogger(c);
+    const user = c.get('user');
+
+    if (!user) {
+      logger.warn('requireAdmin called without user context');
+      return c.json(response.error('Authentication required', 'UNAUTHORIZED'), 401);
+    }
+
+    if (!user.is_admin) {
+      logger.warn('Non-admin user attempted admin action', { userId: user.user_id });
+      return c.json(response.forbidden('Admin access required'), 403);
+    }
+
+    logger.debug('Admin access granted', { userId: user.user_id });
+    await next();
+  };
+}
+
+/**
+ * Admin or Self Authorization Middleware
+ *
+ * Validates that the authenticated user is either an admin or
+ * is accessing their own resource (based on userId param).
+ * Must be used after requireAuth() middleware.
+ * Returns 403 if user is not authorized.
+ *
+ * @param userIdParam - The name of the route parameter containing the user ID (default: 'id')
+ */
+export function requireAdminOrSelf(userIdParam: string = 'id') {
+  return async (c: Context<{ Bindings: Bindings }>, next: Next) => {
+    const logger = getLogger(c);
+    const user = c.get('user');
+    const targetUserId = c.req.param(userIdParam);
+
+    if (!user) {
+      logger.warn('requireAdminOrSelf called without user context');
+      return c.json(response.error('Authentication required', 'UNAUTHORIZED'), 401);
+    }
+
+    // Allow if admin or if accessing own resource
+    if (user.is_admin || user.user_id === targetUserId) {
+      logger.debug('Access granted', {
+        userId: user.user_id,
+        targetUserId,
+        isAdmin: user.is_admin,
+      });
+      await next();
+      return;
+    }
+
+    logger.warn('Unauthorized access attempt', {
+      userId: user.user_id,
+      targetUserId,
+      isAdmin: user.is_admin,
+    });
+    return c.json(response.forbidden('Access denied'), 403);
+  };
+}
+
+/**
  * Optional JWT Authentication Middleware
  *
  * Similar to requireAuth, but doesn't fail if token is missing.

@@ -118,8 +118,8 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
       return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
-    // Generate access and refresh tokens
-    const tokens = await createTokenPair(userId, email, jwtSecret);
+    // Generate access and refresh tokens (new users are not admins by default)
+    const tokens = await createTokenPair(userId, email, jwtSecret, undefined, { isAdmin: false });
 
     // Store refresh token in KV
     await storeRefreshToken(c.env.KV, userId, email, tokens.refreshToken);
@@ -137,6 +137,7 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
           created_at: now,
           updated_at: now,
           is_active: true,
+          is_admin: false,
         },
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
@@ -165,7 +166,7 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
   try {
     // Find user by email
     const user = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, password_hash, created_at, updated_at, is_active FROM users WHERE email = ?'
+      'SELECT id, email, display_name, provider, password_hash, created_at, updated_at, is_active, is_admin FROM users WHERE email = ?'
     )
       .bind(email)
       .first();
@@ -211,14 +212,15 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
       return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
-    // Generate access and refresh tokens
+    // Generate access and refresh tokens with admin flag
     const userId = String(user.id);
-    const tokens = await createTokenPair(userId, email, jwtSecret);
+    const isAdmin = !!user.is_admin;
+    const tokens = await createTokenPair(userId, email, jwtSecret, undefined, { isAdmin });
 
     // Store refresh token in KV
     await storeRefreshToken(c.env.KV, userId, email, tokens.refreshToken);
 
-    logger.info('Tokens created and stored for login', { userId });
+    logger.info('Tokens created and stored for login', { userId, isAdmin });
 
     // Return success response with tokens
     return c.json(
@@ -231,6 +233,7 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
           created_at: user.created_at,
           updated_at: user.updated_at,
           is_active: !!user.is_active,
+          is_admin: isAdmin,
         },
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
@@ -283,8 +286,17 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
 
     logger.info('Refresh token validated', { userId: user_id });
 
-    // Generate a new access token
-    const newAccessToken = await createAccessToken(user_id, email, jwtSecret);
+    // Fetch current user to get latest admin status from database
+    const user = await c.env.DB.prepare('SELECT is_admin FROM users WHERE id = ?')
+      .bind(user_id)
+      .first();
+
+    const isAdmin = user ? !!user.is_admin : false;
+
+    // Generate a new access token with current admin status
+    const newAccessToken = await createAccessToken(user_id, email, jwtSecret, undefined, {
+      isAdmin,
+    });
 
     // Optionally rotate the refresh token (best practice for security)
     // For now, we'll keep the same refresh token, but you could rotate it here
@@ -368,7 +380,7 @@ authRouter.get('/me', requireAuth(), async c => {
   try {
     // Fetch the full user profile from the database
     const userRecord = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, created_at, updated_at, is_active FROM users WHERE id = ?'
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
     )
       .bind(user.user_id)
       .first();
@@ -397,6 +409,7 @@ authRouter.get('/me', requireAuth(), async c => {
           created_at: userRecord.created_at,
           updated_at: userRecord.updated_at,
           is_active: !!userRecord.is_active,
+          is_admin: !!userRecord.is_admin,
         },
       })
     );
@@ -571,7 +584,7 @@ authRouter.get('/google/callback', async c => {
 
     // Check if user already exists by email
     const existingUser = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active FROM users WHERE email = ?'
+      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active, is_admin FROM users WHERE email = ?'
     )
       .bind(googleProfile.email)
       .first();
@@ -581,6 +594,7 @@ authRouter.get('/google/callback', async c => {
     let createdAt: number;
     let updatedAt: number;
     let isNewUser = false;
+    let isAdmin = false;
 
     if (existingUser) {
       // User exists - check if it's already a Google account
@@ -607,6 +621,7 @@ authRouter.get('/google/callback', async c => {
       displayName = existingUser.display_name ? String(existingUser.display_name) : null;
       createdAt = existingUser.created_at as number;
       updatedAt = Math.floor(Date.now() / 1000);
+      isAdmin = !!existingUser.is_admin;
 
       // Check if account is active
       if (!existingUser.is_active) {
@@ -614,17 +629,18 @@ authRouter.get('/google/callback', async c => {
         return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
       }
     } else {
-      // Create new user
+      // Create new user (new users are not admins by default)
       userId = crypto.randomUUID();
       const now = Math.floor(Date.now() / 1000);
       displayName = googleProfile.name || googleProfile.given_name || null;
       createdAt = now;
       updatedAt = now;
       isNewUser = true;
+      isAdmin = false;
 
       await c.env.DB.prepare(
-        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active)
-         VALUES (?, ?, ?, 'google', ?, NULL, ?, ?, 1)`
+        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active, is_admin)
+         VALUES (?, ?, ?, 'google', ?, NULL, ?, ?, 1, 0)`
       )
         .bind(userId, googleProfile.email, displayName, googleProfile.id, now, now)
         .run();
@@ -639,8 +655,10 @@ authRouter.get('/google/callback', async c => {
       return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
-    // Generate access and refresh tokens
-    const tokens = await createTokenPair(userId, googleProfile.email, jwtSecret);
+    // Generate access and refresh tokens with admin status
+    const tokens = await createTokenPair(userId, googleProfile.email, jwtSecret, undefined, {
+      isAdmin,
+    });
 
     // Store refresh token in KV
     await storeRefreshToken(c.env.KV, userId, googleProfile.email, tokens.refreshToken);
@@ -670,6 +688,7 @@ authRouter.get('/google/callback', async c => {
         created_at: createdAt,
         updated_at: updatedAt,
         is_active: true,
+        is_admin: isAdmin,
       },
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
@@ -873,7 +892,7 @@ authRouter.get('/github/callback', async c => {
 
     // Check if user already exists by email
     const existingUser = await c.env.DB.prepare(
-      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active FROM users WHERE email = ?'
+      'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active, is_admin FROM users WHERE email = ?'
     )
       .bind(email)
       .first();
@@ -883,6 +902,7 @@ authRouter.get('/github/callback', async c => {
     let createdAt: number;
     let updatedAt: number;
     let isNewUser = false;
+    let isAdmin = false;
 
     if (existingUser) {
       // User exists - check if it's already a GitHub account
@@ -909,6 +929,7 @@ authRouter.get('/github/callback', async c => {
       displayName = existingUser.display_name ? String(existingUser.display_name) : null;
       createdAt = existingUser.created_at as number;
       updatedAt = Math.floor(Date.now() / 1000);
+      isAdmin = !!existingUser.is_admin;
 
       // Check if account is active
       if (!existingUser.is_active) {
@@ -916,17 +937,18 @@ authRouter.get('/github/callback', async c => {
         return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
       }
     } else {
-      // Create new user
+      // Create new user (new users are not admins by default)
       userId = crypto.randomUUID();
       const now = Math.floor(Date.now() / 1000);
       displayName = githubProfile.name || githubProfile.login || null;
       createdAt = now;
       updatedAt = now;
       isNewUser = true;
+      isAdmin = false;
 
       await c.env.DB.prepare(
-        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active)
-         VALUES (?, ?, ?, 'github', ?, NULL, ?, ?, 1)`
+        `INSERT INTO users (id, email, display_name, provider, provider_id, password_hash, created_at, updated_at, is_active, is_admin)
+         VALUES (?, ?, ?, 'github', ?, NULL, ?, ?, 1, 0)`
       )
         .bind(userId, email, displayName, String(githubProfile.id), now, now)
         .run();
@@ -941,8 +963,8 @@ authRouter.get('/github/callback', async c => {
       return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
     }
 
-    // Generate access and refresh tokens
-    const tokens = await createTokenPair(userId, email!, jwtSecret);
+    // Generate access and refresh tokens with admin status
+    const tokens = await createTokenPair(userId, email!, jwtSecret, undefined, { isAdmin });
 
     // Store refresh token in KV
     await storeRefreshToken(c.env.KV, userId, email!, tokens.refreshToken);
@@ -972,6 +994,7 @@ authRouter.get('/github/callback', async c => {
         created_at: createdAt,
         updated_at: updatedAt,
         is_active: true,
+        is_admin: isAdmin,
       },
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,

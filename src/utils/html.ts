@@ -331,6 +331,12 @@ export const commonStyles = `
     color: white;
   }
 
+  .badge.admin-badge {
+    background-color: #6366f1;
+    color: white;
+    margin-right: 0.5rem;
+  }
+
   .muted {
     color: var(--color-secondary);
   }
@@ -826,6 +832,7 @@ interface User {
   user_id: string;
   email: string;
   display_name?: string;
+  is_admin?: boolean;
 }
 
 interface PageOptions {
@@ -850,9 +857,11 @@ export function renderHeader(options: PageOptions): string {
     { label: 'Search', href: '/ui/search', path: '/ui/search' },
   ];
 
+  const adminBadge = user?.is_admin ? '<span class="badge admin-badge">Admin</span>' : '';
   const userMenu = user
     ? `
     <div class="user-menu">
+      ${adminBadge}
       <span>${escapeHtml(user.display_name || user.email)}</span>
       <a href="/ui/auth/logout">Logout</a>
     </div>
