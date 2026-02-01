@@ -134,6 +134,70 @@ async function initGlobalAuthToken() {
   logInfo('Global auth token initialized');
 }
 
+/**
+ * Initialize the admin auth token for tests that require admin privileges.
+ * This creates a test user and promotes them to admin via direct database update.
+ */
+async function initAdminAuthToken() {
+  const uniqueId = Date.now();
+  const email = `test-admin-user-${uniqueId}@example.com`;
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email,
+    password: 'TestPassword123!',
+    display_name: 'Admin Test User',
+  });
+
+  if (registerResponse.status !== 201 || !registerResponse.data?.data?.access_token) {
+    throw new Error(
+      'Failed to initialize admin auth token: ' + JSON.stringify(registerResponse.data)
+    );
+  }
+
+  const userId = registerResponse.data.data.user.id;
+
+  // Promote the user to admin via direct database update
+  try {
+    await runWranglerCommand([
+      'd1',
+      'execute',
+      'gruff-db',
+      '--local',
+      '--persist-to',
+      '.wrangler/test-state',
+      '--command',
+      `UPDATE users SET is_admin = 1 WHERE id = '${userId}'`,
+    ]);
+  } catch (error) {
+    throw new Error('Failed to promote test user to admin: ' + error.message);
+  }
+
+  // Re-login to get a token with the updated admin status
+  const loginResponse = await makeRequest('POST', '/api/auth/login', {
+    email,
+    password: 'TestPassword123!',
+  });
+
+  if (loginResponse.status !== 200 || !loginResponse.data?.data?.access_token) {
+    throw new Error(
+      'Failed to login as admin user: ' + JSON.stringify(loginResponse.data)
+    );
+  }
+
+  adminAuthToken = loginResponse.data.data.access_token;
+  logInfo('Admin auth token initialized');
+}
+
+/**
+ * Make an authenticated request using the admin auth token.
+ * Used for tests that require admin privileges.
+ */
+async function makeAdminAuthRequest(method, path, body = null) {
+  if (!adminAuthToken) {
+    throw new Error('Admin auth token not initialized. Call initAdminAuthToken first.');
+  }
+  return makeRequestWithHeaders(method, path, { Authorization: `Bearer ${adminAuthToken}` }, body);
+}
+
 async function makeRequestWithHeaders(method, path, customHeaders = {}, body = null) {
   const options = {
     method,
@@ -1577,7 +1641,7 @@ async function testAuthProvidersAllEnabled() {
 async function testCreateTypeEntity() {
   logTest('Type Management - Create Entity Type');
 
-  const response = await makeRequest('POST', '/api/types', {
+  const response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'Product',
     category: 'entity',
     description: 'A product entity type',
@@ -1612,7 +1676,7 @@ async function testCreateTypeEntity() {
 async function testCreateTypeLink() {
   logTest('Type Management - Create Link Type');
 
-  const response = await makeRequest('POST', '/api/types', {
+  const response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'Purchased',
     category: 'link',
     description: 'A relationship indicating one person purchased a product',
@@ -1634,13 +1698,13 @@ async function testCreateTypeDuplicateName() {
   logTest('Type Management - Reject Duplicate Type Name');
 
   // First, create a type
-  await makeRequest('POST', '/api/types', {
+  await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UniqueType',
     category: 'entity',
   });
 
   // Try to create another type with the same name
-  const response = await makeRequest('POST', '/api/types', {
+  const response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UniqueType',
     category: 'link',
   });
@@ -1654,7 +1718,7 @@ async function testCreateTypeDuplicateName() {
 async function testCreateTypeValidation() {
   logTest('Type Management - Validate Required Fields');
 
-  const response = await makeRequest('POST', '/api/types', {
+  const response = await makeAdminAuthRequest('POST', '/api/types', {
     // missing name
     category: 'entity',
   });
@@ -1720,7 +1784,7 @@ async function testGetTypeById() {
   logTest('Type Management - Get Type by ID');
 
   // First create a type to retrieve
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'Company',
     category: 'entity',
     description: 'A business organization',
@@ -1754,15 +1818,15 @@ async function testUpdateTypeName() {
   logTest('Type Management - Update Type Name');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'OriginalName',
     category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
 
-  // Update the name
-  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+  // Update the name (requires admin)
+  const response = await makeAdminAuthRequest('PUT', `/api/types/${typeId}`, {
     name: 'UpdatedName',
   });
 
@@ -1777,7 +1841,7 @@ async function testUpdateTypeDescription() {
   logTest('Type Management - Update Type Description');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DescTest',
     category: 'entity',
     description: 'Original description',
@@ -1785,8 +1849,8 @@ async function testUpdateTypeDescription() {
 
   const typeId = createResponse.data.data.id;
 
-  // Update the description
-  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+  // Update the description (requires admin)
+  const response = await makeAdminAuthRequest('PUT', `/api/types/${typeId}`, {
     description: 'Updated description',
   });
 
@@ -1802,15 +1866,15 @@ async function testUpdateTypeJsonSchema() {
   logTest('Type Management - Update Type JSON Schema');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SchemaTest',
     category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
 
-  // Update the JSON schema
-  const response = await makeRequest('PUT', `/api/types/${typeId}`, {
+  // Update the JSON schema (requires admin)
+  const response = await makeAdminAuthRequest('PUT', `/api/types/${typeId}`, {
     json_schema: {
       type: 'object',
       properties: {
@@ -1828,7 +1892,8 @@ async function testUpdateTypeJsonSchema() {
 async function testUpdateTypeNotFound() {
   logTest('Type Management - Update Non-existent Type Returns 404');
 
-  const response = await makeRequest('PUT', '/api/types/00000000-0000-0000-0000-000000000000', {
+  // Admin auth required even for non-existent types
+  const response = await makeAdminAuthRequest('PUT', '/api/types/00000000-0000-0000-0000-000000000000', {
     name: 'NewName',
   });
 
@@ -1840,20 +1905,20 @@ async function testUpdateTypeDuplicateName() {
   logTest('Type Management - Update to Duplicate Name Should Fail');
 
   // Create two types
-  await makeRequest('POST', '/api/types', {
+  await makeAdminAuthRequest('POST', '/api/types', {
     name: 'Type1',
     category: 'entity',
   });
 
-  const response2 = await makeRequest('POST', '/api/types', {
+  const response2 = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'Type2',
     category: 'entity',
   });
 
   const type2Id = response2.data.data.id;
 
-  // Try to rename Type2 to Type1
-  const updateResponse = await makeRequest('PUT', `/api/types/${type2Id}`, {
+  // Try to rename Type2 to Type1 (requires admin)
+  const updateResponse = await makeAdminAuthRequest('PUT', `/api/types/${type2Id}`, {
     name: 'Type1',
   });
 
@@ -1865,15 +1930,15 @@ async function testDeleteType() {
   logTest('Type Management - Delete Unused Type');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'TypeToDelete',
     category: 'entity',
   });
 
   const typeId = createResponse.data.data.id;
 
-  // Delete it
-  const response = await makeRequest('DELETE', `/api/types/${typeId}`);
+  // Delete it (requires admin)
+  const response = await makeAdminAuthRequest('DELETE', `/api/types/${typeId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.success, true, 'Should have success: true');
@@ -1886,7 +1951,8 @@ async function testDeleteType() {
 async function testDeleteTypeNotFound() {
   logTest('Type Management - Delete Non-existent Type Returns 404');
 
-  const response = await makeRequest('DELETE', '/api/types/00000000-0000-0000-0000-000000000000');
+  // Admin auth required even for non-existent types
+  const response = await makeAdminAuthRequest('DELETE', '/api/types/00000000-0000-0000-0000-000000000000');
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -1900,7 +1966,7 @@ async function testCreateEntity() {
   logTest('Entity CRUD - Create Entity');
 
   // First, create a type to use
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'TestEntityType',
     category: 'entity',
     description: 'Type for entity tests',
@@ -1985,7 +2051,7 @@ async function testListEntitiesFilterByType() {
   logTest('Entity CRUD - Filter Entities by Type');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestType',
     category: 'entity',
   });
@@ -2012,7 +2078,7 @@ async function testGetEntityById() {
   logTest('Entity CRUD - Get Entity by ID');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'GetTestType',
     category: 'entity',
   });
@@ -2054,7 +2120,7 @@ async function testUpdateEntity() {
   logTest('Entity CRUD - Update Entity (Creates New Version)');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateTestType',
     category: 'entity',
   });
@@ -2113,7 +2179,7 @@ async function testDeleteEntity() {
   logTest('Entity CRUD - Soft Delete Entity');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeleteTestType',
     category: 'entity',
   });
@@ -2155,7 +2221,7 @@ async function testDeleteEntityAlreadyDeleted() {
   logTest('Entity CRUD - Delete Already Deleted Entity Returns 409');
 
   // Create and delete an entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DoubleDeleteType',
     category: 'entity',
   });
@@ -2180,7 +2246,7 @@ async function testRestoreEntity() {
   logTest('Entity CRUD - Restore Soft-Deleted Entity');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'RestoreTestType',
     category: 'entity',
   });
@@ -2220,7 +2286,7 @@ async function testRestoreEntityNotDeleted() {
   logTest('Entity CRUD - Restore Non-Deleted Entity Returns 409');
 
   // Create an entity (not deleted)
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NotDeletedType',
     category: 'entity',
   });
@@ -2255,7 +2321,7 @@ async function testUpdateDeletedEntity() {
   logTest('Entity CRUD - Cannot Update Deleted Entity');
 
   // Create and delete an entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateDeletedType',
     category: 'entity',
   });
@@ -2282,7 +2348,7 @@ async function testListEntitiesExcludesDeleted() {
   logTest('Entity CRUD - List Entities Excludes Soft-Deleted by Default');
 
   // Create a type and two entities
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ListDeletedType',
     category: 'entity',
   });
@@ -2318,7 +2384,7 @@ async function testListEntitiesIncludesDeleted() {
   logTest('Entity CRUD - List Entities Includes Soft-Deleted with Flag');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'IncludeDeletedType',
     category: 'entity',
   });
@@ -2362,7 +2428,7 @@ async function testGetEntityVersions() {
   logTest('Entity Versions - Get All Versions of an Entity');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'VersionTestType',
     category: 'entity',
   });
@@ -2438,7 +2504,7 @@ async function testGetSpecificEntityVersion() {
   logTest('Entity Versions - Get Specific Version by Number');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SpecificVersionType',
     category: 'entity',
   });
@@ -2479,7 +2545,7 @@ async function testGetSpecificEntityVersionNotFound() {
   logTest('Entity Versions - Get Non-existent Version Number Returns 404');
 
   // Create a type and entity (only version 1 exists)
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NoVersionType',
     category: 'entity',
   });
@@ -2503,7 +2569,7 @@ async function testGetSpecificEntityVersionInvalidNumber() {
   logTest('Entity Versions - Get Version with Invalid Number Returns 400');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidVersionType',
     category: 'entity',
   });
@@ -2527,7 +2593,7 @@ async function testGetEntityHistory() {
   logTest('Entity Versions - Get Version History with Diffs');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'HistoryTestType',
     category: 'entity',
   });
@@ -2617,7 +2683,7 @@ async function testGetVersionsWithDeletedEntity() {
   logTest('Entity Versions - Get Versions Including Deleted State');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedVersionType',
     category: 'entity',
   });
@@ -2669,13 +2735,13 @@ async function testCreateLink() {
   logTest('Link CRUD - Create Link');
 
   // First, create types and entities to link
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkTestLinkType',
     category: 'link',
     description: 'Type for link tests',
@@ -2748,7 +2814,7 @@ async function testCreateLinkWithInvalidType() {
   logTest('Link CRUD - Create Link with Non-existent Type Returns 404');
 
   // Create entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidLinkTestEntityType',
     category: 'entity',
   });
@@ -2781,13 +2847,13 @@ async function testCreateLinkWithInvalidType() {
 async function testCreateLinkWithInvalidSourceEntity() {
   logTest('Link CRUD - Create Link with Non-existent Source Entity Returns 404');
 
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidSourceEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidSourceLinkType',
     category: 'link',
   });
@@ -2830,13 +2896,13 @@ async function testListLinksFilterByType() {
   logTest('Link CRUD - Filter Links by Type');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterLinkType',
     category: 'link',
   });
@@ -2878,13 +2944,13 @@ async function testGetLinkById() {
   logTest('Link CRUD - Get Link by ID');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'GetLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'GetLinkType',
     category: 'link',
   });
@@ -2938,13 +3004,13 @@ async function testUpdateLink() {
   logTest('Link CRUD - Update Link (Creates New Version)');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateLinkType',
     category: 'link',
   });
@@ -2999,13 +3065,13 @@ async function testDeleteLink() {
   logTest('Link CRUD - Soft Delete Link');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeleteLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeleteLinkType',
     category: 'link',
   });
@@ -3051,13 +3117,13 @@ async function testRestoreLink() {
   logTest('Link CRUD - Restore Soft-Deleted Link');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'RestoreLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'RestoreLinkType',
     category: 'link',
   });
@@ -3112,13 +3178,13 @@ async function testUpdateDeletedLink() {
   logTest('Link CRUD - Cannot Update Deleted Link');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateDeletedLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UpdateDeletedLinkType',
     category: 'link',
   });
@@ -3163,13 +3229,13 @@ async function testGetLinkVersions() {
   logTest('Link Versions - Get All Versions of a Link');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkVersionTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkVersionTestType',
     category: 'link',
   });
@@ -3260,13 +3326,13 @@ async function testGetSpecificLinkVersion() {
   logTest('Link Versions - Get Specific Version by Number');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SpecificLinkVersionEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SpecificLinkVersionType',
     category: 'link',
   });
@@ -3316,13 +3382,13 @@ async function testGetSpecificLinkVersionNotFound() {
   logTest('Link Versions - Get Non-existent Version Number Returns 404');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NoLinkVersionEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NoLinkVersionType',
     category: 'link',
   });
@@ -3360,13 +3426,13 @@ async function testGetSpecificLinkVersionInvalidNumber() {
   logTest('Link Versions - Get Version with Invalid Number Returns 400');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidLinkVersionEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidLinkVersionType',
     category: 'link',
   });
@@ -3404,13 +3470,13 @@ async function testGetLinkHistory() {
   logTest('Link Versions - Get Version History with Diffs');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkHistoryTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkHistoryTestType',
     category: 'link',
   });
@@ -3514,13 +3580,13 @@ async function testGetLinkVersionsWithDeletedLink() {
   logTest('Link Versions - Get Versions Including Deleted State');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedLinkVersionEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedLinkVersionType',
     category: 'link',
   });
@@ -3582,20 +3648,20 @@ async function testGetOutboundLinks() {
   logTest('Graph Navigation - Get Outbound Links from Entity');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'OutboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'OutboundTestLinkType1',
     category: 'link',
     description: 'First link type for outbound tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'OutboundTestLinkType2',
     category: 'link',
     description: 'Second link type for outbound tests',
@@ -3708,19 +3774,19 @@ async function testGetOutboundLinksFilterByType() {
   logTest('Graph Navigation - Get Outbound Links Filtered by Type');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestLinkType1',
     category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredOutboundTestLinkType2',
     category: 'link',
   });
@@ -3792,13 +3858,13 @@ async function testGetOutboundLinksExcludesDeleted() {
   logTest('Graph Navigation - Get Outbound Links Excludes Deleted Links by Default');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedOutboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedOutboundTestLinkType',
     category: 'link',
   });
@@ -3871,20 +3937,20 @@ async function testGetInboundLinks() {
   logTest('Graph Navigation - Get Inbound Links to Entity');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InboundTestLinkType1',
     category: 'link',
     description: 'First link type for inbound tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InboundTestLinkType2',
     category: 'link',
     description: 'Second link type for inbound tests',
@@ -3989,19 +4055,19 @@ async function testGetInboundLinksFilterByType() {
   logTest('Graph Navigation - Get Inbound Links Filtered by Type');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredInboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredInboundTestLinkType1',
     category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilteredInboundTestLinkType2',
     category: 'link',
   });
@@ -4073,13 +4139,13 @@ async function testGetInboundLinksExcludesDeleted() {
   logTest('Graph Navigation - Get Inbound Links Excludes Deleted Links by Default');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedInboundTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedInboundTestLinkType',
     category: 'link',
   });
@@ -4152,20 +4218,20 @@ async function testGetNeighbors() {
   logTest('Graph Navigation - Get All Neighbors (Inbound and Outbound)');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NeighborsTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NeighborsTestLinkType1',
     category: 'link',
     description: 'First link type for neighbors tests',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NeighborsTestLinkType2',
     category: 'link',
     description: 'Second link type for neighbors tests',
@@ -4272,13 +4338,13 @@ async function testGetNeighborsFilterByDirection() {
   logTest('Graph Navigation - Get Neighbors Filtered by Direction');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DirectionFilterTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DirectionFilterTestLinkType',
     category: 'link',
   });
@@ -4341,19 +4407,19 @@ async function testGetNeighborsFilterByLinkType() {
   logTest('Graph Navigation - Get Neighbors Filtered by Link Type');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestLinkType1',
     category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkTypeFilterTestLinkType2',
     category: 'link',
   });
@@ -4424,13 +4490,13 @@ async function testShortestPath() {
   logTest('Graph Traversal - Find Shortest Path Between Entities');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ShortestPathTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ShortestPathTestLinkType',
     category: 'link',
   });
@@ -4503,7 +4569,7 @@ async function testShortestPathSameEntity() {
   logTest('Graph Traversal - Shortest Path When Source Equals Target');
 
   // Create type
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SameEntityTestType',
     category: 'entity',
   });
@@ -4530,7 +4596,7 @@ async function testShortestPathNoPath() {
   logTest('Graph Traversal - No Path Found Returns 404');
 
   // Create type
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NoPathTestType',
     category: 'entity',
   });
@@ -4561,19 +4627,19 @@ async function testShortestPathWithLinkTypeFilter() {
   logTest('Graph Traversal - Shortest Path With Link Type Filter');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterPathTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterPathTestLinkType1',
     category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterPathTestLinkType2',
     category: 'link',
   });
@@ -4639,7 +4705,7 @@ async function testShortestPathInvalidSourceEntity() {
   logTest('Graph Traversal - Shortest Path With Invalid Source Entity');
 
   // Create type and valid entity
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidSourceTestType',
     category: 'entity',
   });
@@ -4664,7 +4730,7 @@ async function testShortestPathInvalidTargetEntity() {
   logTest('Graph Traversal - Shortest Path With Invalid Target Entity');
 
   // Create type and valid entity
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'InvalidTargetTestType',
     category: 'entity',
   });
@@ -4689,13 +4755,13 @@ async function testMultiHopTraversal() {
   logTest('Graph Traversal - Multi-hop Traversal with Depth Limit');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'TraverseTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'TraverseTestLinkType',
     category: 'link',
   });
@@ -4788,13 +4854,13 @@ async function testMultiHopTraversalWithDepthLimit() {
   logTest('Graph Traversal - Multi-hop Traversal Respects Depth Limit');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DepthLimitTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DepthLimitTestLinkType',
     category: 'link',
   });
@@ -4868,13 +4934,13 @@ async function testMultiHopTraversalBidirectional() {
   logTest('Graph Traversal - Multi-hop Traversal in Both Directions');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BothDirectionsTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BothDirectionsTestLinkType',
     category: 'link',
   });
@@ -4934,25 +5000,25 @@ async function testMultiHopTraversalWithTypeFilters() {
   logTest('Graph Traversal - Multi-hop Traversal with Link and Entity Type Filters');
 
   // Create types
-  const entityType1Response = await makeRequest('POST', '/api/types', {
+  const entityType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestEntityType1',
     category: 'entity',
   });
   const entityType1Id = entityType1Response.data.data.id;
 
-  const entityType2Response = await makeRequest('POST', '/api/types', {
+  const entityType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestEntityType2',
     category: 'entity',
   });
   const entityType2Id = entityType2Response.data.data.id;
 
-  const linkType1Response = await makeRequest('POST', '/api/types', {
+  const linkType1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestLinkType1',
     category: 'link',
   });
   const linkType1Id = linkType1Response.data.data.id;
 
-  const linkType2Response = await makeRequest('POST', '/api/types', {
+  const linkType2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestLinkType2',
     category: 'link',
   });
@@ -5029,13 +5095,13 @@ async function testGetNeighborsBidirectionalConnection() {
   logTest('Graph Navigation - Get Neighbors Handles Bidirectional Connections');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BidirectionalTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BidirectionalTestLinkType',
     category: 'link',
   });
@@ -5094,7 +5160,7 @@ async function testEntitiesPaginationLimit() {
   logTest('Entities Pagination - Limit Parameter');
 
   // Create a type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'pagination-test-entity',
     category: 'entity',
   });
@@ -5151,13 +5217,13 @@ async function testLinksPaginationLimit() {
   logTest('Links Pagination - Limit Parameter');
 
   // Create a type for testing
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'pagination-test-link',
     category: 'link',
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'pagination-link-entity',
     category: 'entity',
   });
@@ -5226,7 +5292,7 @@ async function testTypesPaginationLimit() {
 
   // Create 5 types
   for (let i = 0; i < 5; i++) {
-    await makeRequest('POST', '/api/types', {
+    await makeAdminAuthRequest('POST', '/api/types', {
       name: `pagination-type-${i}`,
       category: 'entity',
     });
@@ -5513,11 +5579,11 @@ async function testSearchEntitiesByType() {
   logTest('Search Entities - Filter by Type');
 
   // Create test types
-  const personType = await makeRequest('POST', '/api/types', {
+  const personType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchPersonType',
     category: 'entity',
   });
-  const companyType = await makeRequest('POST', '/api/types', {
+  const companyType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchCompanyType',
     category: 'entity',
   });
@@ -5556,7 +5622,7 @@ async function testSearchEntitiesByProperty() {
   logTest('Search Entities - Filter by Property');
 
   // Create test type
-  const employeeType = await makeRequest('POST', '/api/types', {
+  const employeeType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchEmployeeType',
     category: 'entity',
   });
@@ -5607,7 +5673,7 @@ async function testSearchEntitiesByMultipleProperties() {
   logTest('Search Entities - Filter by Multiple Properties');
 
   // Create test type
-  const productType = await makeRequest('POST', '/api/types', {
+  const productType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchProductType',
     category: 'entity',
   });
@@ -5652,7 +5718,7 @@ async function testSearchEntitiesPagination() {
   logTest('Search Entities - Pagination with Cursor');
 
   // Create test type
-  const itemType = await makeRequest('POST', '/api/types', {
+  const itemType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchItemType',
     category: 'entity',
   });
@@ -5697,11 +5763,11 @@ async function testSearchLinksBasic() {
   logTest('Search Links - Basic Search');
 
   // Create test types
-  const userType = await makeRequest('POST', '/api/types', {
+  const userType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchUserType',
     category: 'entity',
   });
-  const friendshipType = await makeRequest('POST', '/api/types', {
+  const friendshipType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchFriendshipType',
     category: 'link',
   });
@@ -5747,15 +5813,15 @@ async function testSearchLinksBySourceEntity() {
   logTest('Search Links - Filter by Source Entity');
 
   // Create test types
-  const authorType = await makeRequest('POST', '/api/types', {
+  const authorType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchAuthorType',
     category: 'entity',
   });
-  const bookType = await makeRequest('POST', '/api/types', {
+  const bookType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchBookType',
     category: 'entity',
   });
-  const wroteType = await makeRequest('POST', '/api/types', {
+  const wroteType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchWroteType',
     category: 'link',
   });
@@ -5825,11 +5891,11 @@ async function testSearchLinksWithEntityInfo() {
   logTest('Search Links - Include Entity Information');
 
   // Create test types
-  const cityType = await makeRequest('POST', '/api/types', {
+  const cityType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchCityType',
     category: 'entity',
   });
-  const roadType = await makeRequest('POST', '/api/types', {
+  const roadType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SearchRoadType',
     category: 'link',
   });
@@ -5878,7 +5944,7 @@ async function testTypeAheadSuggestions() {
   logTest('Type-ahead Suggestions - Basic Partial Matching');
 
   // Create test type
-  const cityType = await makeRequest('POST', '/api/types', {
+  const cityType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SuggestCityType',
     category: 'entity',
   });
@@ -5921,13 +5987,13 @@ async function testTypeAheadSuggestionsWithTypeFilter() {
   logTest('Type-ahead Suggestions - With Type Filter');
 
   // Create two different types
-  const carType = await makeRequest('POST', '/api/types', {
+  const carType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SuggestCarType',
     category: 'entity',
   });
   const carTypeId = carType.data.data.id;
 
-  const bikeType = await makeRequest('POST', '/api/types', {
+  const bikeType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SuggestBikeType',
     category: 'entity',
   });
@@ -5965,7 +6031,7 @@ async function testTypeAheadSuggestionsLimit() {
   logTest('Type-ahead Suggestions - Respect Limit Parameter');
 
   // Create test type
-  const colorType = await makeRequest('POST', '/api/types', {
+  const colorType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SuggestColorType',
     category: 'entity',
   });
@@ -5994,7 +6060,7 @@ async function testTypeAheadSuggestionsCustomProperty() {
   logTest('Type-ahead Suggestions - Search Custom Property Path');
 
   // Create test type
-  const bookType = await makeRequest('POST', '/api/types', {
+  const bookType = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SuggestBookType',
     category: 'entity',
   });
@@ -6045,7 +6111,7 @@ async function testTypeAheadSuggestionsCustomProperty() {
 // ============================================================================
 
 async function testListUsers() {
-  logTest('User Management - List Users');
+  logTest('User Management - List Users (Admin)');
 
   // First register a couple of users to ensure we have data
   await makeRequest('POST', '/api/auth/register', {
@@ -6054,54 +6120,45 @@ async function testListUsers() {
     display_name: 'User One',
   });
 
-  const user2Response = await makeRequest('POST', '/api/auth/register', {
+  await makeRequest('POST', '/api/auth/register', {
     email: 'user2@example.com',
     password: 'password123',
     display_name: 'User Two',
   });
 
-  const token = user2Response.data.data.access_token;
-
-  // List users
-  const response = await fetch(`${DEV_SERVER_URL}/api/users`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
+  // List users using admin token (listing users requires admin)
+  const response = await makeAdminAuthRequest('GET', '/api/users');
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(data.data, 'Should have data field');
-  assert(Array.isArray(data.data), 'Data should be an array');
-  assert(data.data.length >= 2, 'Should have at least 2 users');
-  assert(data.pagination, 'Should include pagination metadata');
+  assert(response.data.data, 'Should have data field');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assert(response.data.data.length >= 2, 'Should have at least 2 users');
+  assert(response.data.metadata, 'Should include pagination metadata');
 
   // Verify user structure (no password hash exposed)
-  const user = data.data[0];
+  const user = response.data.data[0];
   assert(user.id, 'User should have id');
   assert(user.email, 'User should have email');
   assert(!user.password_hash, 'Password hash should not be exposed');
 }
 
 async function testListUsersWithFilters() {
-  logTest('User Management - List Users With Filters');
+  logTest('User Management - List Users With Filters (Admin)');
 
-  // Register a user to get a token
-  const userResponse = await makeRequest('POST', '/api/auth/register', {
+  // Register a user to ensure we have local provider users
+  await makeRequest('POST', '/api/auth/register', {
     email: 'filtertest@example.com',
     password: 'password123',
   });
-  const token = userResponse.data.data.access_token;
 
-  // Test filtering by provider
-  const response = await fetch(`${DEV_SERVER_URL}/api/users?provider=local&limit=5`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
+  // Test filtering by provider using admin token (listing users requires admin)
+  const response = await makeAdminAuthRequest('GET', '/api/users?provider=local&limit=5');
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(data.data, 'Should have data field');
+  assert(response.data.data, 'Should have data field');
 
   // Verify all users have local provider
-  const allLocal = data.data.every(user => user.provider === 'local');
+  const allLocal = response.data.data.every(user => user.provider === 'local');
   assert(allLocal, 'All users should have local provider');
 }
 
@@ -6254,7 +6311,7 @@ async function testGetUserActivity() {
   const userId = registerResponse.data.data.user.id;
 
   // Create some test data
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ActivityTestType',
     category: 'entity',
   });
@@ -6331,7 +6388,7 @@ async function testPropertyFilterEquals() {
   logTest('Property Filters - Equality (eq) Operator');
 
   // Create a type and entities with numeric age property
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestPerson',
     category: 'entity',
   });
@@ -6362,7 +6419,7 @@ async function testPropertyFilterGreaterThan() {
   logTest('Property Filters - Greater Than (gt) Operator');
 
   // Create a type and entities
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestProduct',
     category: 'entity',
   });
@@ -6412,7 +6469,7 @@ async function testPropertyFilterLike() {
   logTest('Property Filters - LIKE Pattern Matching');
 
   // Create a type and entities
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestEmail',
     category: 'entity',
   });
@@ -6482,7 +6539,7 @@ async function testPropertyFilterIn() {
   logTest('Property Filters - IN Operator (Array)');
 
   // Create a type and entities
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestStatus',
     category: 'entity',
   });
@@ -6518,7 +6575,7 @@ async function testPropertyFilterExists() {
   logTest('Property Filters - Exists Operator');
 
   // Create a type and entities
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestOptional',
     category: 'entity',
   });
@@ -6591,13 +6648,13 @@ async function testPropertyFilterOnLinks() {
   logTest('Property Filters - Apply to Link Search');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestLinkEntity',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PropertyFilterTestLinkType',
     category: 'link',
   });
@@ -6658,7 +6715,7 @@ async function testNestedPropertyPathDotNotation() {
   logTest('Nested Property Paths - Dot Notation for Nested Objects');
 
   // Create a type for nested property tests
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestAddress',
     category: 'entity',
   });
@@ -6702,7 +6759,7 @@ async function testNestedPropertyPathDeepNesting() {
   logTest('Nested Property Paths - Deep Nesting (Multiple Levels)');
 
   // Create a type for deep nested tests
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestUser',
     category: 'entity',
   });
@@ -6750,7 +6807,7 @@ async function testNestedPropertyPathArrayIndexBracket() {
   logTest('Nested Property Paths - Array Index with Bracket Notation');
 
   // Create a type for array tests
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestTags',
     category: 'entity',
   });
@@ -6805,7 +6862,7 @@ async function testNestedPropertyPathMixedNotation() {
   logTest('Nested Property Paths - Mixed Notation (Arrays in Objects)');
 
   // Create a type for complex nested tests
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestOrder',
     category: 'entity',
   });
@@ -6869,7 +6926,7 @@ async function testNestedPropertyPathExists() {
   logTest('Nested Property Paths - Exists Check on Nested Property');
 
   // Create a type for nested exists tests
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestProfile',
     category: 'entity',
   });
@@ -6974,13 +7031,13 @@ async function testNestedPropertyPathOnLinks() {
   logTest('Nested Property Paths - Apply to Link Search');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestLinkEntity',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'NestedPathTestLinkType',
     category: 'link',
   });
@@ -7038,7 +7095,7 @@ async function testFilterExpressionSimple() {
   logTest('Filter Expression - Simple Property Filter');
 
   // Use existing entity type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterExprTestType',
     category: 'entity',
   });
@@ -7174,7 +7231,7 @@ async function testFilterExpressionWithExistsOperator() {
   logTest('Filter Expression - With Exists Operator');
 
   // Create entities with optional fields
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterExprExistsType',
     category: 'entity',
   });
@@ -7208,13 +7265,13 @@ async function testFilterExpressionOnLinks() {
   logTest('Filter Expression - Apply to Link Search');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterExprLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterExprLinkType',
     category: 'link',
   });
@@ -7302,7 +7359,7 @@ async function testBulkCreateEntities() {
   logTest('Bulk Operations - Create Multiple Entities');
 
   // Create an entity type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BulkTestEntityType',
     category: 'entity',
   });
@@ -7339,7 +7396,7 @@ async function testBulkCreateEntitiesValidationError() {
   const invalidTypeId = '00000000-0000-0000-0000-000000000000';
 
   // Create an entity type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BulkTestValidEntityType',
     category: 'entity',
   });
@@ -7383,13 +7440,13 @@ async function testBulkCreateLinks() {
   logTest('Bulk Operations - Create Multiple Links');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BulkLinkTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'BulkLinkTestLinkType',
     category: 'link',
   });
@@ -7716,7 +7773,7 @@ async function testExportEntities() {
   logTest('Export - Export Entities');
 
   // Create an entity type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ExportTestEntityType',
     category: 'entity',
   });
@@ -7754,7 +7811,7 @@ async function testExportWithTypeFilter() {
   const typeId = typeResponse.data.data[0].id;
 
   // Create another type and entity
-  const otherTypeResponse = await makeRequest('POST', '/api/types', {
+  const otherTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ExportTestOtherType',
     category: 'entity',
   });
@@ -7783,7 +7840,7 @@ async function testExportWithLinks() {
   const entityTypeId = entityTypeResponse.data.data[0].id;
 
   // Create a link type
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ExportTestLinkType',
     category: 'link',
   });
@@ -8183,7 +8240,7 @@ async function testSchemaValidationCreateEntitySuccess() {
   logTest('Schema Validation - Create Entity with Valid Properties');
 
   // Create a type with strict JSON schema
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SchemaValidatedProduct',
     category: 'entity',
     description: 'A product with strict schema validation',
@@ -8336,7 +8393,7 @@ async function testSchemaValidationCreateLinkSuccess() {
   logTest('Schema Validation - Create Link with Valid Properties');
 
   // Create a link type with schema
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'SchemaValidatedConnection',
     category: 'link',
     description: 'A connection with strict schema validation',
@@ -8435,7 +8492,7 @@ async function testSchemaValidationNoSchemaType() {
   logTest('Schema Validation - Create Entity for Type without Schema');
 
   // Create a type without JSON schema
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FlexibleProduct',
     category: 'entity',
     description: 'A product without schema validation',
@@ -8711,7 +8768,7 @@ async function testAuditLogResourceHistory() {
   const token = registerResponse.data.data.access_token;
 
   // Create a type first
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditHistoryTestType',
     category: 'entity',
   });
@@ -8792,7 +8849,7 @@ async function testAuditLogEntityCreateLogged() {
   const token = registerResponse.data.data.access_token;
 
   // Create a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditCreateLogType',
     category: 'entity',
   });
@@ -8829,7 +8886,7 @@ async function testAuditLogEntityUpdateLogged() {
   const token = registerResponse.data.data.access_token;
 
   // Create a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditUpdateLogType',
     category: 'entity',
   });
@@ -8871,7 +8928,7 @@ async function testAuditLogEntityDeleteLogged() {
   const token = registerResponse.data.data.access_token;
 
   // Create a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditDeleteLogType',
     category: 'entity',
   });
@@ -9337,7 +9394,7 @@ async function testSanitizationTypeName() {
     description: '<b>Bold</b> description with <a href="javascript:void(0)">link</a>',
   };
 
-  const createResponse = await makeRequest('POST', '/api/types', xssPayload);
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', xssPayload);
 
   assertEquals(createResponse.status, 201, 'Should create type successfully');
 
@@ -9352,8 +9409,8 @@ async function testSanitizationTypeName() {
 
   logInfo(`Sanitized type name: ${type.name}`);
 
-  // Clean up
-  await makeRequest('DELETE', `/api/types/${type.id}`);
+  // Clean up (requires admin)
+  await makeAdminAuthRequest('DELETE', `/api/types/${type.id}`);
 }
 
 async function testSanitizationBulkCreate() {
@@ -9560,7 +9617,7 @@ async function testUIEntityListWithData() {
   logTest('UI - Entity List Page - With Entity Data');
 
   // Create a type and entity for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'UITestEntityType',
     category: 'entity',
     description: 'Test type for UI',
@@ -9589,13 +9646,13 @@ async function testUIEntityListFiltering() {
   logTest('UI - Entity List Page - Filtering by Type');
 
   // Create types and entities
-  const type1Response = await makeRequest('POST', '/api/types', {
+  const type1Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestType1',
     category: 'entity',
   });
   const type1Id = type1Response.data.data.id;
 
-  const type2Response = await makeRequest('POST', '/api/types', {
+  const type2Response = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FilterTestType2',
     category: 'entity',
   });
@@ -9636,7 +9693,7 @@ async function testUIEntityListPagination() {
   logTest('UI - Entity List Page - Pagination');
 
   // Create a type for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'PaginationTestType',
     category: 'entity',
   });
@@ -9666,7 +9723,7 @@ async function testUIEntityListShowDeleted() {
   logTest('UI - Entity List Page - Show Deleted Entities');
 
   // Create and delete an entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedEntityType',
     category: 'entity',
   });
@@ -9697,7 +9754,7 @@ async function testUIEntityListShowAllVersions() {
   logTest('UI - Entity List Page - Show All Versions');
 
   // Create an entity and update it
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'VersionTestType',
     category: 'entity',
   });
@@ -9764,7 +9821,7 @@ async function testUIEntityListEmptyState() {
   logTest('UI - Entity List Page - Empty State');
 
   // Create a type with no entities, and filter by it
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'EmptyStateType',
     category: 'entity',
   });
@@ -9785,7 +9842,7 @@ async function testUIEntityDetailBasic() {
   logTest('UI - Entity Detail Page - Basic View');
 
   // Create a type and entity for testing
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'EntityDetailTestType',
     category: 'entity',
     description: 'Type for entity detail testing',
@@ -9838,13 +9895,13 @@ async function testUIEntityDetailWithLinks() {
   logTest('UI - Entity Detail Page - With Outbound and Inbound Links');
 
   // Create types
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'LinkedEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'TestLinkType',
     category: 'link',
   });
@@ -9900,7 +9957,7 @@ async function testUIEntityDetailVersionHistory() {
   logTest('UI - Entity Detail Page - Version History');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'VersionedEntityType',
     category: 'entity',
   });
@@ -9936,7 +9993,7 @@ async function testUIEntityDetailDeletedEntity() {
   logTest('UI - Entity Detail Page - Deleted Entity');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'DeletedEntityType',
     category: 'entity',
   });
@@ -9976,7 +10033,7 @@ async function testUIEntityDetailOldVersion() {
   logTest('UI - Entity Detail Page - Old Version View');
 
   // Create a type and entity
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'OldVersionEntityType',
     category: 'entity',
   });
@@ -10008,7 +10065,7 @@ async function testUIEntityDetailPropertiesDisplay() {
   logTest('UI - Entity Detail Page - Properties JSON Display');
 
   // Create a type and entity with complex properties
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ComplexPropsEntityType',
     category: 'entity',
   });
@@ -10050,7 +10107,7 @@ async function testCachingTypeGet() {
   logTest('Caching - Type GET returns consistent data on repeated requests');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheTestType',
     category: 'entity',
     description: 'Type for cache testing',
@@ -10078,7 +10135,7 @@ async function testCachingTypeInvalidationOnUpdate() {
   logTest('Caching - Type cache invalidates on update');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheInvalidateType',
     category: 'entity',
     description: 'Original description',
@@ -10095,8 +10152,8 @@ async function testCachingTypeInvalidationOnUpdate() {
     'Should have original description'
   );
 
-  // Update the type
-  const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
+  // Update the type (requires admin)
+  const updateResponse = await makeAdminAuthRequest('PUT', `/api/types/${typeId}`, {
     description: 'Updated description',
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
@@ -10115,7 +10172,7 @@ async function testCachingTypeInvalidationOnDelete() {
   logTest('Caching - Type cache invalidates on delete');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheDeleteType',
     category: 'entity',
   });
@@ -10126,8 +10183,8 @@ async function testCachingTypeInvalidationOnDelete() {
   const response1 = await makeRequest('GET', `/api/types/${typeId}`);
   assertEquals(response1.status, 200, 'First GET should succeed');
 
-  // Delete the type
-  const deleteResponse = await makeRequest('DELETE', `/api/types/${typeId}`);
+  // Delete the type (requires admin)
+  const deleteResponse = await makeAdminAuthRequest('DELETE', `/api/types/${typeId}`);
   assertEquals(deleteResponse.status, 200, 'Delete should succeed');
 
   // GET again - should return 404 (cache should be invalidated)
@@ -10139,7 +10196,7 @@ async function testCachingEntityGet() {
   logTest('Caching - Entity GET returns consistent data on repeated requests');
 
   // First ensure we have a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheEntityType',
     category: 'entity',
   });
@@ -10178,7 +10235,7 @@ async function testCachingEntityInvalidationOnUpdate() {
   logTest('Caching - Entity cache invalidates on update');
 
   // First ensure we have a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheEntityUpdateType',
     category: 'entity',
   });
@@ -10219,7 +10276,7 @@ async function testCachingEntityInvalidationOnDelete() {
   logTest('Caching - Entity cache invalidates on delete');
 
   // First ensure we have a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheEntityDeleteType',
     category: 'entity',
   });
@@ -10257,7 +10314,7 @@ async function testCachingEntityInvalidationOnRestore() {
   logTest('Caching - Entity cache invalidates on restore');
 
   // First ensure we have a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheEntityRestoreType',
     category: 'entity',
   });
@@ -10298,13 +10355,13 @@ async function testCachingLinkGet() {
   logTest('Caching - Link GET returns consistent data on repeated requests');
 
   // First ensure we have types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheLinkType',
     category: 'link',
   });
@@ -10360,13 +10417,13 @@ async function testCachingLinkInvalidationOnUpdate() {
   logTest('Caching - Link cache invalidates on update');
 
   // First ensure we have types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheLinkUpdateEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'CacheLinkUpdateType',
     category: 'link',
   });
@@ -10427,7 +10484,7 @@ async function testETagHeaderOnTypeGet() {
   logTest('ETag - Type GET returns ETag header');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagTestType',
     category: 'entity',
     description: 'Type for ETag testing',
@@ -10450,7 +10507,7 @@ async function testETagHeaderOnEntityGet() {
   logTest('ETag - Entity GET returns ETag header');
 
   // First ensure we have a type
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagEntityType',
     category: 'entity',
   });
@@ -10478,13 +10535,13 @@ async function testETagHeaderOnLinkGet() {
   logTest('ETag - Link GET returns ETag header');
 
   // Create types and entities
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagLinkEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagLinkType',
     category: 'link',
   });
@@ -10528,7 +10585,7 @@ async function testETagConditionalRequestNotModified() {
   logTest('ETag - Conditional Request returns 304 Not Modified when ETag matches');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETag304TestType',
     category: 'entity',
     description: 'Type for 304 testing',
@@ -10560,7 +10617,7 @@ async function testETagConditionalRequestModified() {
   logTest('ETag - Conditional Request returns 200 when content has changed');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagModifiedTestType',
     category: 'entity',
     description: 'Original description',
@@ -10575,8 +10632,8 @@ async function testETagConditionalRequestModified() {
   const etag1 = response1.headers.get('ETag');
   assert(etag1, 'First response should include ETag header');
 
-  // Update the type
-  const updateResponse = await makeRequest('PUT', `/api/types/${typeId}`, {
+  // Update the type (requires admin)
+  const updateResponse = await makeAdminAuthRequest('PUT', `/api/types/${typeId}`, {
     description: 'Updated description',
   });
   assertEquals(updateResponse.status, 200, 'Update should succeed');
@@ -10604,7 +10661,7 @@ async function testETagConsistentAcrossRequests() {
   logTest('ETag - Same resource returns consistent ETag');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagConsistentType',
     category: 'entity',
     description: 'Consistency test',
@@ -10674,7 +10731,7 @@ async function testETagWithMultipleETags() {
   logTest('ETag - If-None-Match with multiple ETags');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagMultipleType',
     category: 'entity',
   });
@@ -10700,7 +10757,7 @@ async function testETagWithStarWildcard() {
   logTest('ETag - If-None-Match with * wildcard');
 
   // Create a type
-  const createResponse = await makeRequest('POST', '/api/types', {
+  const createResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'ETagWildcardType',
     category: 'entity',
   });
@@ -11041,14 +11098,14 @@ async function testFieldSelectionLinkGet() {
   logTest('Field Selection - Link GET with specific fields');
 
   // Create entity type
-  const entityTypeResponse = await makeRequest('POST', '/api/types', {
+  const entityTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FieldSelectionLinkTestEntityType',
     category: 'entity',
   });
   const entityTypeId = entityTypeResponse.data.data.id;
 
   // Create link type
-  const linkTypeResponse = await makeRequest('POST', '/api/types', {
+  const linkTypeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'FieldSelectionLinkTestLinkType',
     category: 'link',
   });
@@ -11638,14 +11695,12 @@ async function testQueryPerformanceTrackingBulkOperations() {
 // ============================================================================
 
 // Helper to get auth token for group tests
+// Group management requires admin privileges
 async function getGroupTestAuthToken() {
-  const email = `grouptest-${Date.now()}@example.com`;
-  const registerResponse = await makeRequest('POST', '/api/auth/register', {
-    email,
-    password: 'password123',
-    display_name: 'Group Test User',
-  });
-  return registerResponse.data.data.access_token;
+  if (!adminAuthToken) {
+    throw new Error('Admin auth token not initialized');
+  }
+  return adminAuthToken;
 }
 
 async function testCreateGroup() {
@@ -11737,7 +11792,7 @@ async function testListGroups() {
   assert(response.data.data, 'Should return data array');
   assert(Array.isArray(response.data.data), 'Data should be an array');
   assert(response.data.data.length >= 2, 'Should have at least 2 groups');
-  assert(response.data.pagination, 'Should have pagination metadata');
+  assert(response.data.metadata, 'Should have pagination metadata');
 }
 
 async function testListGroupsWithNameFilter() {
@@ -11897,7 +11952,7 @@ async function testAddUserMemberToGroup() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group
   const addResponse = await makeRequestWithHeaders(
@@ -11961,7 +12016,7 @@ async function testAddMemberAlreadyExists() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group first time
   await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
@@ -11992,7 +12047,7 @@ async function testAddMemberToNonexistentGroup() {
   const headers = { Authorization: `Bearer ${token}` };
 
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   const response = await makeRequestWithHeaders(
     'POST',
@@ -12105,7 +12160,7 @@ async function testRemoveMemberFromGroup() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group
   await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
@@ -12159,7 +12214,7 @@ async function testListGroupMembers() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group
   await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
@@ -12202,7 +12257,7 @@ async function testListGroupMembersFilterByType() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add both user and group as members
   await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
@@ -12258,7 +12313,7 @@ async function testGetEffectiveMembers() {
 
   // Get current user
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add child group to parent
   await makeRequestWithHeaders('POST', `/api/groups/${parentId}/members`, headers, {
@@ -12304,7 +12359,7 @@ async function testDeleteGroupWithMembers() {
 
   // Get the current user ID
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group
   await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
@@ -12368,7 +12423,7 @@ async function testUserGroups() {
 
   // Get current user
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Add user to group
   await makeRequestWithHeaders('POST', `/api/groups/${groupId}/members`, headers, {
@@ -12410,7 +12465,7 @@ async function testUserEffectiveGroups() {
 
   // Get current user
   const meResponse = await makeRequestWithHeaders('GET', '/api/auth/me', headers);
-  const userId = meResponse.data.data.id;
+  const userId = meResponse.data.data.user.id;
 
   // Build hierarchy: grandparent contains parent, parent contains user
   await makeRequestWithHeaders('POST', `/api/groups/${grandparentId}/members`, headers, {
@@ -12471,7 +12526,7 @@ async function testUIGroupListBasic() {
     'Should return HTML'
   );
   assert(html.includes('<h2>Groups</h2>'), 'Should have groups heading');
-  assert(html.includes('Create New Group'), 'Should have create group button');
+  // Note: Create New Group button is only visible to admin users
   assert(html.includes('Filter Groups'), 'Should have filter section');
   assert(html.includes('name="name"'), 'Should have name search input');
 }
@@ -12584,57 +12639,50 @@ async function testUIGroupDetailWithMembers() {
 }
 
 async function testUIGroupCreateForm() {
-  logTest('UI - Group Create Form Page');
+  logTest('UI - Group Create Form Page - Requires Admin');
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/new`);
-  const html = await response.text();
+  // Without authentication, the page redirects to login
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/new`, { redirect: 'manual' });
 
-  assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes('<h2>Create New Group</h2>'), 'Should have create group heading');
-  assert(html.includes('name="name"'), 'Should have name input');
-  assert(html.includes('name="description"'), 'Should have description input');
-  assert(html.includes('Create Group'), 'Should have create button');
-  assert(html.includes('Cancel'), 'Should have cancel button');
+  // Should redirect to login page for unauthenticated users
+  assertEquals(response.status, 302, 'Should redirect unauthenticated users');
+  assert(
+    response.headers.get('location')?.includes('/ui/auth/login'),
+    'Should redirect to login page'
+  );
 }
 
 async function testUIGroupEditForm() {
-  logTest('UI - Group Edit Form Page');
+  logTest('UI - Group Edit Form Page - Requires Admin');
 
-  // Create a group for testing
-  const authResponse = await makeRequest('POST', '/api/auth/register', {
-    email: `ui-group-edit-${Date.now()}@test.com`,
-    password: 'test123456',
-  });
-  const token = authResponse.data.data.access_token;
-  const headers = { Authorization: `Bearer ${token}` };
-
-  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+  // Group editing requires admin - test that unauthenticated access is redirected
+  // First create a group using admin auth
+  const groupResponse = await makeAdminAuthRequest('POST', '/api/groups', {
     name: `Editable Group ${Date.now()}`,
     description: 'Original description',
   });
   const groupId = groupResponse.data.data.id;
-  const groupName = groupResponse.data.data.name;
 
-  // Fetch the edit form page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}/edit`);
-  const html = await response.text();
+  // Fetch the edit form page without authentication - should redirect
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}/edit`, { redirect: 'manual' });
 
-  assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes(`Edit Group: ${groupName}`), 'Should have edit group heading with name');
-  assert(html.includes(`value="${groupName}"`), 'Should have name pre-filled');
-  assert(html.includes('Original description'), 'Should have description pre-filled');
-  assert(html.includes('Save Changes'), 'Should have save button');
-  assert(html.includes('Cancel'), 'Should have cancel button');
+  // Should redirect to login page for unauthenticated users
+  assertEquals(response.status, 302, 'Should redirect unauthenticated users');
+  assert(
+    response.headers.get('location')?.includes('/ui/auth/login'),
+    'Should redirect to login page'
+  );
 }
 
 async function testUIGroupEditFormNotFound() {
-  logTest('UI - Group Edit Form Page - Not Found');
+  logTest('UI - Group Edit Form Page - Not Found (Requires Admin)');
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-id/edit`);
-  const html = await response.text();
+  // Without authentication, the edit page redirects to login
+  // Even for non-existent groups, authentication is checked first
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-id/edit`, { redirect: 'manual' });
 
-  assertEquals(response.status, 404, 'Status code should be 404');
-  assert(html.includes('Group Not Found'), 'Should show not found message');
+  // Should redirect to login page for unauthenticated users
+  assertEquals(response.status, 302, 'Should redirect unauthenticated users');
 }
 
 async function testUIGroupNavigation() {
@@ -13355,7 +13403,7 @@ async function testEntityCreationRequiresAuth() {
   logTest('Permission Inheritance - Entity creation requires authentication');
 
   // Try to create an entity without authentication
-  const typeResponse = await makeRequest('POST', '/api/types', {
+  const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: `TestTypeNoAuth-${Date.now()}`,
     category: 'entity',
   });
@@ -13917,6 +13965,9 @@ async function runTests() {
 
   // Initialize global auth token for entity/link tests that require authentication
   await initGlobalAuthToken();
+
+  // Initialize admin auth token for tests that require admin privileges
+  await initAdminAuthToken();
 
   const tests = [
     testHealthEndpoint,

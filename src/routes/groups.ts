@@ -8,7 +8,7 @@
 
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createGroupSchema,
   updateGroupSchema,
@@ -54,9 +54,9 @@ const groupsRouter = new Hono<{ Bindings: Bindings }>();
 /**
  * POST /api/groups
  *
- * Create a new group
+ * Create a new group (admin only)
  */
-groupsRouter.post('/', requireAuth(), validateJson(createGroupSchema), async c => {
+groupsRouter.post('/', requireAuth(), requireAdmin(), validateJson(createGroupSchema), async c => {
   const logger = getLogger(c);
   const currentUser = c.get('user');
   const validated = c.get('validated_json') as {
@@ -192,7 +192,7 @@ groupsRouter.get('/', requireAuth(), validateQuery(listGroupsQuerySchema), async
     const page = Math.floor(offset / limit) + 1;
     const hasMore = offset + limit < total;
 
-    return c.json(response.paginated(fieldSelection.data, limit, page, total, hasMore));
+    return c.json(response.paginated(fieldSelection.data, total, page, limit, hasMore));
   } catch (error) {
     logger.error('Error listing groups', error as Error);
     return c.json(response.error('Failed to list groups', 'GROUP_LIST_FAILED'), 500);
@@ -269,99 +269,107 @@ groupsRouter.get('/:id', requireAuth(), async c => {
 /**
  * PUT /api/groups/:id
  *
- * Update group name/description
+ * Update group name/description (admin only)
  */
-groupsRouter.put('/:id', requireAuth(), validateJson(updateGroupSchema), async c => {
-  const logger = getLogger(c);
-  const groupId = c.req.param('id');
-  const validated = c.get('validated_json') as {
-    name?: string;
-    description?: string | null;
-  };
+groupsRouter.put(
+  '/:id',
+  requireAuth(),
+  requireAdmin(),
+  validateJson(updateGroupSchema),
+  async c => {
+    const logger = getLogger(c);
+    const groupId = c.req.param('id');
+    const validated = c.get('validated_json') as {
+      name?: string;
+      description?: string | null;
+    };
 
-  try {
-    // Check if group exists
-    const existingGroup = await c.env.DB.prepare('SELECT id, name FROM groups WHERE id = ?')
-      .bind(groupId)
-      .first<GroupRow>();
+    try {
+      // Check if group exists
+      const existingGroup = await c.env.DB.prepare('SELECT id, name FROM groups WHERE id = ?')
+        .bind(groupId)
+        .first<GroupRow>();
 
-    if (!existingGroup) {
-      logger.warn('Group not found for update', { groupId });
-      return c.json(response.notFound('Group'), 404);
-    }
-
-    // If name is being updated, check if it's already taken
-    if (validated.name && validated.name !== existingGroup.name) {
-      const nameExists = await c.env.DB.prepare('SELECT id FROM groups WHERE name = ? AND id != ?')
-        .bind(validated.name, groupId)
-        .first();
-
-      if (nameExists) {
-        logger.warn('Group name already in use', { name: validated.name });
-        return c.json(response.error('Group name already exists', 'GROUP_NAME_EXISTS'), 409);
+      if (!existingGroup) {
+        logger.warn('Group not found for update', { groupId });
+        return c.json(response.notFound('Group'), 404);
       }
-    }
 
-    // Build update query dynamically
-    const updates: string[] = [];
-    const params: unknown[] = [];
+      // If name is being updated, check if it's already taken
+      if (validated.name && validated.name !== existingGroup.name) {
+        const nameExists = await c.env.DB.prepare(
+          'SELECT id FROM groups WHERE name = ? AND id != ?'
+        )
+          .bind(validated.name, groupId)
+          .first();
 
-    if (validated.name !== undefined) {
-      updates.push('name = ?');
-      params.push(validated.name);
-    }
+        if (nameExists) {
+          logger.warn('Group name already in use', { name: validated.name });
+          return c.json(response.error('Group name already exists', 'GROUP_NAME_EXISTS'), 409);
+        }
+      }
 
-    if (validated.description !== undefined) {
-      updates.push('description = ?');
-      params.push(validated.description);
-    }
+      // Build update query dynamically
+      const updates: string[] = [];
+      const params: unknown[] = [];
 
-    if (updates.length === 0) {
-      return c.json(response.error('No fields to update', 'NO_UPDATE_FIELDS'), 400);
-    }
+      if (validated.name !== undefined) {
+        updates.push('name = ?');
+        params.push(validated.name);
+      }
 
-    // Add group ID as the final parameter
-    params.push(groupId);
+      if (validated.description !== undefined) {
+        updates.push('description = ?');
+        params.push(validated.description);
+      }
 
-    // Execute update
-    const updateQuery = `UPDATE groups SET ${updates.join(', ')} WHERE id = ?`;
-    await c.env.DB.prepare(updateQuery)
-      .bind(...params)
-      .run();
+      if (updates.length === 0) {
+        return c.json(response.error('No fields to update', 'NO_UPDATE_FIELDS'), 400);
+      }
 
-    // Fetch and return updated group
-    const updatedGroup = await c.env.DB.prepare(
-      `SELECT g.id, g.name, g.description, g.created_at, g.created_by,
+      // Add group ID as the final parameter
+      params.push(groupId);
+
+      // Execute update
+      const updateQuery = `UPDATE groups SET ${updates.join(', ')} WHERE id = ?`;
+      await c.env.DB.prepare(updateQuery)
+        .bind(...params)
+        .run();
+
+      // Fetch and return updated group
+      const updatedGroup = await c.env.DB.prepare(
+        `SELECT g.id, g.name, g.description, g.created_at, g.created_by,
               (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
        FROM groups g WHERE g.id = ?`
-    )
-      .bind(groupId)
-      .first<GroupRow & { member_count: number }>();
+      )
+        .bind(groupId)
+        .first<GroupRow & { member_count: number }>();
 
-    logger.info('Group updated', { groupId });
+      logger.info('Group updated', { groupId });
 
-    return c.json(
-      response.updated({
-        id: updatedGroup!.id,
-        name: updatedGroup!.name,
-        description: updatedGroup!.description,
-        created_at: updatedGroup!.created_at,
-        created_by: updatedGroup!.created_by,
-        member_count: updatedGroup!.member_count,
-      })
-    );
-  } catch (error) {
-    logger.error('Error updating group', error as Error, { groupId });
-    return c.json(response.error('Failed to update group', 'GROUP_UPDATE_FAILED'), 500);
+      return c.json(
+        response.updated({
+          id: updatedGroup!.id,
+          name: updatedGroup!.name,
+          description: updatedGroup!.description,
+          created_at: updatedGroup!.created_at,
+          created_by: updatedGroup!.created_by,
+          member_count: updatedGroup!.member_count,
+        })
+      );
+    } catch (error) {
+      logger.error('Error updating group', error as Error, { groupId });
+      return c.json(response.error('Failed to update group', 'GROUP_UPDATE_FAILED'), 500);
+    }
   }
-});
+);
 
 /**
  * DELETE /api/groups/:id
  *
- * Delete group (fails if has members)
+ * Delete group (fails if has members) (admin only)
  */
-groupsRouter.delete('/:id', requireAuth(), async c => {
+groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
   const logger = getLogger(c);
   const groupId = c.req.param('id');
 
@@ -502,197 +510,211 @@ async function getGroupNestingDepth(
 /**
  * POST /api/groups/:id/members
  *
- * Add member (user or group) to group
+ * Add member (user or group) to group (admin only)
  */
-groupsRouter.post('/:id/members', requireAuth(), validateJson(addGroupMemberSchema), async c => {
-  const logger = getLogger(c);
-  const groupId = c.req.param('id');
-  const currentUser = c.get('user');
-  const validated = c.get('validated_json') as {
-    member_type: 'user' | 'group';
-    member_id: string;
-  };
+groupsRouter.post(
+  '/:id/members',
+  requireAuth(),
+  requireAdmin(),
+  validateJson(addGroupMemberSchema),
+  async c => {
+    const logger = getLogger(c);
+    const groupId = c.req.param('id');
+    const currentUser = c.get('user');
+    const validated = c.get('validated_json') as {
+      member_type: 'user' | 'group';
+      member_id: string;
+    };
 
-  try {
-    // Check if group exists
-    const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-      .bind(groupId)
-      .first();
-
-    if (!existingGroup) {
-      logger.warn('Group not found for adding member', { groupId });
-      return c.json(response.notFound('Group'), 404);
-    }
-
-    // Check if member exists (user or group)
-    if (validated.member_type === 'user') {
-      const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
-        .bind(validated.member_id)
+    try {
+      // Check if group exists
+      const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+        .bind(groupId)
         .first();
-      if (!user) {
-        logger.warn('User not found for membership', { userId: validated.member_id });
-        return c.json(response.notFound('User'), 404);
-      }
-    } else {
-      const memberGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-        .bind(validated.member_id)
-        .first();
-      if (!memberGroup) {
-        logger.warn('Member group not found', { memberId: validated.member_id });
-        return c.json(response.notFound('Member group'), 404);
+
+      if (!existingGroup) {
+        logger.warn('Group not found for adding member', { groupId });
+        return c.json(response.notFound('Group'), 404);
       }
 
-      // Check for cycles when adding a group as a member
-      const createsCycle = await wouldCreateCycle(c.env.DB, groupId, validated.member_id);
-      if (createsCycle) {
-        logger.warn('Adding member would create cycle', {
+      // Check if member exists (user or group)
+      if (validated.member_type === 'user') {
+        const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
+          .bind(validated.member_id)
+          .first();
+        if (!user) {
+          logger.warn('User not found for membership', { userId: validated.member_id });
+          return c.json(response.notFound('User'), 404);
+        }
+      } else {
+        const memberGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+          .bind(validated.member_id)
+          .first();
+        if (!memberGroup) {
+          logger.warn('Member group not found', { memberId: validated.member_id });
+          return c.json(response.notFound('Member group'), 404);
+        }
+
+        // Check for cycles when adding a group as a member
+        const createsCycle = await wouldCreateCycle(c.env.DB, groupId, validated.member_id);
+        if (createsCycle) {
+          logger.warn('Adding member would create cycle', {
+            groupId,
+            memberId: validated.member_id,
+          });
+          return c.json(
+            response.error(
+              'Cannot add group as member: would create a circular membership',
+              'CIRCULAR_MEMBERSHIP'
+            ),
+            409
+          );
+        }
+
+        // Check nesting depth
+        const memberDepth = await getGroupNestingDepth(c.env.DB, validated.member_id);
+        const parentDepth = await getGroupNestingDepth(c.env.DB, groupId);
+
+        // The new nesting depth would be the parent's position + 1 + member's depth
+        // We need to check from the top-level parent to avoid exceeding MAX_NESTING_DEPTH
+        if (memberDepth + 1 > MAX_NESTING_DEPTH) {
+          logger.warn('Adding member would exceed max nesting depth', {
+            groupId,
+            memberId: validated.member_id,
+            memberDepth,
+            parentDepth,
+          });
+          return c.json(
+            response.error(
+              `Cannot add group as member: would exceed maximum nesting depth of ${MAX_NESTING_DEPTH}`,
+              'MAX_NESTING_DEPTH_EXCEEDED'
+            ),
+            409
+          );
+        }
+      }
+
+      // Check if member is already in the group
+      const existingMember = await c.env.DB.prepare(
+        'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+      )
+        .bind(groupId, validated.member_type, validated.member_id)
+        .first();
+
+      if (existingMember) {
+        logger.warn('Member already in group', {
           groupId,
+          memberType: validated.member_type,
           memberId: validated.member_id,
         });
         return c.json(
-          response.error(
-            'Cannot add group as member: would create a circular membership',
-            'CIRCULAR_MEMBERSHIP'
-          ),
+          response.error('Member already exists in group', 'MEMBER_ALREADY_EXISTS'),
           409
         );
       }
 
-      // Check nesting depth
-      const memberDepth = await getGroupNestingDepth(c.env.DB, validated.member_id);
-      const parentDepth = await getGroupNestingDepth(c.env.DB, groupId);
+      // Add the member
+      const now = Math.floor(Date.now() / 1000);
+      await c.env.DB.prepare(
+        'INSERT INTO group_members (group_id, member_type, member_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
+      )
+        .bind(groupId, validated.member_type, validated.member_id, now, currentUser.user_id)
+        .run();
 
-      // The new nesting depth would be the parent's position + 1 + member's depth
-      // We need to check from the top-level parent to avoid exceeding MAX_NESTING_DEPTH
-      if (memberDepth + 1 > MAX_NESTING_DEPTH) {
-        logger.warn('Adding member would exceed max nesting depth', {
-          groupId,
-          memberId: validated.member_id,
-          memberDepth,
-          parentDepth,
-        });
-        return c.json(
-          response.error(
-            `Cannot add group as member: would exceed maximum nesting depth of ${MAX_NESTING_DEPTH}`,
-            'MAX_NESTING_DEPTH_EXCEEDED'
-          ),
-          409
-        );
-      }
-    }
+      // Invalidate effective groups cache since membership changed
+      await invalidateAllEffectiveGroupsCache(c.env.KV);
 
-    // Check if member is already in the group
-    const existingMember = await c.env.DB.prepare(
-      'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-    )
-      .bind(groupId, validated.member_type, validated.member_id)
-      .first();
-
-    if (existingMember) {
-      logger.warn('Member already in group', {
+      logger.info('Member added to group', {
         groupId,
         memberType: validated.member_type,
         memberId: validated.member_id,
       });
-      return c.json(response.error('Member already exists in group', 'MEMBER_ALREADY_EXISTS'), 409);
+
+      return c.json(
+        response.created({
+          group_id: groupId,
+          member_type: validated.member_type,
+          member_id: validated.member_id,
+          created_at: now,
+          created_by: currentUser.user_id,
+        }),
+        201
+      );
+    } catch (error) {
+      logger.error('Error adding member to group', error as Error, { groupId });
+      return c.json(response.error('Failed to add member to group', 'ADD_MEMBER_FAILED'), 500);
     }
-
-    // Add the member
-    const now = Math.floor(Date.now() / 1000);
-    await c.env.DB.prepare(
-      'INSERT INTO group_members (group_id, member_type, member_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
-    )
-      .bind(groupId, validated.member_type, validated.member_id, now, currentUser.user_id)
-      .run();
-
-    // Invalidate effective groups cache since membership changed
-    await invalidateAllEffectiveGroupsCache(c.env.KV);
-
-    logger.info('Member added to group', {
-      groupId,
-      memberType: validated.member_type,
-      memberId: validated.member_id,
-    });
-
-    return c.json(
-      response.created({
-        group_id: groupId,
-        member_type: validated.member_type,
-        member_id: validated.member_id,
-        created_at: now,
-        created_by: currentUser.user_id,
-      }),
-      201
-    );
-  } catch (error) {
-    logger.error('Error adding member to group', error as Error, { groupId });
-    return c.json(response.error('Failed to add member to group', 'ADD_MEMBER_FAILED'), 500);
   }
-});
+);
 
 /**
  * DELETE /api/groups/:id/members/:memberType/:memberId
  *
- * Remove member from group
+ * Remove member from group (admin only)
  */
-groupsRouter.delete('/:id/members/:memberType/:memberId', requireAuth(), async c => {
-  const logger = getLogger(c);
-  const groupId = c.req.param('id');
-  const memberType = c.req.param('memberType');
-  const memberId = c.req.param('memberId');
+groupsRouter.delete(
+  '/:id/members/:memberType/:memberId',
+  requireAuth(),
+  requireAdmin(),
+  async c => {
+    const logger = getLogger(c);
+    const groupId = c.req.param('id');
+    const memberType = c.req.param('memberType');
+    const memberId = c.req.param('memberId');
 
-  // Validate member type
-  if (memberType !== 'user' && memberType !== 'group') {
-    return c.json(
-      response.error('Invalid member type. Must be "user" or "group"', 'INVALID_MEMBER_TYPE'),
-      400
-    );
-  }
-
-  try {
-    // Check if group exists
-    const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-      .bind(groupId)
-      .first();
-
-    if (!existingGroup) {
-      logger.warn('Group not found for removing member', { groupId });
-      return c.json(response.notFound('Group'), 404);
+    // Validate member type
+    if (memberType !== 'user' && memberType !== 'group') {
+      return c.json(
+        response.error('Invalid member type. Must be "user" or "group"', 'INVALID_MEMBER_TYPE'),
+        400
+      );
     }
 
-    // Check if member exists in group
-    const existingMember = await c.env.DB.prepare(
-      'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-    )
-      .bind(groupId, memberType, memberId)
-      .first();
+    try {
+      // Check if group exists
+      const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+        .bind(groupId)
+        .first();
 
-    if (!existingMember) {
-      logger.warn('Member not found in group', { groupId, memberType, memberId });
-      return c.json(response.notFound('Member in group'), 404);
+      if (!existingGroup) {
+        logger.warn('Group not found for removing member', { groupId });
+        return c.json(response.notFound('Group'), 404);
+      }
+
+      // Check if member exists in group
+      const existingMember = await c.env.DB.prepare(
+        'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+      )
+        .bind(groupId, memberType, memberId)
+        .first();
+
+      if (!existingMember) {
+        logger.warn('Member not found in group', { groupId, memberType, memberId });
+        return c.json(response.notFound('Member in group'), 404);
+      }
+
+      // Remove the member
+      await c.env.DB.prepare(
+        'DELETE FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+      )
+        .bind(groupId, memberType, memberId)
+        .run();
+
+      // Invalidate effective groups cache since membership changed
+      await invalidateAllEffectiveGroupsCache(c.env.KV);
+
+      logger.info('Member removed from group', { groupId, memberType, memberId });
+
+      return c.json(response.deleted());
+    } catch (error) {
+      logger.error('Error removing member from group', error as Error, { groupId });
+      return c.json(
+        response.error('Failed to remove member from group', 'REMOVE_MEMBER_FAILED'),
+        500
+      );
     }
-
-    // Remove the member
-    await c.env.DB.prepare(
-      'DELETE FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-    )
-      .bind(groupId, memberType, memberId)
-      .run();
-
-    // Invalidate effective groups cache since membership changed
-    await invalidateAllEffectiveGroupsCache(c.env.KV);
-
-    logger.info('Member removed from group', { groupId, memberType, memberId });
-
-    return c.json(response.deleted());
-  } catch (error) {
-    logger.error('Error removing member from group', error as Error, { groupId });
-    return c.json(
-      response.error('Failed to remove member from group', 'REMOVE_MEMBER_FAILED'),
-      500
-    );
   }
-});
+);
 
 /**
  * GET /api/groups/:id/members
@@ -792,7 +814,7 @@ groupsRouter.get(
       const page = Math.floor(offset / limit) + 1;
       const hasMore = offset + limit < total;
 
-      return c.json(response.paginated(members, limit, page, total, hasMore));
+      return c.json(response.paginated(members, total, page, limit, hasMore));
     } catch (error) {
       logger.error('Error listing group members', error as Error, { groupId });
       return c.json(response.error('Failed to list group members', 'LIST_MEMBERS_FAILED'), 500);
