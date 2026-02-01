@@ -56,7 +56,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `POST /api/entities` - Create new entity (auth required)
 - [✅] `GET /api/entities` - List entities with filtering/pagination (ACL-aware)
 - [✅] `GET /api/entities/{id}` - Get latest version of entity (cached)
-- [ ] `PUT /api/entities/{id}` - Update entity (creates new version, auth required)
+- [✅] `PUT /api/entities/{id}` - Update entity (creates new version, auth required)
 - [ ] `DELETE /api/entities/{id}` - Soft delete entity (auth required)
 - [ ] `POST /api/entities/{id}/restore` - Restore soft-deleted entity (auth required)
 - [ ] `GET /api/entities/{id}/versions` - Get all versions of entity
