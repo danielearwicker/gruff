@@ -71,7 +71,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 ## Link Management Routes (`/api/links`)
 
 - [✅] `POST /api/links` - Create new link (auth required)
-- [ ] `GET /api/links` - List links with filtering/pagination (ACL-aware)
+- [✅] `GET /api/links` - List links with filtering/pagination (ACL-aware)
 - [ ] `GET /api/links/{id}` - Get latest version of link (cached)
 - [ ] `PUT /api/links/{id}` - Update link (creates new version, auth required)
 - [ ] `DELETE /api/links/{id}` - Soft delete link (auth required)
