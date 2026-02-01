@@ -66,7 +66,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `GET /api/entities/{id}/inbound` - Get all inbound links
 - [✅] `GET /api/entities/{id}/neighbors` - Get connected entities (both directions)
 - [✅] `GET /api/entities/{id}/acl` - Get entity's ACL (auth required)
-- [ ] `PUT /api/entities/{id}/acl` - Set entity's ACL (auth required)
+- [✅] `PUT /api/entities/{id}/acl` - Set entity's ACL (auth required)
 
 ## Link Management Routes (`/api/links`)
 
