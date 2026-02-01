@@ -61,7 +61,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `POST /api/entities/{id}/restore` - Restore soft-deleted entity (auth required)
 - [✅] `GET /api/entities/{id}/versions` - Get all versions of entity
 - [✅] `GET /api/entities/{id}/versions/{version}` - Get specific version of entity
-- [ ] `GET /api/entities/{id}/history` - Get version history with diffs
+- [✅] `GET /api/entities/{id}/history` - Get version history with diffs
 - [ ] `GET /api/entities/{id}/outbound` - Get all outbound links
 - [ ] `GET /api/entities/{id}/inbound` - Get all inbound links
 - [ ] `GET /api/entities/{id}/neighbors` - Get connected entities (both directions)
