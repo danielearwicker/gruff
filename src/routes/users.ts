@@ -22,6 +22,7 @@ import {
   getVersionedEffectiveGroupsCacheKey,
   CACHE_TTL,
 } from '../utils/cache.js';
+import { buildAclFilterClause, filterByAclPermission } from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -374,10 +375,12 @@ usersRouter.put(
  * GET /api/users/{id}/activity
  *
  * Get a user's creation and edit history (entities and links they've created/modified)
+ * Only returns entities and links that the requesting user has read access to.
  */
 usersRouter.get('/:id/activity', requireAuth(), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('id');
+  const currentUser = c.get('user');
 
   // Get limit from query params (default 50, max 100)
   const limitParam = c.req.query('limit');
@@ -392,43 +395,89 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
       return c.json(response.notFound('User'), 404);
     }
 
-    // Get entities created by user
-    const entities = await c.env.DB.prepare(
-      `SELECT id, type_id, version, created_at, is_deleted, is_latest
-       FROM entities
-       WHERE created_by = ? AND is_latest = 1
-       ORDER BY created_at DESC
-       LIMIT ?`
-    )
-      .bind(userId, Math.floor(limit / 2))
-      .all();
+    // Build ACL filter for the requesting user (not the target user)
+    const aclFilter = await buildAclFilterClause(
+      c.env.DB,
+      c.env.KV,
+      currentUser.user_id,
+      'read',
+      'acl_id'
+    );
 
-    // Get links created by user
-    const links = await c.env.DB.prepare(
-      `SELECT id, type_id, source_entity_id, target_entity_id, version, created_at, is_deleted, is_latest
-       FROM links
-       WHERE created_by = ? AND is_latest = 1
-       ORDER BY created_at DESC
-       LIMIT ?`
-    )
-      .bind(userId, Math.floor(limit / 2))
-      .all();
+    let entityActivities: Array<{
+      type: string;
+      id: unknown;
+      type_id: unknown;
+      version: unknown;
+      created_at: unknown;
+      is_deleted: boolean;
+      is_latest: boolean;
+    }> = [];
+    let linkActivities: Array<{
+      type: string;
+      id: unknown;
+      type_id: unknown;
+      source_entity_id: unknown;
+      target_entity_id: unknown;
+      version: unknown;
+      created_at: unknown;
+      is_deleted: boolean;
+      is_latest: boolean;
+    }> = [];
 
-    // Combine and sort by created_at
-    const entityActivities = (
-      (entities.results || []) as unknown as Array<Record<string, unknown>>
-    ).map(e => ({
-      type: 'entity',
-      id: e.id,
-      type_id: e.type_id,
-      version: e.version,
-      created_at: e.created_at,
-      is_deleted: !!e.is_deleted,
-      is_latest: !!e.is_latest,
-    }));
+    if (aclFilter.useFilter) {
+      // Use SQL-based ACL filtering
+      const entityQuery = aclFilter.whereClause
+        ? `SELECT id, type_id, version, created_at, is_deleted, is_latest, acl_id
+           FROM entities
+           WHERE created_by = ? AND is_latest = 1 AND (${aclFilter.whereClause})
+           ORDER BY created_at DESC
+           LIMIT ?`
+        : `SELECT id, type_id, version, created_at, is_deleted, is_latest, acl_id
+           FROM entities
+           WHERE created_by = ? AND is_latest = 1
+           ORDER BY created_at DESC
+           LIMIT ?`;
 
-    const linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map(
-      l => ({
+      const entityBindings = aclFilter.whereClause
+        ? [userId, ...aclFilter.bindings, Math.floor(limit / 2)]
+        : [userId, Math.floor(limit / 2)];
+
+      const entities = await c.env.DB.prepare(entityQuery).bind(...entityBindings).all();
+
+      const linkQuery = aclFilter.whereClause
+        ? `SELECT id, type_id, source_entity_id, target_entity_id, version, created_at, is_deleted, is_latest, acl_id
+           FROM links
+           WHERE created_by = ? AND is_latest = 1 AND (${aclFilter.whereClause})
+           ORDER BY created_at DESC
+           LIMIT ?`
+        : `SELECT id, type_id, source_entity_id, target_entity_id, version, created_at, is_deleted, is_latest, acl_id
+           FROM links
+           WHERE created_by = ? AND is_latest = 1
+           ORDER BY created_at DESC
+           LIMIT ?`;
+
+      const linkBindings = aclFilter.whereClause
+        ? [userId, ...aclFilter.bindings, Math.floor(limit / 2)]
+        : [userId, Math.floor(limit / 2)];
+
+      const links = await c.env.DB.prepare(linkQuery).bind(...linkBindings).all();
+
+      entityActivities = (
+        (entities.results || []) as unknown as Array<Record<string, unknown>>
+      ).map(e => ({
+        type: 'entity',
+        id: e.id,
+        type_id: e.type_id,
+        version: e.version,
+        created_at: e.created_at,
+        is_deleted: !!e.is_deleted,
+        is_latest: !!e.is_latest,
+      }));
+
+      linkActivities = (
+        (links.results || []) as unknown as Array<Record<string, unknown>>
+      ).map(l => ({
         type: 'link',
         id: l.id,
         type_id: l.type_id,
@@ -438,8 +487,62 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
         created_at: l.created_at,
         is_deleted: !!l.is_deleted,
         is_latest: !!l.is_latest,
-      })
-    );
+      }));
+    } else {
+      // Fall back to per-row ACL filtering (user has access to too many ACLs)
+      const entities = await c.env.DB.prepare(
+        `SELECT id, type_id, version, created_at, is_deleted, is_latest, acl_id
+         FROM entities
+         WHERE created_by = ? AND is_latest = 1
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+        .bind(userId, limit)
+        .all();
+
+      const links = await c.env.DB.prepare(
+        `SELECT id, type_id, source_entity_id, target_entity_id, version, created_at, is_deleted, is_latest, acl_id
+         FROM links
+         WHERE created_by = ? AND is_latest = 1
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+        .bind(userId, limit)
+        .all();
+
+      // Filter by ACL permission
+      const filteredEntities = filterByAclPermission(
+        (entities.results || []) as Array<{ acl_id?: number | null } & Record<string, unknown>>,
+        aclFilter.accessibleAclIds
+      );
+
+      const filteredLinks = filterByAclPermission(
+        (links.results || []) as Array<{ acl_id?: number | null } & Record<string, unknown>>,
+        aclFilter.accessibleAclIds
+      );
+
+      entityActivities = filteredEntities.map(e => ({
+        type: 'entity',
+        id: e.id,
+        type_id: e.type_id,
+        version: e.version,
+        created_at: e.created_at,
+        is_deleted: !!e.is_deleted,
+        is_latest: !!e.is_latest,
+      }));
+
+      linkActivities = filteredLinks.map(l => ({
+        type: 'link',
+        id: l.id,
+        type_id: l.type_id,
+        source_entity_id: l.source_entity_id,
+        target_entity_id: l.target_entity_id,
+        version: l.version,
+        created_at: l.created_at,
+        is_deleted: !!l.is_deleted,
+        is_latest: !!l.is_latest,
+      }));
+    }
 
     const allActivities = [...entityActivities, ...linkActivities]
       .sort((a, b) => (b.created_at as number) - (a.created_at as number))
