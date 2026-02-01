@@ -49,7 +49,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `GET /api/types` - List all types (paginated, with field selection)
 - [✅] `GET /api/types/{id}` - Get specific type by ID
 - [✅] `PUT /api/types/{id}` - Update type metadata/schema (admin only)
-- [ ] `DELETE /api/types/{id}` - Delete type (admin only, only if not in use)
+- [✅] `DELETE /api/types/{id}` - Delete type (admin only, only if not in use)
 
 ## Entity Management Routes (`/api/entities`)
 
