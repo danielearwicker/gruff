@@ -274,10 +274,7 @@ usersRouter.put(
           targetUserId: userId,
         });
         return c.json(
-          response.error(
-            'Only administrators can modify the is_active field',
-            'ADMIN_REQUIRED'
-          ),
+          response.error('Only administrators can modify the is_active field', 'ADMIN_REQUIRED'),
           403
         );
       }
@@ -443,7 +440,9 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
         ? [userId, ...aclFilter.bindings, Math.floor(limit / 2)]
         : [userId, Math.floor(limit / 2)];
 
-      const entities = await c.env.DB.prepare(entityQuery).bind(...entityBindings).all();
+      const entities = await c.env.DB.prepare(entityQuery)
+        .bind(...entityBindings)
+        .all();
 
       const linkQuery = aclFilter.whereClause
         ? `SELECT id, type_id, source_entity_id, target_entity_id, version, created_at, is_deleted, is_latest, acl_id
@@ -461,7 +460,9 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
         ? [userId, ...aclFilter.bindings, Math.floor(limit / 2)]
         : [userId, Math.floor(limit / 2)];
 
-      const links = await c.env.DB.prepare(linkQuery).bind(...linkBindings).all();
+      const links = await c.env.DB.prepare(linkQuery)
+        .bind(...linkBindings)
+        .all();
 
       entityActivities = (
         (entities.results || []) as unknown as Array<Record<string, unknown>>
@@ -475,19 +476,19 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
         is_latest: !!e.is_latest,
       }));
 
-      linkActivities = (
-        (links.results || []) as unknown as Array<Record<string, unknown>>
-      ).map(l => ({
-        type: 'link',
-        id: l.id,
-        type_id: l.type_id,
-        source_entity_id: l.source_entity_id,
-        target_entity_id: l.target_entity_id,
-        version: l.version,
-        created_at: l.created_at,
-        is_deleted: !!l.is_deleted,
-        is_latest: !!l.is_latest,
-      }));
+      linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map(
+        l => ({
+          type: 'link',
+          id: l.id,
+          type_id: l.type_id,
+          source_entity_id: l.source_entity_id,
+          target_entity_id: l.target_entity_id,
+          version: l.version,
+          created_at: l.created_at,
+          is_deleted: !!l.is_deleted,
+          is_latest: !!l.is_latest,
+        })
+      );
     } else {
       // Fall back to per-row ACL filtering (user has access to too many ACLs)
       const entities = await c.env.DB.prepare(
