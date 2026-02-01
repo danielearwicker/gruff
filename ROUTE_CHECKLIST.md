@@ -35,7 +35,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 - [✅] `POST /api/groups` - Create new group (admin only)
 - [✅] `GET /api/groups` - List all groups (paginated)
-- [ ] `GET /api/groups/{id}` - Get group details
+- [✅] `GET /api/groups/{id}` - Get group details
 - [ ] `PUT /api/groups/{id}` - Update group name/description (admin only)
 - [ ] `DELETE /api/groups/{id}` - Delete group (admin only, must be empty)
 - [ ] `POST /api/groups/{id}/members` - Add user or group as member (admin only)
