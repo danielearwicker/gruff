@@ -7407,7 +7407,7 @@ async function testBulkCreateEntities() {
   const typeId = typeResponse.data.data.id;
 
   // Bulk create entities
-  const response = await makeRequest('POST', '/api/bulk/entities', {
+  const response = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: [
       { type_id: typeId, properties: { name: 'Bulk Entity 1' }, client_id: 'client-1' },
       { type_id: typeId, properties: { name: 'Bulk Entity 2' }, client_id: 'client-2' },
@@ -7443,7 +7443,7 @@ async function testBulkCreateEntitiesValidationError() {
   });
   const validTypeId = typeResponse.data.data.id;
 
-  const response = await makeRequest('POST', '/api/bulk/entities', {
+  const response = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: [
       { type_id: validTypeId, properties: { name: 'Valid Entity' } },
       { type_id: invalidTypeId, properties: { name: 'Invalid Entity' } },
@@ -7470,7 +7470,7 @@ async function testBulkCreateEntitiesValidationError() {
 async function testBulkCreateEntitiesEmptyArray() {
   logTest('Bulk Operations - Create Entities with Empty Array');
 
-  const response = await makeRequest('POST', '/api/bulk/entities', {
+  const response = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: [],
   });
 
@@ -7513,7 +7513,7 @@ async function testBulkCreateLinks() {
   const entity3Id = entity3Response.data.data.id;
 
   // Bulk create links
-  const response = await makeRequest('POST', '/api/bulk/links', {
+  const response = await makeAuthRequest('POST', '/api/bulk/links', {
     links: [
       {
         type_id: linkTypeId,
@@ -7560,7 +7560,7 @@ async function testBulkCreateLinksInvalidEntity() {
 
   const invalidEntityId = '00000000-0000-0000-0000-000000000000';
 
-  const response = await makeRequest('POST', '/api/bulk/links', {
+  const response = await makeAuthRequest('POST', '/api/bulk/links', {
     links: [
       {
         type_id: linkTypeId,
@@ -7799,7 +7799,7 @@ async function testBulkOperationsMaxLimit() {
     entities.push({ type_id: typeId, properties: { name: `Entity ${i}` } });
   }
 
-  const response = await makeRequest('POST', '/api/bulk/entities', {
+  const response = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: entities,
   });
 
@@ -8606,7 +8606,7 @@ async function testSchemaValidationBulkCreateEntitiesWithSchema() {
   const typeId = typeResponse.data.data[0].id;
 
   // Bulk create - mixed valid and invalid entities
-  const bulkResponse = await makeRequest('POST', '/api/bulk/entities', {
+  const bulkResponse = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: [
       {
         type_id: typeId,
@@ -8770,7 +8770,7 @@ async function testRateLimitPerCategory() {
   const searchLimit = parseInt(searchResponse.headers.get('X-RateLimit-Limit'), 10);
 
   // Make a request to a bulk endpoint - should have lower limits
-  const bulkResponse = await makeRequest('POST', '/api/bulk/entities', { entities: [] });
+  const bulkResponse = await makeAuthRequest('POST', '/api/bulk/entities', { entities: [] });
   const bulkLimit = parseInt(bulkResponse.headers.get('X-RateLimit-Limit'), 10);
 
   logInfo(`Read limit: ${readLimit}, Search limit: ${searchLimit}, Bulk limit: ${bulkLimit}`);
@@ -9513,7 +9513,7 @@ async function testSanitizationBulkCreate() {
     ],
   };
 
-  const createResponse = await makeRequest('POST', '/api/bulk/entities', bulkPayload);
+  const createResponse = await makeAuthRequest('POST', '/api/bulk/entities', bulkPayload);
 
   assertEquals(createResponse.status, 201, 'Should create entities successfully');
 
@@ -11783,7 +11783,7 @@ async function testQueryPerformanceTrackingBulkOperations() {
   const entityType = typesResponse.data.data[0];
 
   // Test bulk create (triggers batch tracking)
-  const bulkResponse = await makeRequest('POST', '/api/bulk/entities', {
+  const bulkResponse = await makeAuthRequest('POST', '/api/bulk/entities', {
     entities: [
       { type_id: entityType.id, properties: { name: 'Bulk Query Track 1' } },
       { type_id: entityType.id, properties: { name: 'Bulk Query Track 2' } },

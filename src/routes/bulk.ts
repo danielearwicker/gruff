@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   bulkCreateEntitiesSchema,
   bulkCreateLinksSchema,
@@ -11,10 +12,12 @@ import {
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
+import { createResourceAcl, hasPermissionByAclId } from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
+  JWT_SECRET: string;
   ENVIRONMENT: string;
 };
 
@@ -98,15 +101,17 @@ async function findLatestLinkVersion(
  * POST /api/bulk/entities
  * Batch create multiple entities in a single request
  * Uses D1 batch operations for consistency
+ * Requires authentication
  */
-bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async c => {
+bulk.post('/entities', requireAuth(), validateJson(bulkCreateEntitiesSchema), async c => {
   const data = c.get('validated_json') as {
     entities: Array<{ type_id: string; properties: Record<string, unknown>; client_id?: string }>;
   };
   const db = c.env.DB;
-  const logger = getLogger(c).child({ module: 'bulk' });
+  const user = c.get('user');
+  const userId = user.user_id;
+  const logger = getLogger(c).child({ module: 'bulk', userId });
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
 
   const results: BulkCreateResultItem[] = [];
   const statements: D1PreparedStatement[] = [];
@@ -163,15 +168,18 @@ bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async c => {
       const id = generateUUID();
       const propertiesString = JSON.stringify(entity.properties);
 
+      // Create ACL with creator write permission (undefined = creator-only ACL)
+      const aclId = await createResourceAcl(db, userId, undefined);
+
       statements.push(
         db
           .prepare(
             `
-          INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-          VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1)
+          INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+          VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1, ?)
         `
           )
-          .bind(id, entity.type_id, propertiesString, now, systemUserId)
+          .bind(id, entity.type_id, propertiesString, now, userId, aclId)
       );
 
       entityData.push({ id, index: i, client_id: entity.client_id });
@@ -241,8 +249,9 @@ bulk.post('/entities', validateJson(bulkCreateEntitiesSchema), async c => {
  * POST /api/bulk/links
  * Batch create multiple links in a single request
  * Uses D1 batch operations for consistency
+ * Requires authentication
  */
-bulk.post('/links', validateJson(bulkCreateLinksSchema), async c => {
+bulk.post('/links', requireAuth(), validateJson(bulkCreateLinksSchema), async c => {
   const data = c.get('validated_json') as {
     links: Array<{
       type_id: string;
@@ -253,9 +262,10 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async c => {
     }>;
   };
   const db = c.env.DB;
-  const logger = getLogger(c).child({ module: 'bulk' });
+  const user = c.get('user');
+  const userId = user.user_id;
+  const logger = getLogger(c).child({ module: 'bulk', userId });
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
 
   const results: BulkCreateResultItem[] = [];
   const statements: D1PreparedStatement[] = [];
@@ -352,12 +362,15 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async c => {
       const id = generateUUID();
       const propertiesString = JSON.stringify(link.properties);
 
+      // Create ACL with creator write permission (undefined = creator-only ACL)
+      const aclId = await createResourceAcl(db, userId, undefined);
+
       statements.push(
         db
           .prepare(
             `
-          INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-          VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1)
+          INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+          VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1, ?)
         `
           )
           .bind(
@@ -367,7 +380,8 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async c => {
             link.target_entity_id,
             propertiesString,
             now,
-            systemUserId
+            userId,
+            aclId
           )
       );
 
@@ -438,15 +452,18 @@ bulk.post('/links', validateJson(bulkCreateLinksSchema), async c => {
  * PUT /api/bulk/entities
  * Batch update multiple entities in a single request
  * Creates new versions for each updated entity using D1 batch operations
+ * Requires authentication and write permission on each entity
  */
-bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
+bulk.put('/entities', requireAuth(), validateJson(bulkUpdateEntitiesSchema), async c => {
   const data = c.get('validated_json') as {
     entities: Array<{ id: string; properties: Record<string, unknown> }>;
   };
   const db = c.env.DB;
-  const logger = getLogger(c).child({ module: 'bulk' });
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
+  const logger = getLogger(c).child({ module: 'bulk', userId });
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
 
   const results: BulkUpdateResultItem[] = [];
   const statements: D1PreparedStatement[] = [];
@@ -485,6 +502,20 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
           id: entity.id,
           error: 'Cannot update deleted entity. Use restore endpoint first.',
           code: 'ENTITY_DELETED',
+        });
+        continue;
+      }
+
+      // Check write permission
+      const aclId = currentVersion.acl_id as number | null;
+      const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+      if (!canWrite) {
+        results.push({
+          index: i,
+          success: false,
+          id: entity.id,
+          error: 'You do not have permission to update this entity',
+          code: 'FORBIDDEN',
         });
         continue;
       }
@@ -531,6 +562,7 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
       const newVersion = (currentVersion.version as number) + 1;
       const propertiesString = JSON.stringify(entity.properties);
       const newId = generateUUID();
+      const existingAclId = currentVersion.acl_id as number | null;
 
       // Two operations per entity: set old as not latest, insert new version
       statements.push(
@@ -540,8 +572,8 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
         db
           .prepare(
             `
-          INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
+          INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
         `
           )
           .bind(
@@ -551,7 +583,8 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
             newVersion,
             currentVersion.id,
             now,
-            systemUserId
+            userId,
+            existingAclId
           )
       );
 
@@ -625,15 +658,18 @@ bulk.put('/entities', validateJson(bulkUpdateEntitiesSchema), async c => {
  * PUT /api/bulk/links
  * Batch update multiple links in a single request
  * Creates new versions for each updated link using D1 batch operations
+ * Requires authentication and write permission on each link
  */
-bulk.put('/links', validateJson(bulkUpdateLinksSchema), async c => {
+bulk.put('/links', requireAuth(), validateJson(bulkUpdateLinksSchema), async c => {
   const data = c.get('validated_json') as {
     links: Array<{ id: string; properties: Record<string, unknown> }>;
   };
   const db = c.env.DB;
-  const logger = getLogger(c).child({ module: 'bulk' });
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const userId = user.user_id;
+  const logger = getLogger(c).child({ module: 'bulk', userId });
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
 
   const results: BulkUpdateResultItem[] = [];
   const statements: D1PreparedStatement[] = [];
@@ -672,6 +708,20 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async c => {
           id: link.id,
           error: 'Cannot update deleted link. Use restore endpoint first.',
           code: 'LINK_DELETED',
+        });
+        continue;
+      }
+
+      // Check write permission
+      const aclId = currentVersion.acl_id as number | null;
+      const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
+      if (!canWrite) {
+        results.push({
+          index: i,
+          success: false,
+          id: link.id,
+          error: 'You do not have permission to update this link',
+          code: 'FORBIDDEN',
         });
         continue;
       }
@@ -717,6 +767,7 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async c => {
 
       const newVersion = (currentVersion.version as number) + 1;
       const propertiesString = JSON.stringify(link.properties);
+      const existingAclId = currentVersion.acl_id as number | null;
       const newId = generateUUID();
 
       // Two operations per link: set old as not latest, insert new version
@@ -727,8 +778,8 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async c => {
         db
           .prepare(
             `
-          INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+          INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
         `
           )
           .bind(
@@ -740,7 +791,8 @@ bulk.put('/links', validateJson(bulkUpdateLinksSchema), async c => {
             newVersion,
             currentVersion.id,
             now,
-            systemUserId
+            userId,
+            existingAclId
           )
       );
 
