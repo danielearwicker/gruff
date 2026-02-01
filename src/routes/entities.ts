@@ -1474,10 +1474,18 @@ entities.get('/:id/inbound', optionalAuth(), async c => {
 /**
  * GET /api/entities/:id/neighbors
  * Get all connected entities (both inbound and outbound)
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the center entity
+ * - Entities with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access entities with NULL acl_id (public)
+ * - Returned links and neighbor entities are filtered by ACL permissions
  */
-entities.get('/:id/neighbors', async c => {
+entities.get('/:id/neighbors', optionalAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   // Optional query parameters for filtering
   const typeId = c.req.query('type_id'); // Filter by link type
@@ -1491,6 +1499,31 @@ entities.get('/:id/neighbors', async c => {
 
     if (!entity) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission on the center entity
+    const entityAclId = entity.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission on the center entity
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, entityAclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (entityAclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+      }
+    }
+
+    // Build ACL filters for links and neighbor entities
+    let linkAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+    let neighborEntityAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Build ACL filters for authenticated users
+      linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
+      neighborEntityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
     }
 
     const neighbors: Record<string, unknown>[] = [];
@@ -1507,9 +1540,11 @@ entities.get('/:id/neighbors', async c => {
           e.created_by,
           e.is_deleted,
           e.is_latest,
+          e.acl_id as entity_acl_id,
           l.id as link_id,
           l.type_id as link_type_id,
           l.properties as link_properties,
+          l.acl_id as link_acl_id,
           'outbound' as direction
         FROM links l
         INNER JOIN entities e ON l.target_entity_id = e.id
@@ -1518,6 +1553,24 @@ entities.get('/:id/neighbors', async c => {
         AND e.is_latest = 1
       `;
       const outboundBindings: unknown[] = [entity.id];
+
+      // Apply ACL filtering based on authentication status
+      if (user) {
+        // Apply link ACL filter
+        if (linkAclFilter && linkAclFilter.useFilter) {
+          outboundSql += ` AND ${linkAclFilter.whereClause}`;
+          outboundBindings.push(...linkAclFilter.bindings);
+        }
+
+        // Apply neighbor entity ACL filter
+        if (neighborEntityAclFilter && neighborEntityAclFilter.useFilter) {
+          outboundSql += ` AND ${neighborEntityAclFilter.whereClause}`;
+          outboundBindings.push(...neighborEntityAclFilter.bindings);
+        }
+      } else {
+        // Unauthenticated: only show public links and entities
+        outboundSql += ' AND l.acl_id IS NULL AND e.acl_id IS NULL';
+      }
 
       if (!includeDeleted) {
         outboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
@@ -1538,7 +1591,30 @@ entities.get('/:id/neighbors', async c => {
         .bind(...outboundBindings)
         .all();
 
-      neighbors.push(...outboundResults);
+      // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+      let filteredOutbound = outboundResults;
+      if (user) {
+        if (linkAclFilter && !linkAclFilter.useFilter) {
+          filteredOutbound = filteredOutbound.filter(item => {
+            const aclId = (item as Record<string, unknown>).link_acl_id as number | null | undefined;
+            if (aclId === null || aclId === undefined) {
+              return true;
+            }
+            return linkAclFilter!.accessibleAclIds.has(aclId);
+          });
+        }
+        if (neighborEntityAclFilter && !neighborEntityAclFilter.useFilter) {
+          filteredOutbound = filteredOutbound.filter(item => {
+            const aclId = (item as Record<string, unknown>).entity_acl_id as number | null | undefined;
+            if (aclId === null || aclId === undefined) {
+              return true;
+            }
+            return neighborEntityAclFilter!.accessibleAclIds.has(aclId);
+          });
+        }
+      }
+
+      neighbors.push(...filteredOutbound);
     }
 
     // Fetch inbound neighbors (entities that link to this entity)
@@ -1553,9 +1629,11 @@ entities.get('/:id/neighbors', async c => {
           e.created_by,
           e.is_deleted,
           e.is_latest,
+          e.acl_id as entity_acl_id,
           l.id as link_id,
           l.type_id as link_type_id,
           l.properties as link_properties,
+          l.acl_id as link_acl_id,
           'inbound' as direction
         FROM links l
         INNER JOIN entities e ON l.source_entity_id = e.id
@@ -1564,6 +1642,24 @@ entities.get('/:id/neighbors', async c => {
         AND e.is_latest = 1
       `;
       const inboundBindings: unknown[] = [entity.id];
+
+      // Apply ACL filtering based on authentication status
+      if (user) {
+        // Apply link ACL filter
+        if (linkAclFilter && linkAclFilter.useFilter) {
+          inboundSql += ` AND ${linkAclFilter.whereClause}`;
+          inboundBindings.push(...linkAclFilter.bindings);
+        }
+
+        // Apply neighbor entity ACL filter
+        if (neighborEntityAclFilter && neighborEntityAclFilter.useFilter) {
+          inboundSql += ` AND ${neighborEntityAclFilter.whereClause}`;
+          inboundBindings.push(...neighborEntityAclFilter.bindings);
+        }
+      } else {
+        // Unauthenticated: only show public links and entities
+        inboundSql += ' AND l.acl_id IS NULL AND e.acl_id IS NULL';
+      }
 
       if (!includeDeleted) {
         inboundSql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
@@ -1584,7 +1680,30 @@ entities.get('/:id/neighbors', async c => {
         .bind(...inboundBindings)
         .all();
 
-      neighbors.push(...inboundResults);
+      // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+      let filteredInbound = inboundResults;
+      if (user) {
+        if (linkAclFilter && !linkAclFilter.useFilter) {
+          filteredInbound = filteredInbound.filter(item => {
+            const aclId = (item as Record<string, unknown>).link_acl_id as number | null | undefined;
+            if (aclId === null || aclId === undefined) {
+              return true;
+            }
+            return linkAclFilter!.accessibleAclIds.has(aclId);
+          });
+        }
+        if (neighborEntityAclFilter && !neighborEntityAclFilter.useFilter) {
+          filteredInbound = filteredInbound.filter(item => {
+            const aclId = (item as Record<string, unknown>).entity_acl_id as number | null | undefined;
+            if (aclId === null || aclId === undefined) {
+              return true;
+            }
+            return neighborEntityAclFilter!.accessibleAclIds.has(aclId);
+          });
+        }
+      }
+
+      neighbors.push(...filteredInbound);
     }
 
     // Deduplicate neighbors (an entity might be connected both ways)

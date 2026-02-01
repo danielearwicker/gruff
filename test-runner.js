@@ -4372,8 +4372,8 @@ async function testGetNeighbors() {
     properties: { relationship: 'mentions' },
   });
 
-  // Test: Get all neighbors
-  const response = await makeRequest('GET', `/api/entities/${centerEntityId}/neighbors`);
+  // Test: Get all neighbors (must use authenticated request since entities have ACLs)
+  const response = await makeAuthRequest('GET', `/api/entities/${centerEntityId}/neighbors`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -4457,8 +4457,8 @@ async function testGetNeighborsFilterByDirection() {
     properties: {},
   });
 
-  // Test: Get only inbound neighbors
-  const inboundResponse = await makeRequest(
+  // Test: Get only inbound neighbors (must use authenticated request since entities have ACLs)
+  const inboundResponse = await makeAuthRequest(
     'GET',
     `/api/entities/${centerEntityId}/neighbors?direction=inbound`
   );
@@ -4466,8 +4466,8 @@ async function testGetNeighborsFilterByDirection() {
   assertEquals(inboundResponse.data.data.length, 1, 'Should have 1 inbound neighbor');
   assertEquals(inboundResponse.data.data[0].id, inboundSourceId, 'Should be inbound source');
 
-  // Test: Get only outbound neighbors
-  const outboundResponse = await makeRequest(
+  // Test: Get only outbound neighbors (must use authenticated request since entities have ACLs)
+  const outboundResponse = await makeAuthRequest(
     'GET',
     `/api/entities/${centerEntityId}/neighbors?direction=outbound`
   );
@@ -4532,8 +4532,8 @@ async function testGetNeighborsFilterByLinkType() {
     properties: {},
   });
 
-  // Test: Get neighbors filtered by link type
-  const response = await makeRequest(
+  // Test: Get neighbors filtered by link type (must use authenticated request since entities have ACLs)
+  const response = await makeAuthRequest(
     'GET',
     `/api/entities/${centerEntityId}/neighbors?type_id=${linkType1Id}`
   );
@@ -5208,8 +5208,8 @@ async function testGetNeighborsBidirectionalConnection() {
     properties: { direction: 'backward' },
   });
 
-  // Test: Get neighbors of entity 1
-  const response = await makeRequest('GET', `/api/entities/${entity1Id}/neighbors`);
+  // Test: Get neighbors of entity 1 (must use authenticated request since entities have ACLs)
+  const response = await makeAuthRequest('GET', `/api/entities/${entity1Id}/neighbors`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 unique neighbor despite 2 connections');
