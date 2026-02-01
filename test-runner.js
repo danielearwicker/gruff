@@ -12517,6 +12517,40 @@ async function testDeleteGroupThatIsMember() {
   assertEquals(deleteResponse.data.code, 'GROUP_IS_MEMBER', 'Error code should be GROUP_IS_MEMBER');
 }
 
+async function testDeleteGroupInAcl() {
+  logTest('Group Management - Cannot delete group that is referenced in ACL entries');
+
+  const token = await getGroupTestAuthToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Create a group
+  const groupResponse = await makeRequestWithHeaders('POST', '/api/groups', headers, {
+    name: 'ACL Reference Delete Test Group',
+  });
+  const groupId = groupResponse.data.data.id;
+
+  // Create an entity type first
+  const typeResponse = await makeRequestWithHeaders('POST', '/api/types', headers, {
+    name: 'ACL Delete Test Type ' + Date.now(),
+    category: 'entity',
+  });
+  const typeId = typeResponse.data.data.id;
+
+  // Create an entity with ACL referencing the group
+  const entityResponse = await makeRequestWithHeaders('POST', '/api/entities', headers, {
+    type_id: typeId,
+    properties: { name: 'Test Entity for ACL Delete' },
+    acl: [{ principal_type: 'group', principal_id: groupId, permission: 'read' }],
+  });
+  assertEquals(entityResponse.status, 201, 'Entity should be created successfully');
+
+  // Try to delete group (should fail because it's referenced in ACL)
+  const deleteResponse = await makeRequestWithHeaders('DELETE', `/api/groups/${groupId}`, headers);
+
+  assertEquals(deleteResponse.status, 409, 'Status code should be 409 Conflict');
+  assertEquals(deleteResponse.data.code, 'GROUP_IN_ACL', 'Error code should be GROUP_IN_ACL');
+}
+
 async function testUserGroups() {
   logTest('Group Management - Get groups a user belongs to');
 
@@ -14534,6 +14568,7 @@ async function runTests() {
     testGetEffectiveMembers,
     testDeleteGroupWithMembers,
     testDeleteGroupThatIsMember,
+    testDeleteGroupInAcl,
     testUserGroups,
     testUserEffectiveGroups,
     testGroupRequiresAuth,

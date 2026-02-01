@@ -423,6 +423,27 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
       );
     }
 
+    // Check if group is referenced in any ACL entries
+    const aclReferences = await c.env.DB.prepare(
+      "SELECT COUNT(*) as count FROM acl_entries WHERE principal_type = 'group' AND principal_id = ?"
+    )
+      .bind(groupId)
+      .first<{ count: number }>();
+
+    if (aclReferences && aclReferences.count > 0) {
+      logger.warn('Cannot delete group that is referenced in ACL entries', {
+        groupId,
+        aclReferenceCount: aclReferences.count,
+      });
+      return c.json(
+        response.error(
+          'Cannot delete group that is referenced in access control lists. Remove the group from entity/link ACLs first.',
+          'GROUP_IN_ACL'
+        ),
+        409
+      );
+    }
+
     // Delete the group
     await c.env.DB.prepare('DELETE FROM groups WHERE id = ?').bind(groupId).run();
 

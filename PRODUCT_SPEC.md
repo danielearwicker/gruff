@@ -538,7 +538,7 @@ POST   /api/groups                   # Create a new group
 GET    /api/groups                   # List all groups (paginated)
 GET    /api/groups/{id}              # Get group details with members
 PUT    /api/groups/{id}              # Update group name/description
-DELETE /api/groups/{id}              # Delete group (fails if has members)
+DELETE /api/groups/{id}              # Delete group (fails if has members, is in parent groups, or in ACLs)
 POST   /api/groups/{id}/members      # Add member (user or group) to group
 DELETE /api/groups/{id}/members/{memberType}/{memberId}  # Remove member
 GET    /api/groups/{id}/members      # List direct members
