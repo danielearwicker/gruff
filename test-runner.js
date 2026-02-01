@@ -4080,8 +4080,8 @@ async function testGetInboundLinks() {
     properties: { relationship: 'mentions' },
   });
 
-  // Test: Get all inbound links
-  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound`);
+  // Test: Get all inbound links (must use authenticated request since entities have ACLs)
+  const response = await makeAuthRequest('GET', `/api/entities/${targetEntityId}/inbound`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -4180,8 +4180,8 @@ async function testGetInboundLinksFilterByType() {
     properties: { type: 'type2' },
   });
 
-  // Test: Get inbound links filtered by type
-  const response = await makeRequest(
+  // Test: Get inbound links filtered by type (must use authenticated request since entities have ACLs)
+  const response = await makeAuthRequest(
     'GET',
     `/api/entities/${targetEntityId}/inbound?type_id=${linkType1Id}`
   );
@@ -4262,8 +4262,8 @@ async function testGetInboundLinksExcludesDeleted() {
   // Delete the first link
   await makeAuthRequest('DELETE', `/api/links/${link1Id}`);
 
-  // Test: Get inbound links (should exclude deleted)
-  const response = await makeRequest('GET', `/api/entities/${targetEntityId}/inbound`);
+  // Test: Get inbound links (should exclude deleted) - must use authenticated request since entities have ACLs
+  const response = await makeAuthRequest('GET', `/api/entities/${targetEntityId}/inbound`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 1, 'Should have 1 non-deleted link');
@@ -4273,8 +4273,8 @@ async function testGetInboundLinksExcludesDeleted() {
     'Should only include non-deleted link'
   );
 
-  // Test: Get inbound links including deleted
-  const responseWithDeleted = await makeRequest(
+  // Test: Get inbound links including deleted - must use authenticated request since entities have ACLs
+  const responseWithDeleted = await makeAuthRequest(
     'GET',
     `/api/entities/${targetEntityId}/inbound?include_deleted=true`
   );
