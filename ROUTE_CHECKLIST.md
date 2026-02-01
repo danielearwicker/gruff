@@ -41,7 +41,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `POST /api/groups/{id}/members` - Add user or group as member (admin only)
 - [✅] `DELETE /api/groups/{id}/members/{memberType}/{memberId}` - Remove member from group (admin only)
 - [✅] `GET /api/groups/{id}/members` - List direct members of group
-- [ ] `GET /api/groups/{id}/effective-members` - List all members (including nested)
+- [✅] `GET /api/groups/{id}/effective-members` - List all members (including nested)
 
 ## Type Management Routes (`/api/types`)
 
