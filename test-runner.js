@@ -2523,8 +2523,8 @@ async function testGetEntityVersions() {
     properties: { name: 'Version 3', count: 3 },
   });
 
-  // Get all versions
-  const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
+  // Get all versions (authenticated because entity has ACL from creator)
+  const response = await makeAuthRequest('GET', `/api/entities/${entityId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -2598,8 +2598,8 @@ async function testGetSpecificEntityVersion() {
     properties: { name: 'Updated Twice', value: 300 },
   });
 
-  // Get version 2 specifically
-  const response = await makeRequest('GET', `/api/entities/${entityId}/versions/2`);
+  // Get version 2 specifically (authenticated because entity has ACL from creator)
+  const response = await makeAuthRequest('GET', `/api/entities/${entityId}/versions/2`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -2630,8 +2630,8 @@ async function testGetSpecificEntityVersionNotFound() {
   });
   const entityId = createResponse.data.data.id;
 
-  // Try to get version 5 (doesn't exist)
-  const response = await makeRequest('GET', `/api/entities/${entityId}/versions/5`);
+  // Try to get version 5 (doesn't exist) - authenticated because entity has ACL from creator
+  const response = await makeAuthRequest('GET', `/api/entities/${entityId}/versions/5`);
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -2701,8 +2701,8 @@ async function testGetEntityHistory() {
     },
   });
 
-  // Get history with diffs
-  const response = await makeRequest('GET', `/api/entities/${entityId}/history`);
+  // Get history with diffs (authenticated because entity has ACL from creator)
+  const response = await makeAuthRequest('GET', `/api/entities/${entityId}/history`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -2779,8 +2779,8 @@ async function testGetVersionsWithDeletedEntity() {
   // Restore
   await makeAuthRequest('POST', `/api/entities/${entityId}/restore`);
 
-  // Get all versions
-  const response = await makeRequest('GET', `/api/entities/${entityId}/versions`);
+  // Get all versions (authenticated because entity has ACL from creator)
+  const response = await makeAuthRequest('GET', `/api/entities/${entityId}/versions`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(

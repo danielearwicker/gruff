@@ -843,10 +843,17 @@ entities.post('/:id/restore', requireAuth(), async c => {
 /**
  * GET /api/entities/:id/versions
  * Get all versions of an entity
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the entity
+ * - Entities with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/versions', async c => {
+entities.get('/:id/versions', optionalAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   try {
     // First, find the latest version to ensure the entity exists
@@ -854,6 +861,21 @@ entities.get('/:id/versions', async c => {
 
     if (!latestVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission
+    const aclId = latestVersion.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (aclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+      }
     }
 
     // Now get all versions in the chain using recursive CTE
@@ -910,11 +932,18 @@ entities.get('/:id/versions', async c => {
 /**
  * GET /api/entities/:id/versions/:version
  * Get a specific version of an entity
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the entity
+ * - Entities with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/versions/:version', async c => {
+entities.get('/:id/versions/:version', optionalAuth(), async c => {
   const id = c.req.param('id');
   const versionParam = c.req.param('version');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   try {
     // Parse version number
@@ -928,6 +957,21 @@ entities.get('/:id/versions/:version', async c => {
 
     if (!latestVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission
+    const aclId = latestVersion.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (aclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+      }
     }
 
     // Find the specific version in the chain
@@ -987,10 +1031,17 @@ entities.get('/:id/versions/:version', async c => {
 /**
  * GET /api/entities/:id/history
  * Get version history with diffs showing what changed between versions
+ *
+ * Permission checking:
+ * - Authenticated users must have read permission on the entity
+ * - Entities with NULL acl_id are accessible to all authenticated users
+ * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/history', async c => {
+entities.get('/:id/history', optionalAuth(), async c => {
   const id = c.req.param('id');
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
 
   try {
     // First, find the latest version to ensure the entity exists
@@ -998,6 +1049,21 @@ entities.get('/:id/history', async c => {
 
     if (!latestVersion) {
       return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission
+    const aclId = latestVersion.acl_id as number | null;
+    if (user) {
+      // Authenticated user: check if they have read permission
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (aclId !== null) {
+        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+      }
     }
 
     // Get all versions in order
