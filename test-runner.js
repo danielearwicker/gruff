@@ -12,7 +12,7 @@
  * Engineers should add new test functions as features are implemented.
  */
 
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { existsSync, rmSync } from 'fs';
 import { setTimeout as sleep } from 'timers/promises';
 
@@ -394,6 +394,10 @@ function runWranglerCommand(args) {
 async function startDevServer() {
   logSection('Starting Dev Server');
 
+  // Kill any orphaned processes from previous runs before starting
+  killProcessOnPort(8787);
+  killWorkerdProcesses();
+
   return new Promise((resolve, reject) => {
     // Use isolated persist directory for tests to avoid conflicts with other dev servers
     devServerProcess = spawn(
@@ -456,6 +460,63 @@ async function startDevServer() {
   });
 }
 
+/**
+ * Kill any process using the specified port.
+ * This handles orphaned workerd processes from previous test runs.
+ */
+function killProcessOnPort(port) {
+  try {
+    // Get PIDs of processes listening on the port
+    const result = execSync(`lsof -t -i :${port} 2>/dev/null || true`, { encoding: 'utf-8' });
+    const pids = result
+      .trim()
+      .split('\n')
+      .filter(pid => pid);
+
+    if (pids.length > 0) {
+      log(`Killing orphaned processes on port ${port}: ${pids.join(', ')}`, colors.yellow);
+      for (const pid of pids) {
+        try {
+          process.kill(parseInt(pid, 10), 'SIGKILL');
+        } catch {
+          // Process may already be dead
+        }
+      }
+      // Give the OS time to release the port
+      execSync('sleep 1');
+    }
+  } catch {
+    // lsof may not be available or port is free
+  }
+}
+
+/**
+ * Kill all workerd processes spawned by this project.
+ * workerd processes may not be in the same process group as wrangler.
+ */
+function killWorkerdProcesses() {
+  try {
+    // Find workerd processes running from this project's node_modules
+    const result = execSync(`pgrep -f 'workerd.*localhost:8787' 2>/dev/null || true`, {
+      encoding: 'utf-8',
+    });
+    const pids = result
+      .trim()
+      .split('\n')
+      .filter(pid => pid);
+
+    for (const pid of pids) {
+      try {
+        process.kill(parseInt(pid, 10), 'SIGKILL');
+      } catch {
+        // Process may already be dead
+      }
+    }
+  } catch {
+    // pgrep may not find anything
+  }
+}
+
 async function stopDevServer() {
   if (devServerProcess) {
     log('\nStopping dev server...', colors.yellow);
@@ -468,7 +529,7 @@ async function stopDevServer() {
     }
 
     // Give it time to shut down gracefully
-    await sleep(1000);
+    await sleep(500);
 
     // Force kill the process group if still running
     try {
@@ -477,7 +538,14 @@ async function stopDevServer() {
       // Process group may already be dead
     }
 
+    // Also kill any workerd processes that may have escaped the process group
+    killWorkerdProcesses();
+
+    // Ensure port is released
+    killProcessOnPort(8787);
+
     logInfo('Dev server stopped');
+    devServerProcess = null;
   }
 }
 
@@ -14691,6 +14759,21 @@ process.on('SIGINT', async () => {
   log('\n\nReceived SIGINT, cleaning up...', colors.yellow);
   await stopDevServer();
   process.exit(130);
+});
+
+// Handle cleanup on uncaught exceptions
+process.on('uncaughtException', async error => {
+  log(`\n\nUncaught exception: ${error.message}`, colors.red);
+  console.error(error.stack);
+  await stopDevServer();
+  process.exit(1);
+});
+
+// Handle cleanup on unhandled promise rejections
+process.on('unhandledRejection', async reason => {
+  log(`\n\nUnhandled rejection: ${reason}`, colors.red);
+  await stopDevServer();
+  process.exit(1);
 });
 
 // Run the test suite

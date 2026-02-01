@@ -20,7 +20,9 @@
       "Bash(npm run format:check:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run format:*)",
-      "Bash(npm run tests:*)"
+      "Bash(npm run tests:*)",
+      "Bash(ps:*)",
+      "Bash(kill:*)"
     ]
   }
 }
