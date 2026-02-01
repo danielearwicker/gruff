@@ -25,6 +25,10 @@ You **MUST** check for TS type errors (`npx tsc`) and lint errors (`npm run lint
 
 You **MUST** run `npm run format:check` to ensure the code is correctly formatted with prettier, or just run `npm run format` to reformat it. This is essentially because the CI pipeline runs the check, so a commit that is not formatted correctly is entirely invalid.
 
+## Fix Broken Windows!
+
+Be a good engineer: if you spot a broken test, even if it's not in the area you're working on and you suspect it was already broken before you started work, **investigate and fix it**. Leave the codebase in a better state than you found it, so the next engineer (which may be you!) doesn't have to waste time stepping over the accumulating mess.
+
 ## What to do if there's nothing to do!
 
 **IMPORTANT**: If there is no remaining work to implement, output the following exact string, and quit:

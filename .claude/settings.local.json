@@ -19,7 +19,8 @@
       "Bash(npm run lint:*)",
       "Bash(npm run format:check:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run format:*)"
+      "Bash(npm run format:*)",
+      "Bash(npm run tests:*)"
     ]
   }
 }
