@@ -14,7 +14,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `POST /api/auth/register` - Register new user with email/password
 - [✅] `POST /api/auth/login` - Login with email and password
 - [✅] `POST /api/auth/refresh` - Refresh access token using refresh token
-- [ ] `POST /api/auth/logout` - Logout by invalidating refresh token
+- [✅] `POST /api/auth/logout` - Logout by invalidating refresh token
 - [ ] `GET /api/auth/me` - Get authenticated user's profile (auth required)
 - [ ] `GET /api/auth/google` - Initiate Google OAuth2 sign-in
 - [ ] `GET /api/auth/google/callback` - Google OAuth2 callback handler
