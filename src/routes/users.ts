@@ -266,6 +266,21 @@ usersRouter.put(
     };
 
     try {
+      // Check if non-admin user is trying to modify is_active (admin-only field)
+      if (validated.is_active !== undefined && !currentUser.is_admin) {
+        logger.warn('Non-admin user attempted to modify is_active field', {
+          userId: currentUser.user_id,
+          targetUserId: userId,
+        });
+        return c.json(
+          response.error(
+            'Only administrators can modify the is_active field',
+            'ADMIN_REQUIRED'
+          ),
+          403
+        );
+      }
+
       // Check if user exists
       const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
         .bind(userId)
@@ -305,6 +320,7 @@ usersRouter.put(
       }
 
       if (validated.is_active !== undefined) {
+        // Only admins can reach this point (checked above)
         updates.push('is_active = ?');
         params.push(validated.is_active ? 1 : 0);
       }
