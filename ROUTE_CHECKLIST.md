@@ -54,7 +54,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 ## Entity Management Routes (`/api/entities`)
 
 - [✅] `POST /api/entities` - Create new entity (auth required)
-- [ ] `GET /api/entities` - List entities with filtering/pagination (ACL-aware)
+- [✅] `GET /api/entities` - List entities with filtering/pagination (ACL-aware)
 - [ ] `GET /api/entities/{id}` - Get latest version of entity (cached)
 - [ ] `PUT /api/entities/{id}` - Update entity (creates new version, auth required)
 - [ ] `DELETE /api/entities/{id}` - Soft delete entity (auth required)
