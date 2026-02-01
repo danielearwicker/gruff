@@ -28,7 +28,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `GET /api/users/{id}` - Get user details by ID
 - [✅] `PUT /api/users/{id}` - Update user profile (admin or self)
 - [✅] `GET /api/users/{id}/activity` - Get user's creation/edit history
-- [ ] `GET /api/users/{id}/groups` - List groups user directly belongs to
+- [✅] `GET /api/users/{id}/groups` - List groups user directly belongs to
 - [ ] `GET /api/users/{id}/effective-groups` - List all groups (including nested)
 
 ## Group Management Routes (`/api/groups`)
