@@ -7108,6 +7108,11 @@ ui.get('/search', async c => {
 ui.get('/groups', async c => {
   const user = c.get('user');
 
+  // Require authentication for groups browser
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/groups'));
+  }
+
   // Get filter/pagination parameters
   const nameFilter = c.req.query('name') || '';
   const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);

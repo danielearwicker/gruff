@@ -12734,11 +12734,23 @@ async function testGroupRequiresAuth() {
 // Group Administration UI Tests
 // ============================================================================
 
+async function testUIGroupListRequiresAuth() {
+  logTest('UI - Group List Page - Requires Authentication');
+
+  // Test that unauthenticated requests are redirected to login
+  const response = await fetch(`${DEV_SERVER_URL}/ui/groups`, { redirect: 'manual' });
+
+  assertEquals(response.status, 302, 'Status code should be 302 Redirect');
+  const location = response.headers.get('location');
+  assert(location.includes('/ui/auth/login'), 'Should redirect to login page');
+  assert(location.includes('return_to'), 'Should include return_to parameter');
+}
+
 async function testUIGroupListBasic() {
   logTest('UI - Group List Page - Basic View');
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/groups');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(
@@ -12763,9 +12775,9 @@ async function testUIGroupListWithData() {
   });
   const groupId = groupResponse.data.data.id;
 
-  // Fetch the group list page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups`);
-  const html = await response.text();
+  // Fetch the group list page (requires authentication)
+  const response = await makeAuthenticatedUIRequest('/ui/groups');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('AAA UI List Test Group'), 'Should display the created group');
@@ -12784,9 +12796,9 @@ async function testUIGroupDetailBasic() {
   const groupId = groupResponse.data.data.id;
   const groupName = groupResponse.data.data.name;
 
-  // Fetch the group detail page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}`);
-  const html = await response.text();
+  // Fetch the group detail page (requires authentication)
+  const response = await makeAuthenticatedUIRequest(`/ui/groups/${groupId}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes(`Group: ${groupName}`), 'Should display group name in title');
@@ -12795,14 +12807,15 @@ async function testUIGroupDetailBasic() {
   assert(html.includes('User Members'), 'Should have user members section');
   assert(html.includes('Nested Group Members'), 'Should have nested group members section');
   // Note: Add Member, Edit Group, and Delete Group buttons are admin-only
-  // and not visible when fetching without authentication
+  // and not visible when non-admin user is authenticated
 }
 
 async function testUIGroupDetailNotFound() {
   logTest('UI - Group Detail Page - Not Found');
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/non-existent-group-id`);
-  const html = await response.text();
+  // Requires authentication
+  const response = await makeAuthenticatedUIRequest('/ui/groups/non-existent-group-id');
+  const html = response.text;
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(html.includes('Group Not Found'), 'Should show not found message');
@@ -12832,13 +12845,13 @@ async function testUIGroupDetailWithMembers() {
     member_id: userId,
   });
 
-  // Fetch the group detail page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/groups/${groupId}`);
-  const html = await response.text();
+  // Fetch the group detail page (requires authentication)
+  const response = await makeAuthenticatedUIRequest(`/ui/groups/${groupId}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Member Tester'), 'Should display member name');
-  // Note: Remove button is admin-only and not visible when fetching without authentication
+  // Note: Remove button is admin-only and not visible when non-admin user is authenticated
 }
 
 async function testUIGroupCreateForm() {
@@ -14659,6 +14672,7 @@ async function runTests() {
     testGroupRequiresAuth,
 
     // Group Administration UI tests
+    testUIGroupListRequiresAuth,
     testUIGroupListBasic,
     testUIGroupListWithData,
     testUIGroupDetailBasic,

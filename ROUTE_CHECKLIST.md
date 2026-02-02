@@ -144,7 +144,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `GET /ui/entities` - Entities browser (auth required)
 - [✅] `GET /ui/entities/{id}` - Entity detail page (auth required)
 - [✅] `GET /ui/types` - Types browser (auth required)
-- [ ] `GET /ui/groups` - Groups browser (auth required)
+- [✅] `GET /ui/groups` - Groups browser (auth required)
 - [ ] `GET /ui/users` - Users browser (admin only)
 - [ ] `GET /ui/audit` - Audit log viewer (auth required)
 
