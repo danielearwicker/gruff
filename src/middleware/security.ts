@@ -144,9 +144,13 @@ export function createCorsMiddleware(config: SecurityConfig = {}): MiddlewareHan
  * - Permissions-Policy
  *
  * @param config - Security configuration options
+ * @param options - Additional options (e.g., skipCsp for routes that set their own CSP)
  * @returns Hono middleware handler for security headers
  */
-export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): MiddlewareHandler {
+export function createSecurityHeadersMiddleware(
+  config: SecurityConfig = {},
+  options: { skipCsp?: boolean } = {}
+): MiddlewareHandler {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
   // Build HSTS value
@@ -178,10 +182,13 @@ export function createSecurityHeadersMiddleware(config: SecurityConfig = {}): Mi
   };
 
   return async (c, next) => {
+    // Add custom CSP header before proceeding (unless skipped for routes that set their own CSP)
+    // Setting it before next() allows downstream middleware to override it if needed
+    if (!options.skipCsp) {
+      c.header('Content-Security-Policy', mergedConfig.contentSecurityPolicy);
+    }
     // Apply the standard secure headers
     await secureHeaders(headerOptions)(c, next);
-    // Add custom CSP header since secureHeaders doesn't support CSP configuration
-    c.header('Content-Security-Policy', mergedConfig.contentSecurityPolicy);
   };
 }
 
