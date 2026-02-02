@@ -531,7 +531,7 @@ PUT    /api/users/{id}             # Update user profile
 GET    /api/users/{id}/activity    # Get user's creation/edit history
 ```
 
-### 🟦 Admin Role Management Endpoint
+### ✅ Admin Role Management Endpoint
 
 ```
 PUT    /api/users/{id}/admin          # Grant or revoke admin role (admin only)
@@ -547,11 +547,11 @@ PUT    /api/users/{id}/admin          # Grant or revoke admin role (admin only)
   }
   ```
 - **Constraints**:
-  - 🟦 Only existing admins can grant or revoke admin status
-  - 🟦 Admins cannot revoke their own admin status (prevents lockout)
-  - 🟦 At least one admin must remain in the system
+  - ✅ Only existing admins can grant or revoke admin status
+  - ✅ Admins cannot revoke their own admin status (prevents lockout)
+  - ✅ At least one admin must remain in the system
 - **Response**: Updated user object with new admin status
-- **Audit**: 🟦 All admin role changes are logged to the audit log with operation type `admin_role_change`
+- **Audit**: ✅ All admin role changes are logged to the audit log with operation type `admin_role_change`
 
 ### ✅ Group Management Endpoints
 
@@ -1140,7 +1140,7 @@ The entity and link detail views include an ACL section for managing access cont
 - HttpOnly and Secure flags for production
 - Automatic token refresh when access token expires
 
-#### 🟦 Permission Levels
+#### ✅ Permission Levels
 
 - Access controlled via ACLs on entities and links (see Access Control Lists section)
 - Resources with no ACL (NULL acl_id) are accessible to all authenticated users
@@ -1277,17 +1277,17 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/users`     | GET    | User list (admin only)        |
 | `/ui/users/:id` | GET    | User detail page (admin only) |
 
-#### 🟦 User Detail Page Admin Management
+#### ✅ User Detail Page Admin Management
 
 The user detail page (`/ui/users/:id`) includes admin role management:
 
-- 🟦 **Admin status badge**: Shows whether user is an admin
-- 🟦 **Toggle admin button**: Available when viewing other users (not self)
+- ✅ **Admin status badge**: Shows whether user is an admin
+- ✅ **Toggle admin button**: Available when viewing other users (not self)
   - "Grant Admin" button for non-admin users
   - "Revoke Admin" button for admin users
-- 🟦 **Confirmation dialog**: Required before changing admin status
-- 🟦 **Self-protection**: Button disabled when viewing own profile with tooltip explaining why
-- 🟦 **Last admin protection**: Button disabled if user is the only remaining admin
+- ✅ **Confirmation dialog**: Required before changing admin status
+- ✅ **Self-protection**: Button disabled when viewing own profile with tooltip explaining why
+- ✅ **Last admin protection**: Button disabled if user is the only remaining admin
 
 ### ✅ Audit Log Routes
 

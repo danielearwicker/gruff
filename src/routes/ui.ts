@@ -8845,6 +8845,16 @@ ui.get('/users/:id', async c => {
       created_at: number;
     }>();
 
+  // Get admin count to determine if this is the last admin
+  const adminCountResult = await c.env.DB.prepare(
+    'SELECT COUNT(*) as count FROM users WHERE is_admin = 1'
+  ).first<{ count: number }>();
+  const adminCount = adminCountResult?.count || 0;
+
+  // Determine if admin toggle button should be disabled
+  const isSelf = user.user_id === targetUser.id;
+  const isLastAdmin = targetUser.is_admin && adminCount <= 1;
+
   // Build groups section
   const groupsSection =
     groups.length > 0
@@ -8941,6 +8951,37 @@ ui.get('/users/:id', async c => {
       : '<p class="muted">No links created by this user.</p>';
 
   const content = `
+    <style>
+      .modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+      .modal-content {
+        background-color: var(--color-bg);
+        padding: 2rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--color-border);
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .modal-content h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+      }
+      .modal-content p {
+        margin-bottom: 0.5rem;
+      }
+    </style>
+
     <h2>User Details</h2>
 
     <div class="card">
@@ -8988,6 +9029,114 @@ ui.get('/users/:id', async c => {
 
     <h3>Recent Links</h3>
     ${linksSection}
+
+    <h3>Admin Management</h3>
+    <div class="card">
+      <p style="margin-bottom: 1rem;">
+        Current admin status: ${targetUser.is_admin ? '<span class="badge">Admin</span>' : '<span class="muted">Regular User</span>'}
+      </p>
+      ${
+        isSelf
+          ? `
+        <button class="button secondary" disabled title="You cannot change your own admin status">
+          ${targetUser.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+        </button>
+        <p class="muted small" style="margin-top: 0.5rem;">
+          You cannot change your own admin status. Another admin must do this.
+        </p>
+      `
+          : isLastAdmin
+            ? `
+        <button class="button secondary" disabled title="Cannot revoke - this is the only admin">
+          Revoke Admin
+        </button>
+        <p class="muted small" style="margin-top: 0.5rem;">
+          Cannot revoke admin status - this is the only admin in the system.
+        </p>
+      `
+            : `
+        <button
+          class="button ${targetUser.is_admin ? 'danger' : 'primary'}"
+          onclick="showAdminConfirmDialog()"
+        >
+          ${targetUser.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+        </button>
+      `
+      }
+    </div>
+
+    <!-- Admin Change Confirmation Dialog -->
+    <div id="admin-confirm-dialog" class="modal" style="display: none;">
+      <div class="modal-content">
+        <h3>${targetUser.is_admin ? 'Revoke Admin Status' : 'Grant Admin Status'}</h3>
+        <p>
+          Are you sure you want to ${targetUser.is_admin ? 'revoke admin status from' : 'grant admin status to'}
+          <strong>${escapeHtml(targetUser.display_name || targetUser.email)}</strong>?
+        </p>
+        ${
+          targetUser.is_admin
+            ? '<p class="muted small">This user will no longer be able to manage users, groups, or view audit logs.</p>'
+            : '<p class="muted small">This user will be able to manage users, groups, and view audit logs.</p>'
+        }
+        <div class="button-group" style="margin-top: 1rem;">
+          <button class="button secondary" onclick="hideAdminConfirmDialog()">Cancel</button>
+          <button class="button ${targetUser.is_admin ? 'danger' : 'primary'}" onclick="changeAdminStatus()">
+            ${targetUser.is_admin ? 'Revoke Admin' : 'Grant Admin'}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function showAdminConfirmDialog() {
+        document.getElementById('admin-confirm-dialog').style.display = 'flex';
+      }
+
+      function hideAdminConfirmDialog() {
+        document.getElementById('admin-confirm-dialog').style.display = 'none';
+      }
+
+      async function changeAdminStatus() {
+        const button = event.target;
+        button.disabled = true;
+        button.textContent = 'Processing...';
+
+        try {
+          const response = await fetch('/api/users/${escapeHtml(targetUser.id)}/admin', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ is_admin: ${!targetUser.is_admin} })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            // Reload the page to show updated status
+            window.location.reload();
+          } else {
+            alert('Error: ' + (data.error || 'Failed to change admin status'));
+            hideAdminConfirmDialog();
+            button.disabled = false;
+            button.textContent = '${targetUser.is_admin ? 'Revoke Admin' : 'Grant Admin'}';
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+          hideAdminConfirmDialog();
+          button.disabled = false;
+          button.textContent = '${targetUser.is_admin ? 'Revoke Admin' : 'Grant Admin'}';
+        }
+      }
+
+      // Close dialog when clicking outside
+      document.getElementById('admin-confirm-dialog').addEventListener('click', function(e) {
+        if (e.target === this) {
+          hideAdminConfirmDialog();
+        }
+      });
+    </script>
 
     <div class="button-group" style="margin-top: 2rem;">
       <a href="/ui/users" class="button secondary">Back to Users</a>

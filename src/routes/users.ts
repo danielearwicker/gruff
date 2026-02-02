@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
-import { updateUserSchema } from '../schemas/index.js';
+import { updateUserSchema, adminRoleChangeSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { z } from 'zod';
@@ -23,6 +23,7 @@ import {
   CACHE_TTL,
 } from '../utils/cache.js';
 import { buildAclFilterClause, filterByAclPermission } from '../utils/acl.js';
+import { logUserOperation } from '../utils/audit.js';
 
 type Bindings = {
   DB: D1Database;
@@ -831,5 +832,153 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
     );
   }
 });
+
+/**
+ * PUT /api/users/{id}/admin
+ *
+ * Grant or revoke admin role for a user (admin only)
+ *
+ * Constraints:
+ * - Only existing admins can grant or revoke admin status
+ * - Admins cannot revoke their own admin status (prevents lockout)
+ * - At least one admin must remain in the system
+ *
+ * Request body: { is_admin: boolean }
+ */
+usersRouter.put(
+  '/:id/admin',
+  requireAuth(),
+  requireAdmin(),
+  validateJson(adminRoleChangeSchema),
+  async c => {
+    const logger = getLogger(c);
+    const targetUserId = c.req.param('id');
+    const currentUser = c.get('user');
+    const validated = c.get('validated_json') as { is_admin: boolean };
+
+    try {
+      // Constraint: Admins cannot revoke their own admin status
+      if (currentUser.user_id === targetUserId && !validated.is_admin) {
+        logger.warn('Admin attempted to revoke own admin status', {
+          userId: currentUser.user_id,
+        });
+        return c.json(
+          response.error(
+            'Cannot revoke your own admin status. Another admin must do this.',
+            'SELF_ADMIN_REVOKE'
+          ),
+          400
+        );
+      }
+
+      // Check if target user exists
+      const targetUser = await c.env.DB.prepare(
+        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+      )
+        .bind(targetUserId)
+        .first<{
+          id: string;
+          email: string;
+          display_name: string | null;
+          provider: string;
+          created_at: number;
+          updated_at: number;
+          is_active: number;
+          is_admin: number;
+        }>();
+
+      if (!targetUser) {
+        logger.warn('User not found for admin role change', { targetUserId });
+        return c.json(response.notFound('User'), 404);
+      }
+
+      // If revoking admin status, ensure at least one admin remains
+      if (!validated.is_admin && targetUser.is_admin) {
+        const adminCountResult = await c.env.DB.prepare(
+          'SELECT COUNT(*) as count FROM users WHERE is_admin = 1'
+        ).first<{ count: number }>();
+
+        if (adminCountResult && adminCountResult.count <= 1) {
+          logger.warn('Attempted to revoke last admin', {
+            targetUserId,
+            adminCount: adminCountResult.count,
+          });
+          return c.json(
+            response.error(
+              'Cannot revoke admin status. At least one admin must remain in the system.',
+              'LAST_ADMIN'
+            ),
+            400
+          );
+        }
+      }
+
+      // Check if status is actually changing
+      const currentIsAdmin = !!targetUser.is_admin;
+      if (currentIsAdmin === validated.is_admin) {
+        logger.info('Admin status unchanged', {
+          targetUserId,
+          is_admin: validated.is_admin,
+        });
+        // Return success but with the current unchanged user data
+        return c.json(
+          response.updated({
+            id: targetUser.id,
+            email: targetUser.email,
+            display_name: targetUser.display_name,
+            provider: targetUser.provider,
+            created_at: targetUser.created_at,
+            updated_at: targetUser.updated_at,
+            is_active: !!targetUser.is_active,
+            is_admin: currentIsAdmin,
+          })
+        );
+      }
+
+      // Update admin status
+      const now = Math.floor(Date.now() / 1000);
+      await c.env.DB.prepare('UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?')
+        .bind(validated.is_admin ? 1 : 0, now, targetUserId)
+        .run();
+
+      // Log the admin role change to audit log
+      await logUserOperation(c.env.DB, c, 'admin_role_change', targetUserId, currentUser.user_id, {
+        previous_is_admin: currentIsAdmin,
+        new_is_admin: validated.is_admin,
+        changed_by: currentUser.user_id,
+      });
+
+      logger.info('Admin status changed', {
+        targetUserId,
+        changedBy: currentUser.user_id,
+        previous_is_admin: currentIsAdmin,
+        new_is_admin: validated.is_admin,
+      });
+
+      // Fetch and return updated user
+      const updatedUser = await c.env.DB.prepare(
+        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+      )
+        .bind(targetUserId)
+        .first();
+
+      return c.json(
+        response.updated({
+          id: updatedUser!.id,
+          email: updatedUser!.email,
+          display_name: updatedUser!.display_name,
+          provider: updatedUser!.provider,
+          created_at: updatedUser!.created_at,
+          updated_at: updatedUser!.updated_at,
+          is_active: !!updatedUser!.is_active,
+          is_admin: !!updatedUser!.is_admin,
+        })
+      );
+    } catch (error) {
+      logger.error('Error changing admin status', error as Error, { targetUserId });
+      return c.json(response.error('Failed to change admin status', 'ADMIN_CHANGE_FAILED'), 500);
+    }
+  }
+);
 
 export default usersRouter;

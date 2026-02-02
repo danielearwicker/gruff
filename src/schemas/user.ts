@@ -49,6 +49,11 @@ export const updateUserSchema = z.object({
   is_active: sqliteBooleanSchema.optional(),
 });
 
+// Admin role change schema
+export const adminRoleChangeSchema = z.object({
+  is_admin: z.boolean(),
+});
+
 // User response schema (without sensitive data)
 export const userResponseSchema = userSchema
   .omit({
@@ -104,6 +109,7 @@ export const oauthStateSchema = z.object({
 export type User = z.infer<typeof userSchema>;
 export type CreateUser = z.infer<typeof createUserSchema>;
 export type UpdateUser = z.infer<typeof updateUserSchema>;
+export type AdminRoleChange = z.infer<typeof adminRoleChangeSchema>;
 export type UserResponse = z.infer<typeof userResponseSchema>;
 export type Login = z.infer<typeof loginSchema>;
 export type RefreshToken = z.infer<typeof refreshTokenSchema>;

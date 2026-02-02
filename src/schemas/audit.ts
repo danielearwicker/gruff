@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { uuidSchema, timestampSchema, paginationQuerySchema } from './common.js';
 
 // Audit log operation types
-export const auditOperationSchema = z.enum(['create', 'update', 'delete', 'restore']);
+export const auditOperationSchema = z.enum([
+  'create',
+  'update',
+  'delete',
+  'restore',
+  'admin_role_change',
+]);
 
 // Audit log resource types
 export const auditResourceTypeSchema = z.enum(['entity', 'link', 'type', 'user']);

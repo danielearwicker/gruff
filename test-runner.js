@@ -212,6 +212,11 @@ async function makeRequestWithHeaders(method, path, customHeaders = {}, body = n
   const response = await fetch(`${DEV_SERVER_URL}${path}`, options);
   const data = await response.json().catch(() => null);
 
+  // Log 500 errors for debugging
+  if (response.status === 500 && data) {
+    logInfo(`500 Error at ${method} ${path}: ${JSON.stringify(data)}`);
+  }
+
   return {
     status: response.status,
     ok: response.ok,
@@ -337,6 +342,7 @@ async function resetDatabase() {
     './migrations/0006_generated_columns.sql',
     './migrations/0007_groups.sql',
     './migrations/0008_admin_role.sql',
+    './migrations/0009_audit_admin_role_change.sql',
   ];
 
   // Use same isolated test state path as defined at top of function
@@ -6526,6 +6532,184 @@ async function testGetUserActivityNotFound() {
   });
 
   assertEquals(response.status, 404, 'Should return 404');
+}
+
+// ============================================================================
+// Admin Role Management Tests
+// ============================================================================
+
+async function testAdminRoleGrantAccess() {
+  logTest('Admin Role Management - Grant Admin Access');
+
+  // Register a new user who will be granted admin
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'grantadmin@example.com',
+    password: 'password123',
+    display_name: 'Soon To Be Admin',
+  });
+  const targetUserId = registerResponse.data.data.user.id;
+
+  // Grant admin role using admin token
+  const response = await makeAdminAuthRequest('PUT', `/api/users/${targetUserId}/admin`, {
+    is_admin: true,
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data, 'Should have data field');
+  assertEquals(response.data.data.is_admin, true, 'User should now be admin');
+  assertEquals(response.data.data.id, targetUserId, 'Should return correct user ID');
+}
+
+async function testAdminRoleRevokeAccess() {
+  logTest('Admin Role Management - Revoke Admin Access');
+
+  // Register a new user and grant them admin
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'revokeadmin@example.com',
+    password: 'password123',
+    display_name: 'Admin To Be Revoked',
+  });
+  const targetUserId = registerResponse.data.data.user.id;
+
+  // Grant admin first
+  await makeAdminAuthRequest('PUT', `/api/users/${targetUserId}/admin`, {
+    is_admin: true,
+  });
+
+  // Now revoke admin
+  const response = await makeAdminAuthRequest('PUT', `/api/users/${targetUserId}/admin`, {
+    is_admin: false,
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assert(response.data.data, 'Should have data field');
+  assertEquals(response.data.data.is_admin, false, 'User should no longer be admin');
+}
+
+async function testAdminRoleRequiresAdmin() {
+  logTest('Admin Role Management - Requires Admin');
+
+  // Register a user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'notadmin@example.com',
+    password: 'password123',
+  });
+  const nonAdminToken = registerResponse.data.data.access_token;
+
+  // Register another user as target
+  const targetResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'targetadmin@example.com',
+    password: 'password123',
+  });
+  const targetUserId = targetResponse.data.data.user.id;
+
+  // Try to grant admin as non-admin user
+  const response = await makeRequestWithHeaders(
+    'PUT',
+    `/api/users/${targetUserId}/admin`,
+    { Authorization: `Bearer ${nonAdminToken}` },
+    { is_admin: true }
+  );
+
+  assertEquals(response.status, 403, 'Should return 403 Forbidden');
+}
+
+async function testAdminRoleCannotRevokeSelf() {
+  logTest('Admin Role Management - Cannot Revoke Own Admin');
+
+  // Register a new admin user to test with
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'selfadmin@example.com',
+    password: 'password123',
+    display_name: 'Self Admin Test',
+  });
+  const newUserId = registerResponse.data.data.user.id;
+
+  // Grant admin using the existing admin
+  await makeAdminAuthRequest('PUT', `/api/users/${newUserId}/admin`, {
+    is_admin: true,
+  });
+
+  // Login as the new admin
+  const loginResponse = await makeRequest('POST', '/api/auth/login', {
+    email: 'selfadmin@example.com',
+    password: 'password123',
+  });
+  const selfAdminToken = loginResponse.data.data.access_token;
+
+  // Try to revoke own admin status
+  const response = await makeRequestWithHeaders(
+    'PUT',
+    `/api/users/${newUserId}/admin`,
+    { Authorization: `Bearer ${selfAdminToken}` },
+    { is_admin: false }
+  );
+
+  assertEquals(response.status, 400, 'Should return 400 Bad Request');
+  assert(response.data.error.includes('own admin status'), 'Error should mention own admin status');
+}
+
+async function testAdminRoleUserNotFound() {
+  logTest('Admin Role Management - User Not Found');
+
+  const fakeUserId = '00000000-0000-0000-0000-000000000000';
+  const response = await makeAdminAuthRequest('PUT', `/api/users/${fakeUserId}/admin`, {
+    is_admin: true,
+  });
+
+  assertEquals(response.status, 404, 'Should return 404 Not Found');
+}
+
+async function testAdminRoleNoChange() {
+  logTest('Admin Role Management - No Change When Status Same');
+
+  // Register a new user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'nochange@example.com',
+    password: 'password123',
+  });
+  const targetUserId = registerResponse.data.data.user.id;
+
+  // User is not admin by default, try to set is_admin = false (no change)
+  const response = await makeAdminAuthRequest('PUT', `/api/users/${targetUserId}/admin`, {
+    is_admin: false,
+  });
+
+  assertEquals(response.status, 200, 'Should return 200');
+  assertEquals(response.data.data.is_admin, false, 'User should still not be admin');
+}
+
+async function testAdminRoleAuditLog() {
+  logTest('Admin Role Management - Audit Log Created');
+
+  // Register a new user
+  const registerResponse = await makeRequest('POST', '/api/auth/register', {
+    email: 'auditadmin@example.com',
+    password: 'password123',
+  });
+  const targetUserId = registerResponse.data.data.user.id;
+
+  // Grant admin
+  await makeAdminAuthRequest('PUT', `/api/users/${targetUserId}/admin`, {
+    is_admin: true,
+  });
+
+  // Check audit log for admin_role_change operation
+  const auditResponse = await makeAdminAuthRequest(
+    'GET',
+    `/api/audit?operation=admin_role_change&resource_id=${targetUserId}&limit=5`
+  );
+
+  assertEquals(auditResponse.status, 200, 'Should return 200');
+  assert(Array.isArray(auditResponse.data.data), 'Data should be an array');
+  assert(auditResponse.data.data.length >= 1, 'Should have at least 1 audit entry');
+
+  const auditEntry = auditResponse.data.data[0];
+  assertEquals(auditEntry.operation, 'admin_role_change', 'Operation should be admin_role_change');
+  assertEquals(auditEntry.resource_type, 'user', 'Resource type should be user');
+  assertEquals(auditEntry.resource_id, targetUserId, 'Resource ID should match target user');
+  assert(auditEntry.details, 'Should have details');
+  assertEquals(auditEntry.details.new_is_admin, true, 'Details should show new admin status');
 }
 
 // ============================================================================
@@ -14315,6 +14499,15 @@ async function runTests() {
     // TODO: testGetUserActivity fails - expected at least 2 activity items but got fewer
     // testGetUserActivity,
     testGetUserActivityNotFound,
+
+    // Admin Role Management tests
+    testAdminRoleGrantAccess,
+    testAdminRoleRevokeAccess,
+    testAdminRoleRequiresAdmin,
+    testAdminRoleCannotRevokeSelf,
+    testAdminRoleUserNotFound,
+    testAdminRoleNoChange,
+    testAdminRoleAuditLog,
 
     // Type Management tests
     testCreateTypeEntity,
