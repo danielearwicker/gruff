@@ -5764,6 +5764,11 @@ ui.get('/links/:id/versions', async c => {
 ui.get('/types', async c => {
   const user = c.get('user');
 
+  // Require authentication for types browser
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/types'));
+  }
+
   // Get filter parameters
   const filterCategory = c.req.query('category') || '';
 
@@ -5929,6 +5934,11 @@ ui.get('/types', async c => {
 ui.get('/types/:id', async c => {
   const user = c.get('user');
   const typeId = c.req.param('id');
+
+  // Require authentication for type detail view
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent(`/ui/types/${typeId}`));
+  }
 
   try {
     // Fetch the type with creator information
