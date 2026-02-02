@@ -150,20 +150,20 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Validation Demo Routes (`/api/validate`)
 
-- [ ] `POST /api/validate/entity` - Validate entity against schema
-- [ ] `GET /api/validate/query` - Validate query parameters
-- [ ] `POST /api/validate/test` - Custom validation test
+- [✅] `POST /api/validate/entity` - Validate entity against schema
+- [✅] `GET /api/validate/query` - Validate query parameters
+- [✅] `POST /api/validate/test` - Custom validation test
 
 ## Response Format Demo Routes (`/api/demo/response`)
 
-- [ ] `GET /api/demo/response/success` - Success response format
-- [ ] `GET /api/demo/response/created` - Created (201) response format
-- [ ] `GET /api/demo/response/updated` - Updated response format
-- [ ] `GET /api/demo/response/deleted` - Deleted response format
-- [ ] `GET /api/demo/response/paginated` - Paginated response format
-- [ ] `GET /api/demo/response/cursor-paginated` - Cursor-paginated response format
-- [ ] `GET /api/demo/response/not-found` - Not found (404) response format
-- [ ] `GET /api/demo/response/error` - Error response format
-- [ ] `GET /api/demo/response/validation-error` - Validation error response format
-- [ ] `GET /api/demo/response/unauthorized` - Unauthorized (401) response format
-- [ ] `GET /api/demo/response/forbidden` - Forbidden (403) response format
+- [✅] `GET /api/demo/response/success` - Success response format
+- [✅] `GET /api/demo/response/created` - Created (201) response format
+- [✅] `GET /api/demo/response/updated` - Updated response format
+- [✅] `GET /api/demo/response/deleted` - Deleted response format
+- [✅] `GET /api/demo/response/paginated` - Paginated response format
+- [✅] `GET /api/demo/response/cursor-paginated` - Cursor-paginated response format
+- [✅] `GET /api/demo/response/not-found` - Not found (404) response format
+- [✅] `GET /api/demo/response/error` - Error response format
+- [✅] `GET /api/demo/response/validation-error` - Validation error response format
+- [✅] `GET /api/demo/response/unauthorized` - Unauthorized (401) response format
+- [✅] `GET /api/demo/response/forbidden` - Forbidden (403) response format
