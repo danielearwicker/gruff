@@ -5718,7 +5718,7 @@ async function testSearchEntitiesByType() {
   });
 
   // Search for person entities
-  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: personTypeId,
   });
 
@@ -5755,7 +5755,7 @@ async function testSearchEntitiesByProperty() {
   });
 
   // Search by string property
-  const searchByDept = await makeRequest('POST', '/api/search/entities', {
+  const searchByDept = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: employeeTypeId,
     properties: { department: 'Engineering' },
   });
@@ -5768,7 +5768,7 @@ async function testSearchEntitiesByProperty() {
   );
 
   // Search by number property
-  const searchBySalary = await makeRequest('POST', '/api/search/entities', {
+  const searchBySalary = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: employeeTypeId,
     properties: { salary: 100000 },
   });
@@ -5806,7 +5806,7 @@ async function testSearchEntitiesByMultipleProperties() {
   });
 
   // Search by multiple properties
-  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: productTypeId,
     properties: {
       category: 'Electronics',
@@ -5845,7 +5845,7 @@ async function testSearchEntitiesPagination() {
   }
 
   // First page with limit
-  const page1 = await makeRequest('POST', '/api/search/entities', {
+  const page1 = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: itemTypeId,
     limit: 10,
   });
@@ -5856,7 +5856,7 @@ async function testSearchEntitiesPagination() {
   assert(page1.data.metadata.cursor, 'Should provide next cursor');
 
   // Second page using cursor
-  const page2 = await makeRequest('POST', '/api/search/entities', {
+  const page2 = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: itemTypeId,
     limit: 10,
     cursor: page1.data.metadata.cursor,
@@ -5909,7 +5909,7 @@ async function testSearchLinksBasic() {
   });
 
   // Search for links by type
-  const searchResponse = await makeRequest('POST', '/api/search/links', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/links', {
     type_id: friendshipTypeId,
   });
 
@@ -5987,7 +5987,7 @@ async function testSearchLinksBySourceEntity() {
   });
 
   // Search for links from author1
-  const searchResponse = await makeRequest('POST', '/api/search/links', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/links', {
     source_entity_id: author1Id,
   });
 
@@ -6037,7 +6037,7 @@ async function testSearchLinksWithEntityInfo() {
   });
 
   // Search for links
-  const searchResponse = await makeRequest('POST', '/api/search/links', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/links', {
     type_id: roadTypeId,
   });
 
@@ -6081,15 +6081,14 @@ async function testTypeAheadSuggestions() {
   });
 
   // Test partial match for "San"
-  const response = await fetch(`${DEV_SERVER_URL}/api/search/suggest?query=San&property_path=name`);
-  const data = await response.json();
+  const response = await makeAuthRequest('GET', '/api/search/suggest?query=San&property_path=name');
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(data.data, 'Should have data field');
-  assert(data.data.length >= 3, 'Should find at least 3 cities starting with/containing "San"');
+  assert(response.data.data, 'Should have data field');
+  assert(response.data.data.length >= 3, 'Should find at least 3 cities starting with/containing "San"');
 
   // Verify all results contain "San"
-  const allContainSan = data.data.every(
+  const allContainSan = response.data.data.every(
     item => item.matched_value && item.matched_value.includes('San')
   );
   assert(allContainSan, 'All suggestions should contain "San" in the matched value');
@@ -6126,16 +6125,13 @@ async function testTypeAheadSuggestionsWithTypeFilter() {
   });
 
   // Search only for cars with "Honda"
-  const response = await fetch(
-    `${DEV_SERVER_URL}/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`
-  );
-  const data = await response.json();
+  const response = await makeAuthRequest('GET', `/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`);
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(data.data.length >= 2, 'Should find at least 2 Honda cars');
+  assert(response.data.data.length >= 2, 'Should find at least 2 Honda cars');
 
   // Verify all results are of car type
-  const allCars = data.data.every(item => item.type_id === carTypeId);
+  const allCars = response.data.data.every(item => item.type_id === carTypeId);
   assert(allCars, 'All suggestions should be of car type');
 }
 
@@ -6159,13 +6155,10 @@ async function testTypeAheadSuggestionsLimit() {
   }
 
   // Request with limit of 3
-  const response = await fetch(
-    `${DEV_SERVER_URL}/api/search/suggest?query=R&property_path=name&limit=3`
-  );
-  const data = await response.json();
+  const response = await makeAuthRequest('GET', '/api/search/suggest?query=R&property_path=name&limit=3');
 
   assertEquals(response.status, 200, 'Should return 200');
-  assertEquals(data.data.length, 3, 'Should return exactly 3 suggestions');
+  assertEquals(response.data.data.length, 3, 'Should return exactly 3 suggestions');
 }
 
 async function testTypeAheadSuggestionsCustomProperty() {
@@ -6202,20 +6195,17 @@ async function testTypeAheadSuggestionsCustomProperty() {
   });
 
   // Search by author property instead of name
-  const response = await fetch(
-    `${DEV_SERVER_URL}/api/search/suggest?query=George&property_path=author`
-  );
-  const data = await response.json();
+  const response = await makeAuthRequest('GET', '/api/search/suggest?query=George&property_path=author');
 
   assertEquals(response.status, 200, 'Should return 200');
-  assert(data.data.length >= 2, 'Should find at least 2 books by George');
+  assert(response.data.data.length >= 2, 'Should find at least 2 books by George');
 
   // Verify matched_value contains the searched property
-  const allMatchGeorge = data.data.every(
+  const allMatchGeorge = response.data.data.every(
     item => item.matched_value && item.matched_value.includes('George')
   );
   assert(allMatchGeorge, 'All suggestions should have "George" in author field');
-  assertEquals(data.data[0].property_path, 'author', 'Should indicate matched property path');
+  assertEquals(response.data.data[0].property_path, 'author', 'Should indicate matched property path');
 }
 
 // ============================================================================
@@ -6517,7 +6507,7 @@ async function testPropertyFilterEquals() {
   });
 
   // Search with eq operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'age', operator: 'eq', value: 25 }],
   });
@@ -6551,7 +6541,7 @@ async function testPropertyFilterGreaterThan() {
   });
 
   // Search with gt operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'price', operator: 'gt', value: 15 }],
   });
@@ -6568,7 +6558,7 @@ async function testPropertyFilterLessThanOrEqual() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search with lte operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'price', operator: 'lte', value: 20 }],
   });
@@ -6601,7 +6591,7 @@ async function testPropertyFilterLike() {
   });
 
   // Search with like operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'email', operator: 'like', value: '%@example.com' }],
   });
@@ -6618,7 +6608,7 @@ async function testPropertyFilterStartsWith() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search with starts_with operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'email', operator: 'starts_with', value: 'alice' }],
   });
@@ -6635,7 +6625,7 @@ async function testPropertyFilterContains() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search with contains operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'email', operator: 'contains', value: 'EXAMPLE' }],
   });
@@ -6671,7 +6661,7 @@ async function testPropertyFilterIn() {
   });
 
   // Search with in operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'status', operator: 'in', value: ['active', 'pending'] }],
   });
@@ -6703,7 +6693,7 @@ async function testPropertyFilterExists() {
   });
 
   // Search with exists operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'optional_field', operator: 'exists' }],
   });
@@ -6720,7 +6710,7 @@ async function testPropertyFilterNotExists() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search with not_exists operator
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'optional_field', operator: 'not_exists' }],
   });
@@ -6743,7 +6733,7 @@ async function testPropertyFilterMultipleConditions() {
   });
 
   // Search with multiple filters (AND logic)
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [
       { path: 'age', operator: 'eq', value: 25 },
@@ -6797,7 +6787,7 @@ async function testPropertyFilterOnLinks() {
   });
 
   // Search links with filter
-  const response = await makeRequest('POST', '/api/search/links', {
+  const response = await makeAuthRequest('POST', '/api/search/links', {
     type_id: linkTypeId,
     property_filters: [{ path: 'weight', operator: 'gte', value: 7 }],
   });
@@ -6811,7 +6801,7 @@ async function testPropertyFilterInvalidPath() {
   logTest('Property Filters - Invalid JSON Path');
 
   // Try to use invalid path with special characters
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     property_filters: [{ path: 'name; DROP TABLE entities; --', operator: 'eq', value: 'test' }],
   });
 
@@ -6857,7 +6847,7 @@ async function testNestedPropertyPathDotNotation() {
   });
 
   // Search using nested path with dot notation
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'address.city', operator: 'eq', value: 'New York' }],
   });
@@ -6906,7 +6896,7 @@ async function testNestedPropertyPathDeepNesting() {
   });
 
   // Search using deeply nested path
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'user.profile.settings.theme', operator: 'eq', value: 'dark' }],
   });
@@ -6942,7 +6932,7 @@ async function testNestedPropertyPathArrayIndexBracket() {
   });
 
   // Search using array index with bracket notation
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'tags[0]', operator: 'eq', value: 'featured' }],
   });
@@ -6960,7 +6950,7 @@ async function testNestedPropertyPathArrayIndexDot() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search using array index with dot notation
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'tags.1', operator: 'eq', value: 'clearance' }],
   });
@@ -7003,7 +6993,7 @@ async function testNestedPropertyPathMixedNotation() {
   });
 
   // Search using mixed notation: array index + nested property
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'items[0].product', operator: 'eq', value: 'Widget A' }],
   });
@@ -7021,7 +7011,7 @@ async function testNestedPropertyPathNumericComparison() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search for orders where first item price > 50
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'items[0].price', operator: 'gt', value: 50 }],
   });
@@ -7068,7 +7058,7 @@ async function testNestedPropertyPathExists() {
   });
 
   // Search for entities with profile.website existing
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'profile.website', operator: 'exists' }],
   });
@@ -7089,7 +7079,7 @@ async function testNestedPropertyPathNotExists() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search for entities where profile.website does NOT exist
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'profile.website', operator: 'not_exists' }],
   });
@@ -7106,7 +7096,7 @@ async function testNestedPropertyPathPatternMatching() {
   const typeId = typeResponse.data.data[0].id;
 
   // Search using contains on nested property
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'address.country', operator: 'eq', value: 'USA' }],
   });
@@ -7119,7 +7109,7 @@ async function testNestedPropertyPathInvalidNestedBrackets() {
   logTest('Nested Property Paths - Invalid Path with Nested Brackets');
 
   // Try to use nested brackets which should be invalid
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     property_filters: [{ path: 'data[[0]]', operator: 'eq', value: 'test' }],
   });
 
@@ -7131,7 +7121,7 @@ async function testNestedPropertyPathInvalidEmptyBrackets() {
   logTest('Nested Property Paths - Invalid Path with Empty Brackets');
 
   // Try to use empty brackets which should be invalid
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     property_filters: [{ path: 'data[]', operator: 'eq', value: 'test' }],
   });
 
@@ -7186,7 +7176,7 @@ async function testNestedPropertyPathOnLinks() {
   });
 
   // Search links with nested path filter
-  const response = await makeRequest('POST', '/api/search/links', {
+  const response = await makeAuthRequest('POST', '/api/search/links', {
     type_id: linkTypeId,
     property_filters: [{ path: 'metadata.strength', operator: 'gte', value: 7 }],
   });
@@ -7228,7 +7218,7 @@ async function testFilterExpressionSimple() {
   });
 
   // Test simple filter expression (just a property filter)
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: { path: 'name', operator: 'eq', value: 'Alice' },
   });
@@ -7245,7 +7235,7 @@ async function testFilterExpressionAndGroup() {
   const typeId = typeResponse.data.data[0].id;
 
   // Test AND group: status = 'active' AND age >= 30
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: {
       and: [
@@ -7267,7 +7257,7 @@ async function testFilterExpressionOrGroup() {
   const typeId = typeResponse.data.data[0].id;
 
   // Test OR group: name = 'Alice' OR name = 'Charlie'
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: {
       or: [
@@ -7290,7 +7280,7 @@ async function testFilterExpressionNestedAndOrGroups() {
   const typeId = typeResponse.data.data[0].id;
 
   // Test nested: status = 'active' AND (name = 'Alice' OR name = 'Bob')
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: {
       and: [
@@ -7318,7 +7308,7 @@ async function testFilterExpressionComplexConditions() {
   const typeId = typeResponse.data.data[0].id;
 
   // Test: (status = 'active' AND age < 30) OR (status = 'inactive')
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: {
       or: [
@@ -7359,7 +7349,7 @@ async function testFilterExpressionWithExistsOperator() {
   });
 
   // Test: email exists OR name = 'WithoutEmail'
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     filter_expression: {
       or: [
@@ -7414,7 +7404,7 @@ async function testFilterExpressionOnLinks() {
   });
 
   // Test: type = 'friend' OR strength >= 8
-  const response = await makeRequest('POST', '/api/search/links', {
+  const response = await makeAuthRequest('POST', '/api/search/links', {
     type_id: linkTypeId,
     filter_expression: {
       or: [
@@ -7437,7 +7427,7 @@ async function testFilterExpressionPrecedenceOverPropertyFilters() {
 
   // Provide both filter_expression and property_filters
   // filter_expression should take precedence
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: typeId,
     property_filters: [{ path: 'name', operator: 'eq', value: 'Charlie' }],
     filter_expression: { path: 'name', operator: 'eq', value: 'Alice' },
@@ -7455,7 +7445,7 @@ async function testFilterExpressionPrecedenceOverPropertyFilters() {
 async function testFilterExpressionInvalidPath() {
   logTest('Filter Expression - Invalid Path Error');
 
-  const response = await makeRequest('POST', '/api/search/entities', {
+  const response = await makeAuthRequest('POST', '/api/search/entities', {
     filter_expression: { path: 'data[[invalid]]', operator: 'eq', value: 'test' },
   });
 
@@ -8837,7 +8827,7 @@ async function testRateLimitPerCategory() {
   const readLimit = parseInt(readResponse.headers.get('X-RateLimit-Limit'), 10);
 
   // Make a request to a search endpoint - should have moderate limits
-  const searchResponse = await makeRequest('POST', '/api/search/entities', {});
+  const searchResponse = await makeAuthRequest('POST', '/api/search/entities', {});
   const searchLimit = parseInt(searchResponse.headers.get('X-RateLimit-Limit'), 10);
 
   // Make a request to a bulk endpoint - should have lower limits
@@ -11137,7 +11127,7 @@ async function testGeneratedColumnsQueryPerformance() {
   }
 
   // Search using the name property (should use indexed generated column)
-  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/entities', {
     property_filters: [{ path: 'name', operator: 'starts_with', value: 'GenColTest' }],
     limit: 20,
   });
@@ -11146,7 +11136,7 @@ async function testGeneratedColumnsQueryPerformance() {
   assert(searchResponse.data.data.length >= 5, 'Should find at least 5 entities');
 
   // Search using the status property (should use indexed generated column)
-  const statusSearchResponse = await makeRequest('POST', '/api/search/entities', {
+  const statusSearchResponse = await makeAuthRequest('POST', '/api/search/entities', {
     property_filters: [{ path: 'status', operator: 'eq', value: 'active' }],
     limit: 20,
   });
@@ -11829,7 +11819,7 @@ async function testQueryPerformanceTrackingSearchOperations() {
   assertEquals(createResponse.status, 201, 'Entity should be created for search test');
 
   // Test search operation (triggers search category query)
-  const searchResponse = await makeRequest('POST', '/api/search/entities', {
+  const searchResponse = await makeAuthRequest('POST', '/api/search/entities', {
     type_id: entityType.id,
     properties: { status: 'active' },
     limit: 10,
@@ -11839,7 +11829,7 @@ async function testQueryPerformanceTrackingSearchOperations() {
   assert(Array.isArray(searchResponse.data.data), 'Search should return results array');
 
   // Test suggest operation
-  const suggestResponse = await makeRequest('GET', '/api/search/suggest?query=Searchable&limit=5');
+  const suggestResponse = await makeAuthRequest('GET', '/api/search/suggest?query=Searchable&limit=5');
   assertEquals(suggestResponse.status, 200, 'Suggest should succeed with query tracking');
 
   logInfo('Search operations work correctly with query performance tracking');

@@ -89,9 +89,9 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Search Routes (`/api/search`)
 
-- [ ] `POST /api/search/entities` - Search entities with advanced filtering
-- [ ] `POST /api/search/links` - Search links with advanced filtering
-- [ ] `GET /api/search/suggest` - Type-ahead suggestions for properties
+- [✅] `POST /api/search/entities` - Search entities with advanced filtering
+- [✅] `POST /api/search/links` - Search links with advanced filtering
+- [✅] `GET /api/search/suggest` - Type-ahead suggestions for properties
 
 ## Bulk Operations Routes (`/api/bulk`)
 

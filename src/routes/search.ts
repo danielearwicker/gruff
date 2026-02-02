@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { buildPropertyFilters, buildFilterExpression } from '../utils/property-filters.js';
+import { buildAclFilterClause, filterByAclPermission } from '../utils/acl.js';
 import { z } from 'zod';
 
 type Bindings = {
@@ -17,10 +19,17 @@ const search = new Hono<{ Bindings: Bindings }>();
 /**
  * POST /api/search/entities
  * Search for entities based on criteria
+ *
+ * ACL filtering is applied when authenticated:
+ * - Authenticated users see entities they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.post('/entities', validateJson(searchEntitiesSchema), async c => {
+search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), async c => {
   const criteria = c.get('validated_json') as z.infer<typeof searchEntitiesSchema>;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c);
 
   logger.info('Searching entities', { criteria });
@@ -28,7 +37,23 @@ search.post('/entities', validateJson(searchEntitiesSchema), async c => {
   try {
     // Build the WHERE clause dynamically based on criteria
     const whereClauses: string[] = ['e.is_latest = 1'];
-    const bindings: (string | number | boolean)[] = [];
+    const bindings: unknown[] = [];
+
+    // Apply ACL filtering based on authentication status
+    let aclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      aclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+
+      if (aclFilter.useFilter) {
+        whereClauses.push(aclFilter.whereClause);
+        bindings.push(...aclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      whereClauses.push('e.acl_id IS NULL');
+    }
 
     // Type filter
     if (criteria.type_id) {
@@ -133,6 +158,9 @@ search.post('/entities', validateJson(searchEntitiesSchema), async c => {
     }
 
     // Query for entities (limit + 1 to check if there are more results)
+    // If using per-row ACL filtering, fetch more to account for filtered items
+    const fetchLimit = aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
+
     const query = `
       SELECT e.*, t.name as type_name, t.category as type_category
       FROM entities e
@@ -142,16 +170,25 @@ search.post('/entities', validateJson(searchEntitiesSchema), async c => {
       LIMIT ?
     `;
 
-    bindings.push(criteria.limit + 1);
+    bindings.push(fetchLimit);
 
     const results = await db
       .prepare(query)
       .bind(...bindings)
       .all();
 
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredResults = results.results;
+    if (aclFilter && !aclFilter.useFilter) {
+      filteredResults = filterByAclPermission(
+        results.results as Array<{ acl_id?: number | null }>,
+        aclFilter.accessibleAclIds
+      );
+    }
+
     // Check if there are more results
-    const hasMore = results.results.length > criteria.limit;
-    const entities = results.results.slice(0, criteria.limit);
+    const hasMore = filteredResults.length > criteria.limit;
+    const entities = hasMore ? filteredResults.slice(0, criteria.limit) : filteredResults;
 
     // Generate next cursor if there are more results
     let nextCursor = null;
@@ -196,10 +233,17 @@ search.post('/entities', validateJson(searchEntitiesSchema), async c => {
 /**
  * POST /api/search/links
  * Search for links based on criteria
+ *
+ * ACL filtering is applied when authenticated:
+ * - Authenticated users see links they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.post('/links', validateJson(searchLinksSchema), async c => {
+search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c => {
   const criteria = c.get('validated_json') as z.infer<typeof searchLinksSchema>;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c);
 
   logger.info('Searching links', { criteria });
@@ -207,7 +251,23 @@ search.post('/links', validateJson(searchLinksSchema), async c => {
   try {
     // Build the WHERE clause dynamically based on criteria
     const whereClauses: string[] = ['l.is_latest = 1'];
-    const bindings: (string | number | boolean)[] = [];
+    const bindings: unknown[] = [];
+
+    // Apply ACL filtering based on authentication status
+    let aclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      aclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
+
+      if (aclFilter.useFilter) {
+        whereClauses.push(aclFilter.whereClause);
+        bindings.push(...aclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      whereClauses.push('l.acl_id IS NULL');
+    }
 
     // Type filter
     if (criteria.type_id) {
@@ -319,6 +379,9 @@ search.post('/links', validateJson(searchLinksSchema), async c => {
     }
 
     // Query for links with type information and connected entities
+    // If using per-row ACL filtering, fetch more to account for filtered items
+    const fetchLimit = aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
+
     const query = `
       SELECT
         l.*,
@@ -343,16 +406,25 @@ search.post('/links', validateJson(searchLinksSchema), async c => {
       LIMIT ?
     `;
 
-    bindings.push(criteria.limit + 1);
+    bindings.push(fetchLimit);
 
     const results = await db
       .prepare(query)
       .bind(...bindings)
       .all();
 
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredResults = results.results;
+    if (aclFilter && !aclFilter.useFilter) {
+      filteredResults = filterByAclPermission(
+        results.results as Array<{ acl_id?: number | null }>,
+        aclFilter.accessibleAclIds
+      );
+    }
+
     // Check if there are more results
-    const hasMore = results.results.length > criteria.limit;
-    const links = results.results.slice(0, criteria.limit);
+    const hasMore = filteredResults.length > criteria.limit;
+    const links = hasMore ? filteredResults.slice(0, criteria.limit) : filteredResults;
 
     // Generate next cursor if there are more results
     let nextCursor = null;
@@ -413,10 +485,17 @@ search.post('/links', validateJson(searchLinksSchema), async c => {
 /**
  * GET /api/search/suggest
  * Type-ahead suggestions for entity properties
+ *
+ * ACL filtering is applied when authenticated:
+ * - Authenticated users see entities they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.get('/suggest', validateQuery(suggestionsSchema), async c => {
+search.get('/suggest', optionalAuth(), validateQuery(suggestionsSchema), async c => {
   const params = c.get('validated_query') as z.infer<typeof suggestionsSchema>;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c);
 
   logger.info('Generating type-ahead suggestions', { params });
@@ -424,7 +503,23 @@ search.get('/suggest', validateQuery(suggestionsSchema), async c => {
   try {
     // Build the WHERE clause dynamically
     const whereClauses: string[] = ['e.is_latest = 1', 'e.is_deleted = 0'];
-    const bindings: (string | number)[] = [];
+    const bindings: unknown[] = [];
+
+    // Apply ACL filtering based on authentication status
+    let aclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      aclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+
+      if (aclFilter.useFilter) {
+        whereClauses.push(aclFilter.whereClause);
+        bindings.push(...aclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      whereClauses.push('e.acl_id IS NULL');
+    }
 
     // Type filter
     if (params.type_id) {
@@ -446,10 +541,14 @@ search.get('/suggest', validateQuery(suggestionsSchema), async c => {
 
     // Query for matching entities
     // We select the entity ID, type info, and the matched property value
+    // If using per-row ACL filtering, fetch more to account for filtered items
+    const fetchLimit = aclFilter && !aclFilter.useFilter ? params.limit * 3 : params.limit;
+
     const query = `
       SELECT
         e.id,
         e.type_id,
+        e.acl_id,
         t.name as type_name,
         json_extract(e.properties, '$.${propertyPath}') as matched_value,
         e.properties
@@ -466,15 +565,26 @@ search.get('/suggest', validateQuery(suggestionsSchema), async c => {
     `;
 
     // Add binding for prefix match (for better sorting - exact prefix matches first)
-    bindings.push(`${params.query}%`, params.limit);
+    bindings.push(`${params.query}%`, fetchLimit);
 
     const results = await db
       .prepare(query)
       .bind(...bindings)
       .all();
 
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredResults = results.results;
+    if (aclFilter && !aclFilter.useFilter) {
+      filteredResults = filterByAclPermission(
+        results.results as Array<{ acl_id?: number | null }>,
+        aclFilter.accessibleAclIds
+      );
+      // Limit to requested number after filtering
+      filteredResults = filteredResults.slice(0, params.limit);
+    }
+
     // Format the suggestions
-    const suggestions = results.results.map((row: Record<string, unknown>) => ({
+    const suggestions = filteredResults.map((row: Record<string, unknown>) => ({
       entity_id: row.id,
       type_id: row.type_id,
       type_name: row.type_name,
