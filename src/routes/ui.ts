@@ -19,6 +19,7 @@ import {
   getEnrichedAclEntries,
   buildAclFilterClause,
   filterByAclPermission,
+  hasPermissionByAclId,
 } from '../utils/acl.js';
 import type { EnrichedAclEntry } from '../schemas/acl.js';
 
@@ -1495,7 +1496,7 @@ ui.get('/entities/:id', async c => {
       `
       SELECT
         e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
-        e.is_latest, e.is_deleted, e.previous_version_id,
+        e.is_latest, e.is_deleted, e.previous_version_id, e.acl_id,
         t.name as type_name, t.description as type_description, t.json_schema as type_json_schema,
         u.display_name as created_by_name, u.email as created_by_email
       FROM entities e
@@ -1515,6 +1516,7 @@ ui.get('/entities/:id', async c => {
         is_latest: number;
         is_deleted: number;
         previous_version_id: string | null;
+        acl_id: number | null;
         type_name: string;
         type_description: string | null;
         type_json_schema: string | null;
@@ -1551,6 +1553,78 @@ ui.get('/entities/:id', async c => {
       );
     }
 
+    // Check ACL permission
+    // Authenticated users must have read permission
+    // Unauthenticated users can only access public entities (NULL acl_id)
+    if (user) {
+      const canRead = await hasPermissionByAclId(
+        c.env.DB,
+        c.env.KV,
+        user.user_id,
+        entity.acl_id,
+        'read'
+      );
+      if (!canRead) {
+        const content = `
+          <div class="error-message">
+            <h2>Access Denied</h2>
+            <p>You do not have permission to view this entity.</p>
+          </div>
+          <div class="button-group">
+            <a href="/ui/entities" class="button secondary">Back to Entities</a>
+          </div>
+        `;
+
+        return c.html(
+          renderPage(
+            {
+              title: 'Access Denied',
+              user,
+              activePath: '/ui/entities',
+              breadcrumbs: [
+                { label: 'Home', href: '/ui' },
+                { label: 'Entities', href: '/ui/entities' },
+                { label: 'Access Denied' },
+              ],
+            },
+            content
+          ),
+          403
+        );
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities (NULL acl_id)
+      if (entity.acl_id !== null) {
+        const content = `
+          <div class="error-message">
+            <h2>Authentication Required</h2>
+            <p>Please log in to view this entity.</p>
+          </div>
+          <div class="button-group">
+            <a href="/ui/auth/login?returnUrl=${encodeURIComponent(`/ui/entities/${entityId}`)}" class="button">Log In</a>
+            <a href="/ui/entities" class="button secondary">Back to Entities</a>
+          </div>
+        `;
+
+        return c.html(
+          renderPage(
+            {
+              title: 'Authentication Required',
+              user,
+              activePath: '/ui/entities',
+              breadcrumbs: [
+                { label: 'Home', href: '/ui' },
+                { label: 'Entities', href: '/ui/entities' },
+                { label: 'Authentication Required' },
+              ],
+            },
+            content
+          ),
+          403
+        );
+      }
+    }
+
     // Parse the properties
     const props = JSON.parse(entity.properties);
     const displayName = props.name || props.title || props.label || entity.id.substring(0, 8);
@@ -1574,14 +1648,38 @@ ui.get('/entities/:id', async c => {
       latestVersionId = latest?.id || null;
     }
 
-    // Fetch outbound links (where this entity is the source)
-    const outboundLinks = await c.env.DB.prepare(
-      `
+    // Build ACL filters for links and related entities
+    type AclFilterResult = Awaited<ReturnType<typeof buildAclFilterClause>>;
+    let linkAclFilter: AclFilterResult | null = null;
+    let targetEntityAclFilter: AclFilterResult | null = null;
+    let sourceEntityAclFilter: AclFilterResult | null = null;
+
+    if (user) {
+      // Build ACL filters for authenticated users
+      linkAclFilter = await buildAclFilterClause(c.env.DB, c.env.KV, user.user_id, 'read', 'l.acl_id');
+      targetEntityAclFilter = await buildAclFilterClause(
+        c.env.DB,
+        c.env.KV,
+        user.user_id,
+        'read',
+        'e.acl_id'
+      );
+      sourceEntityAclFilter = await buildAclFilterClause(
+        c.env.DB,
+        c.env.KV,
+        user.user_id,
+        'read',
+        'e.acl_id'
+      );
+    }
+
+    // Fetch outbound links (where this entity is the source) with ACL filtering
+    let outboundSql = `
       SELECT
         l.id, l.type_id, l.target_entity_id, l.properties, l.version, l.created_at,
-        l.is_deleted,
+        l.is_deleted, l.acl_id,
         t.name as link_type_name,
-        e.properties as target_properties,
+        e.properties as target_properties, e.acl_id as target_acl_id,
         et.name as target_type_name
       FROM links l
       JOIN types t ON l.type_id = t.id
@@ -1590,10 +1688,28 @@ ui.get('/entities/:id', async c => {
       WHERE l.source_entity_id = ?
         AND l.is_latest = 1 AND l.is_deleted = 0
         AND e.is_latest = 1 AND e.is_deleted = 0
-      ORDER BY l.created_at DESC
-    `
-    )
-      .bind(entityId)
+    `;
+    const outboundBindings: unknown[] = [entityId];
+
+    // Apply ACL filtering based on authentication status
+    if (user) {
+      if (linkAclFilter && linkAclFilter.useFilter) {
+        outboundSql += ` AND ${linkAclFilter.whereClause}`;
+        outboundBindings.push(...linkAclFilter.bindings);
+      }
+      if (targetEntityAclFilter && targetEntityAclFilter.useFilter) {
+        outboundSql += ` AND ${targetEntityAclFilter.whereClause}`;
+        outboundBindings.push(...targetEntityAclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public links and target entities
+      outboundSql += ' AND l.acl_id IS NULL AND e.acl_id IS NULL';
+    }
+
+    outboundSql += ' ORDER BY l.created_at DESC';
+
+    const outboundLinksResult = await c.env.DB.prepare(outboundSql)
+      .bind(...outboundBindings)
       .all<{
         id: string;
         type_id: string;
@@ -1602,19 +1718,36 @@ ui.get('/entities/:id', async c => {
         version: number;
         created_at: number;
         is_deleted: number;
+        acl_id: number | null;
         link_type_name: string;
         target_properties: string;
+        target_acl_id: number | null;
         target_type_name: string;
       }>();
 
-    // Fetch inbound links (where this entity is the target)
-    const inboundLinks = await c.env.DB.prepare(
-      `
+    // Apply per-row ACL filtering if needed
+    let outboundLinks = outboundLinksResult.results;
+    if (user) {
+      if (linkAclFilter && !linkAclFilter.useFilter) {
+        outboundLinks = filterByAclPermission(outboundLinks, linkAclFilter.accessibleAclIds);
+      }
+      if (targetEntityAclFilter && !targetEntityAclFilter.useFilter) {
+        outboundLinks = outboundLinks.filter(item => {
+          if (item.target_acl_id === null || item.target_acl_id === undefined) {
+            return true;
+          }
+          return targetEntityAclFilter!.accessibleAclIds.has(item.target_acl_id);
+        });
+      }
+    }
+
+    // Fetch inbound links (where this entity is the target) with ACL filtering
+    let inboundSql = `
       SELECT
         l.id, l.type_id, l.source_entity_id, l.properties, l.version, l.created_at,
-        l.is_deleted,
+        l.is_deleted, l.acl_id,
         t.name as link_type_name,
-        e.properties as source_properties,
+        e.properties as source_properties, e.acl_id as source_acl_id,
         et.name as source_type_name
       FROM links l
       JOIN types t ON l.type_id = t.id
@@ -1623,10 +1756,28 @@ ui.get('/entities/:id', async c => {
       WHERE l.target_entity_id = ?
         AND l.is_latest = 1 AND l.is_deleted = 0
         AND e.is_latest = 1 AND e.is_deleted = 0
-      ORDER BY l.created_at DESC
-    `
-    )
-      .bind(entityId)
+    `;
+    const inboundBindings: unknown[] = [entityId];
+
+    // Apply ACL filtering based on authentication status
+    if (user) {
+      if (linkAclFilter && linkAclFilter.useFilter) {
+        inboundSql += ` AND ${linkAclFilter.whereClause}`;
+        inboundBindings.push(...linkAclFilter.bindings);
+      }
+      if (sourceEntityAclFilter && sourceEntityAclFilter.useFilter) {
+        inboundSql += ` AND ${sourceEntityAclFilter.whereClause}`;
+        inboundBindings.push(...sourceEntityAclFilter.bindings);
+      }
+    } else {
+      // Unauthenticated: only show public links and source entities
+      inboundSql += ' AND l.acl_id IS NULL AND e.acl_id IS NULL';
+    }
+
+    inboundSql += ' ORDER BY l.created_at DESC';
+
+    const inboundLinksResult = await c.env.DB.prepare(inboundSql)
+      .bind(...inboundBindings)
       .all<{
         id: string;
         type_id: string;
@@ -1635,10 +1786,28 @@ ui.get('/entities/:id', async c => {
         version: number;
         created_at: number;
         is_deleted: number;
+        acl_id: number | null;
         link_type_name: string;
         source_properties: string;
+        source_acl_id: number | null;
         source_type_name: string;
       }>();
+
+    // Apply per-row ACL filtering if needed
+    let inboundLinks = inboundLinksResult.results;
+    if (user) {
+      if (linkAclFilter && !linkAclFilter.useFilter) {
+        inboundLinks = filterByAclPermission(inboundLinks, linkAclFilter.accessibleAclIds);
+      }
+      if (sourceEntityAclFilter && !sourceEntityAclFilter.useFilter) {
+        inboundLinks = inboundLinks.filter(item => {
+          if (item.source_acl_id === null || item.source_acl_id === undefined) {
+            return true;
+          }
+          return sourceEntityAclFilter!.accessibleAclIds.has(item.source_acl_id);
+        });
+      }
+    }
 
     // Fetch version history (all versions of this entity chain)
     const versionHistory = await c.env.DB.prepare(
@@ -2078,9 +2247,9 @@ ui.get('/entities/:id', async c => {
     // Build outbound links section
     const outboundLinksSection = `
       <div class="card">
-        <h3>Outgoing Links (${outboundLinks.results.length})</h3>
+        <h3>Outgoing Links (${outboundLinks.length})</h3>
         ${
-          outboundLinks.results.length > 0
+          outboundLinks.length > 0
             ? `
           <table class="data-table">
             <thead>
@@ -2094,7 +2263,7 @@ ui.get('/entities/:id', async c => {
               </tr>
             </thead>
             <tbody>
-              ${outboundLinks.results
+              ${outboundLinks
                 .map(link => {
                   const targetProps = JSON.parse(link.target_properties);
                   const targetDisplayName =
@@ -2143,9 +2312,9 @@ ui.get('/entities/:id', async c => {
     // Build inbound links section
     const inboundLinksSection = `
       <div class="card">
-        <h3>Incoming Links (${inboundLinks.results.length})</h3>
+        <h3>Incoming Links (${inboundLinks.length})</h3>
         ${
-          inboundLinks.results.length > 0
+          inboundLinks.length > 0
             ? `
           <table class="data-table">
             <thead>
@@ -2159,7 +2328,7 @@ ui.get('/entities/:id', async c => {
               </tr>
             </thead>
             <tbody>
-              ${inboundLinks.results
+              ${inboundLinks
                 .map(link => {
                   const sourceProps = JSON.parse(link.source_properties);
                   const sourceDisplayName =

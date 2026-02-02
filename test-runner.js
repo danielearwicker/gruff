@@ -10006,8 +10006,8 @@ async function testUIEntityDetailBasic() {
   });
   const entityId = entityResponse.data.data.id;
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
-  const html = await response.text();
+  // Use auth cookie since entity has default ACL (not public)
+  const response = await makeAuthenticatedUIRequest(`/ui/entities/${entityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(
@@ -10015,18 +10015,21 @@ async function testUIEntityDetailBasic() {
     'text/html; charset=UTF-8',
     'Should return HTML'
   );
-  assert(html.includes('Detail Test Entity'), 'Should display entity name in heading');
-  assert(html.includes('Entity Information'), 'Should have entity information section');
-  assert(html.includes('Properties'), 'Should have properties section');
-  assert(html.includes('Outgoing Links'), 'Should have outgoing links section');
-  assert(html.includes('Incoming Links'), 'Should have incoming links section');
-  assert(html.includes('Version History'), 'Should have version history section');
-  assert(html.includes('Actions'), 'Should have actions section');
-  assert(html.includes(entityId), 'Should display entity ID');
-  assert(html.includes('EntityDetailTestType'), 'Should display entity type');
-  assert(html.includes('class="badge success">Latest</span>'), 'Should show latest badge');
-  assert(html.includes('Edit Entity'), 'Should have edit button');
-  assert(html.includes('Delete Entity'), 'Should have delete button');
+  assert(response.text.includes('Detail Test Entity'), 'Should display entity name in heading');
+  assert(response.text.includes('Entity Information'), 'Should have entity information section');
+  assert(response.text.includes('Properties'), 'Should have properties section');
+  assert(response.text.includes('Outgoing Links'), 'Should have outgoing links section');
+  assert(response.text.includes('Incoming Links'), 'Should have incoming links section');
+  assert(response.text.includes('Version History'), 'Should have version history section');
+  assert(response.text.includes('Actions'), 'Should have actions section');
+  assert(response.text.includes(entityId), 'Should display entity ID');
+  assert(response.text.includes('EntityDetailTestType'), 'Should display entity type');
+  assert(
+    response.text.includes('class="badge success">Latest</span>'),
+    'Should show latest badge'
+  );
+  assert(response.text.includes('Edit Entity'), 'Should have edit button');
+  assert(response.text.includes('Delete Entity'), 'Should have delete button');
 }
 
 async function testUIEntityDetailNotFound() {
@@ -10093,15 +10096,15 @@ async function testUIEntityDetailWithLinks() {
     properties: { role: 'mentions' },
   });
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${mainId}`);
-  const html = await response.text();
+  // Use auth cookie since entity has default ACL (not public)
+  const response = await makeAuthenticatedUIRequest(`/ui/entities/${mainId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes('Outgoing Links (1)'), 'Should show one outgoing link');
-  assert(html.includes('Incoming Links (1)'), 'Should show one incoming link');
-  assert(html.includes('Target Entity'), 'Should display target entity name');
-  assert(html.includes('Source Entity'), 'Should display source entity name');
-  assert(html.includes('TestLinkType'), 'Should display link type');
+  assert(response.text.includes('Outgoing Links (1)'), 'Should show one outgoing link');
+  assert(response.text.includes('Incoming Links (1)'), 'Should show one incoming link');
+  assert(response.text.includes('Target Entity'), 'Should display target entity name');
+  assert(response.text.includes('Source Entity'), 'Should display source entity name');
+  assert(response.text.includes('TestLinkType'), 'Should display link type');
 }
 
 async function testUIEntityDetailVersionHistory() {
@@ -10126,14 +10129,14 @@ async function testUIEntityDetailVersionHistory() {
   });
   const newEntityId = updateResponse.data.data.id;
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${newEntityId}`);
-  const html = await response.text();
+  // Use auth cookie since entity has default ACL (not public)
+  const response = await makeAuthenticatedUIRequest(`/ui/entities/${newEntityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes('Version History (2 versions)'), 'Should show 2 versions');
-  assert(html.includes('Version 1'), 'Should show version 1');
-  assert(html.includes('Version 2'), 'Should show version 2');
-  assert(html.includes('Initial version'), 'Should indicate initial version');
+  assert(response.text.includes('Version History (2 versions)'), 'Should show 2 versions');
+  assert(response.text.includes('Version 1'), 'Should show version 1');
+  assert(response.text.includes('Version 2'), 'Should show version 2');
+  assert(response.text.includes('Initial version'), 'Should indicate initial version');
   assert(
     html.includes('Changed "name"') || html.includes('Changed "status"'),
     'Should show property changes'
@@ -10223,15 +10226,17 @@ async function testUIEntityDetailOldVersion() {
     properties: { name: 'Version 2' },
   });
 
-  // View version 1 (old version)
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${version1Id}`);
-  const html = await response.text();
+  // View version 1 (old version) - use auth cookie since entity has default ACL (not public)
+  const response = await makeAuthenticatedUIRequest(`/ui/entities/${version1Id}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes('Viewing old version'), 'Should show old version warning');
-  assert(html.includes('You are viewing version 1'), 'Should indicate version number');
-  assert(html.includes('View latest version'), 'Should have link to latest version');
-  assert(html.includes('class="badge muted">Old Version</span>'), 'Should show old version badge');
+  assert(response.text.includes('Viewing old version'), 'Should show old version warning');
+  assert(response.text.includes('You are viewing version 1'), 'Should indicate version number');
+  assert(response.text.includes('View latest version'), 'Should have link to latest version');
+  assert(
+    response.text.includes('class="badge muted">Old Version</span>'),
+    'Should show old version badge'
+  );
 }
 
 async function testUIEntityDetailPropertiesDisplay() {
@@ -10256,20 +10261,20 @@ async function testUIEntityDetailPropertiesDisplay() {
   });
   const entityId = entityResponse.data.data.id;
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
-  const html = await response.text();
+  // Use auth cookie since entity has default ACL (not public)
+  const response = await makeAuthenticatedUIRequest(`/ui/entities/${entityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(html.includes('Properties'), 'Should have properties section');
+  assert(response.text.includes('Properties'), 'Should have properties section');
   // Note: escapeHtml converts " to &quot; so we check for escaped JSON
   assert(
-    html.includes('&quot;name&quot;: &quot;Complex Entity&quot;'),
+    response.text.includes('&quot;name&quot;: &quot;Complex Entity&quot;'),
     'Should display name property'
   );
-  assert(html.includes('&quot;count&quot;: 42'), 'Should display number property');
-  assert(html.includes('&quot;active&quot;: true'), 'Should display boolean property');
-  assert(html.includes('&quot;tag1&quot;'), 'Should display array elements');
-  assert(html.includes('&quot;metadata&quot;'), 'Should display nested object');
+  assert(response.text.includes('&quot;count&quot;: 42'), 'Should display number property');
+  assert(response.text.includes('&quot;active&quot;: true'), 'Should display boolean property');
+  assert(response.text.includes('&quot;tag1&quot;'), 'Should display array elements');
+  assert(response.text.includes('&quot;metadata&quot;'), 'Should display nested object');
 }
 
 // ============================================================================
@@ -13731,7 +13736,10 @@ async function testUIEntityAclSectionWithPermissions() {
   const latestEntity = await makeRequestWithHeaders('GET', `/api/entities/${entityId}`, headers);
   const latestId = latestEntity.data.data.id;
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${latestId}`);
+  // Use auth cookie since entity has ACL (not public)
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${latestId}`, {
+    headers: { Cookie: `gruff_access_token=${token}` },
+  });
   const html = await response.text();
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -13820,8 +13828,10 @@ async function testUIEntityAclSectionOldVersion() {
     properties: { name: 'Version 2' },
   });
 
-  // Fetch the old version (version 1)
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`);
+  // Fetch the old version (version 1) - use auth cookie since entity has ACL (not public)
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities/${entityId}`, {
+    headers: { Cookie: `gruff_access_token=${token}` },
+  });
   const html = await response.text();
 
   assertEquals(response.status, 200, 'Status code should be 200');
