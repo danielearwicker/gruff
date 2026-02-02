@@ -82,7 +82,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - created_by (TEXT, FK -> users.id)
 - is_deleted (INTEGER, DEFAULT 0) -- SQLite boolean
 - is_latest (INTEGER, DEFAULT 1) -- Optimization for queries
-- acl_id (INTEGER, FK -> acls.id, NULL) -- 🟦 NULL means public/unrestricted
+- acl_id (INTEGER, FK -> acls.id, NULL) -- NULL means public/unrestricted
 ```
 
 #### `links` Table
@@ -99,7 +99,7 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - created_by (TEXT, FK -> users.id)
 - is_deleted (INTEGER, DEFAULT 0) -- SQLite boolean
 - is_latest (INTEGER, DEFAULT 1)
-- acl_id (INTEGER, FK -> acls.id, NULL) -- 🟦 NULL means public/unrestricted
+- acl_id (INTEGER, FK -> acls.id, NULL) -- NULL means public/unrestricted
 ```
 
 #### ✅ `groups` Table
@@ -1648,7 +1648,7 @@ All query plan endpoints require admin authentication.
 
 ## Future Enhancements
 
-These features are not marked with 🟦 as they are potential future work:
+These features are potential future work:
 
 - Real-time subscriptions via WebSockets (Durable Objects or Cloudflare Calls)
 - Full-text search using D1's FTS5 extension or external search service
