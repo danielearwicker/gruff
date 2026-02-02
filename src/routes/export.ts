@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson, validateQuery } from '../middleware/validation.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   exportQuerySchema,
   importRequestSchema,
@@ -10,6 +11,11 @@ import {
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
+import {
+  buildAclFilterClause,
+  filterByAclPermission,
+  createResourceAcl,
+} from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -33,10 +39,17 @@ function getCurrentTimestamp(): number {
  * GET /api/export
  * Export entities and links as JSON
  * Supports filtering by type, date range, and inclusion of deleted/versioned data
+ *
+ * ACL filtering is applied based on authentication:
+ * - Authenticated users see entities/links they have read permission on
+ * - Resources with NULL acl_id are visible to all authenticated users
+ * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
+exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c => {
   const query = c.get('validated_query') as ExportQuery;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c).child({ module: 'export' });
 
   try {
@@ -51,6 +64,22 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
     let entitySql =
       'SELECT e.*, t.name as type_name FROM entities e LEFT JOIN types t ON e.type_id = t.id WHERE 1=1';
     const entityBindings: (string | number)[] = [];
+
+    // Apply ACL filtering based on authentication status
+    let entityAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      // Authenticated user: filter by accessible ACLs
+      entityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+
+      if (entityAclFilter.useFilter) {
+        entitySql += ` AND ${entityAclFilter.whereClause}`;
+        entityBindings.push(...(entityAclFilter.bindings as (string | number)[]));
+      }
+    } else {
+      // Unauthenticated: only show public resources (NULL acl_id)
+      entitySql += ' AND e.acl_id IS NULL';
+    }
 
     // Only get latest versions unless include_versions is true
     if (!query.include_versions) {
@@ -88,7 +117,17 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
       .prepare(entitySql)
       .bind(...entityBindings)
       .all();
-    const entities = rawEntities.map((e: Record<string, unknown>) => ({
+
+    // Apply per-row ACL filtering if needed (when user has too many accessible ACLs)
+    let filteredEntities = rawEntities;
+    if (entityAclFilter && !entityAclFilter.useFilter) {
+      filteredEntities = filterByAclPermission(
+        rawEntities as Array<{ acl_id?: number | null }>,
+        entityAclFilter.accessibleAclIds
+      );
+    }
+
+    const entities = filteredEntities.map((e: Record<string, unknown>) => ({
       id: e.id,
       type_id: e.type_id,
       type_name: e.type_name || undefined,
@@ -109,12 +148,21 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
     // when we have many entities. Split into batches if needed.
     let rawLinks: Record<string, unknown>[] = [];
 
+    // Build ACL filter for links (same user, same permission level)
+    let linkAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
+    }
+
     if (entityIds.size > 0) {
       const entityIdArray = Array.from(entityIds);
       // SQLite has a limit of 999 bind parameters per statement
       // Since we need to bind entity IDs twice (for source and target),
       // we batch by 400 entities per query to stay well under the limit
-      const batchSize = 400;
+      // Reduce batch size if we also need ACL bindings
+      const aclBindingCount = linkAclFilter?.useFilter ? linkAclFilter.bindings.length : 0;
+      const batchSize = Math.min(400, Math.floor((999 - aclBindingCount) / 2));
       const batches = Math.ceil(entityIdArray.length / batchSize);
 
       for (let b = 0; b < batches; b++) {
@@ -126,6 +174,15 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
         let batchSql =
           'SELECT l.*, t.name as type_name FROM links l LEFT JOIN types t ON l.type_id = t.id WHERE 1=1';
         const batchBindings: (string | number)[] = [];
+
+        // Apply ACL filtering for links
+        if (user && linkAclFilter?.useFilter) {
+          batchSql += ` AND ${linkAclFilter.whereClause}`;
+          batchBindings.push(...(linkAclFilter.bindings as (string | number)[]));
+        } else if (!user) {
+          // Unauthenticated: only show public resources (NULL acl_id)
+          batchSql += ' AND l.acl_id IS NULL';
+        }
 
         // Only get latest versions unless include_versions is true
         if (!query.include_versions) {
@@ -157,6 +214,15 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
       }
       rawLinks = Array.from(uniqueLinks.values()).slice(0, query.limit);
     }
+
+    // Apply per-row ACL filtering for links if needed
+    if (linkAclFilter && !linkAclFilter.useFilter) {
+      rawLinks = filterByAclPermission(
+        rawLinks as Array<{ acl_id?: number | null }>,
+        linkAclFilter.accessibleAclIds
+      );
+    }
+
     const links = rawLinks.map((l: Record<string, unknown>) => ({
       id: l.id,
       type_id: l.type_id,
@@ -242,16 +308,21 @@ exportRouter.get('/', validateQuery(exportQuerySchema), async c => {
 });
 
 /**
- * POST /api/import
+ * POST /api/export
  * Import entities and links from JSON
  * Creates new records with new IDs, maintaining referential integrity
+ *
+ * Authentication required. The authenticated user:
+ * - Is recorded as the creator of all imported types, entities, and links
+ * - Automatically receives write permission on all created entities and links
  */
-exportRouter.post('/', validateJson(importRequestSchema), async c => {
+exportRouter.post('/', requireAuth(), validateJson(importRequestSchema), async c => {
   const data = c.get('validated_json') as ImportRequest;
   const db = c.env.DB;
+  const user = c.get('user');
   const logger = getLogger(c).child({ module: 'import' });
   const now = getCurrentTimestamp();
-  const systemUserId = 'test-user-001';
+  const userId = user.user_id;
 
   const typeResults: ImportResultItem[] = [];
   const entityResults: ImportResultItem[] = [];
@@ -320,7 +391,7 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
               typeItem.description || null,
               typeItem.json_schema || null,
               now,
-              systemUserId
+              userId
             )
         );
         typeData.push({ name: typeItem.name, clientId: typeItem.client_id, id });
@@ -433,6 +504,9 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
       const entityStatements: D1PreparedStatement[] = [];
       const entityData: Array<{ clientId: string; id: string }> = [];
 
+      // Create a default ACL for imported entities (creator gets write permission)
+      const entityAclId = await createResourceAcl(db, userId);
+
       for (const entity of resolvedEntities) {
         const id = generateUUID();
         const propertiesString = JSON.stringify(entity.properties);
@@ -441,11 +515,11 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
           db
             .prepare(
               `
-            INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-            VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1)
+            INSERT INTO entities (id, type_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+            VALUES (?, ?, ?, 1, NULL, ?, ?, 0, 1, ?)
           `
             )
-            .bind(id, entity.typeId, propertiesString, now, systemUserId)
+            .bind(id, entity.typeId, propertiesString, now, userId, entityAclId)
         );
         entityData.push({ clientId: entity.clientId, id });
       }
@@ -603,6 +677,9 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
       const linkStatements: D1PreparedStatement[] = [];
       const linkData: Array<{ clientId?: string; id: string }> = [];
 
+      // Create a default ACL for imported links (creator gets write permission)
+      const linkAclId = await createResourceAcl(db, userId);
+
       for (const link of resolvedLinks) {
         const id = generateUUID();
         const propertiesString = JSON.stringify(link.properties);
@@ -611,8 +688,8 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
           db
             .prepare(
               `
-            INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest)
-            VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1)
+            INSERT INTO links (id, type_id, source_entity_id, target_entity_id, properties, version, previous_version_id, created_at, created_by, is_deleted, is_latest, acl_id)
+            VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, 0, 1, ?)
           `
             )
             .bind(
@@ -622,7 +699,8 @@ exportRouter.post('/', validateJson(importRequestSchema), async c => {
               link.targetEntityId,
               propertiesString,
               now,
-              systemUserId
+              userId,
+              linkAclId
             )
         );
         linkData.push({ clientId: link.clientId, id });

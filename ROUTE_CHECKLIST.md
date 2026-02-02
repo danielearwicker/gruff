@@ -102,8 +102,8 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Export/Import Routes (`/api/export`)
 
-- [ ] `GET /api/export` - Export entities/links as JSON
-- [ ] `POST /api/export` - Import entities/links from JSON
+- [✅] `GET /api/export` - Export entities/links as JSON
+- [✅] `POST /api/export` - Import entities/links from JSON
 
 ## Audit Log Routes (`/api/audit`)
 

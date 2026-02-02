@@ -7891,8 +7891,8 @@ async function testExportEntities() {
     properties: { name: 'Export Entity 2', value: 200 },
   });
 
-  // Export
-  const response = await makeRequest('GET', '/api/export');
+  // Export (need auth to see entities with ACLs - entities created by auth user have ACLs)
+  const response = await makeAuthRequest('GET', '/api/export');
 
   assertEquals(response.status, 200, 'Should return 200 OK');
   assert(response.data.data, 'Should return data');
@@ -7933,8 +7933,8 @@ async function testExportWithTypeFilter() {
     properties: { name: 'Other Type Entity' },
   });
 
-  // Export only the first type
-  const response = await makeRequest('GET', `/api/export?type_ids=${typeId}`);
+  // Export only the first type (need auth to see entities with ACLs)
+  const response = await makeAuthRequest('GET', `/api/export?type_ids=${typeId}`);
 
   assertEquals(response.status, 200, 'Should return 200 OK');
   const exportedEntities = response.data.data.entities;
@@ -7981,8 +7981,8 @@ async function testExportWithLinks() {
     properties: { relationship: 'connected' },
   });
 
-  // Export (filtering by entity type to get our linked entities)
-  const response = await makeRequest('GET', `/api/export?type_ids=${entityTypeId}`);
+  // Export (filtering by entity type to get our linked entities - need auth for ACL filtering)
+  const response = await makeAuthRequest('GET', `/api/export?type_ids=${entityTypeId}`);
 
   assertEquals(response.status, 200, 'Should return 200 OK');
   assert(response.data.data.links.length > 0, 'Should include links between exported entities');
@@ -8017,13 +8017,13 @@ async function testExportIncludeDeleted() {
 
   await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
-  // Export without deleted
-  const response1 = await makeRequest('GET', '/api/export');
+  // Export without deleted (need auth to see entities with ACLs)
+  const response1 = await makeAuthRequest('GET', '/api/export');
   const hasDeletedEntity1 = response1.data.data.entities.some(e => e.id === entityId);
   assert(!hasDeletedEntity1, 'Should not include deleted entity by default');
 
-  // Export with deleted
-  const response2 = await makeRequest('GET', '/api/export?include_deleted=true');
+  // Export with deleted (need auth to see entities with ACLs)
+  const response2 = await makeAuthRequest('GET', '/api/export?include_deleted=true');
   const hasDeletedEntity2 = response2.data.data.entities.some(
     e => e.id === entityId && e.is_deleted === 1
   );
@@ -8040,8 +8040,8 @@ async function testImportEntities() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Import entities
-  const response = await makeRequest('POST', '/api/export', {
+  // Import entities (requires authentication)
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [
       {
         client_id: 'import-1',
@@ -8076,8 +8076,8 @@ async function testImportEntities() {
 async function testImportEntitiesWithTypeName() {
   logTest('Import - Import Entities Using Type Name');
 
-  // Import entities using type name instead of type_id
-  const response = await makeRequest('POST', '/api/export', {
+  // Import entities using type name instead of type_id (requires authentication)
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [
       {
         client_id: 'import-by-name-1',
@@ -8103,7 +8103,8 @@ async function testImportEntitiesWithTypeName() {
 async function testImportEntitiesInvalidType() {
   logTest('Import - Import Entities with Invalid Type');
 
-  const response = await makeRequest('POST', '/api/export', {
+  // Import requires authentication
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [
       {
         client_id: 'invalid-type',
@@ -8139,8 +8140,8 @@ async function testImportEntitiesWithLinks() {
   });
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  // Import entities and links using client_id references
-  const response = await makeRequest('POST', '/api/export', {
+  // Import entities and links using client_id references (requires authentication)
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [
       { client_id: 'entity-a', type_id: entityTypeId, properties: { name: 'Entity A' } },
       { client_id: 'entity-b', type_id: entityTypeId, properties: { name: 'Entity B' } },
@@ -8169,8 +8170,8 @@ async function testImportEntitiesWithLinks() {
   const entityBId = response.data.data.id_mapping.entities['entity-b'];
   const linkId = response.data.data.id_mapping.links['link-ab'];
 
-  // Fetch the link and verify
-  const linkResponse = await makeRequest('GET', `/api/links/${linkId}`);
+  // Fetch the link and verify (need auth to see links with ACLs)
+  const linkResponse = await makeAuthRequest('GET', `/api/links/${linkId}`);
   assertEquals(
     linkResponse.data.data.source_entity_id,
     entityAId,
@@ -8197,9 +8198,9 @@ async function testImportLinkInvalidSourceEntity() {
   }
   const linkTypeId = linkTypeResponse.data.data.id;
 
-  // Try to create a link with a non-existent source
+  // Try to create a link with a non-existent source (requires authentication)
   // Use a valid but non-existent UUID for target
-  const response = await makeRequest('POST', '/api/export', {
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [],
     links: [
       {
@@ -8224,8 +8225,8 @@ async function testImportLinkInvalidSourceEntity() {
 async function testImportWithNewTypes() {
   logTest('Import - Import with New Types');
 
-  // Import with new types
-  const response = await makeRequest('POST', '/api/export', {
+  // Import with new types (requires authentication)
+  const response = await makeAuthRequest('POST', '/api/export', {
     types: [
       { name: 'ImportedNewEntityType', category: 'entity', description: 'A new entity type' },
       { name: 'ImportedNewLinkType', category: 'link', description: 'A new link type' },
@@ -8261,8 +8262,8 @@ async function testImportWithNewTypes() {
 async function testImportExistingType() {
   logTest('Import - Import References Existing Type');
 
-  // Try to import a type that already exists
-  const response = await makeRequest('POST', '/api/export', {
+  // Try to import a type that already exists (requires authentication)
+  const response = await makeAuthRequest('POST', '/api/export', {
     types: [
       { name: 'ExportTestEntityType', category: 'entity' }, // This already exists
     ],
@@ -8285,7 +8286,8 @@ async function testImportExistingType() {
 async function testImportEmptyRequest() {
   logTest('Import - Empty Request Validation');
 
-  const response = await makeRequest('POST', '/api/export', {
+  // Empty request validation (requires authentication first)
+  const response = await makeAuthRequest('POST', '/api/export', {
     entities: [],
     links: [],
   });
@@ -8331,8 +8333,8 @@ async function testExportImportRoundTrip() {
     properties: { strength: 'strong' },
   });
 
-  // Export
-  const exportResponse = await makeRequest('GET', `/api/export?type_ids=${entityTypeId}`);
+  // Export (need auth to see entities with ACLs)
+  const exportResponse = await makeAuthRequest('GET', `/api/export?type_ids=${entityTypeId}`);
   assertEquals(exportResponse.status, 200, 'Export should succeed');
 
   const exportData = exportResponse.data.data;
@@ -8347,8 +8349,8 @@ async function testExportImportRoundTrip() {
       properties: e.properties,
     }));
 
-  // Re-import (creates new entities with same properties)
-  const importResponse = await makeRequest('POST', '/api/export', {
+  // Re-import (creates new entities with same properties - requires authentication)
+  const importResponse = await makeAuthRequest('POST', '/api/export', {
     entities: importEntities,
     links: [],
   });
@@ -8360,9 +8362,9 @@ async function testExportImportRoundTrip() {
     'All entities should be imported'
   );
 
-  // Verify the imported entities have the same properties
+  // Verify the imported entities have the same properties (need auth to see entities with ACLs)
   const importedEntityId = importResponse.data.data.id_mapping.entities['reimport-0'];
-  const verifyResponse = await makeRequest('GET', `/api/entities/${importedEntityId}`);
+  const verifyResponse = await makeAuthRequest('GET', `/api/entities/${importedEntityId}`);
   assertEquals(verifyResponse.status, 200, 'Should find imported entity');
   assertEquals(
     verifyResponse.data.data.properties.name,
@@ -8708,8 +8710,8 @@ async function testSchemaValidationImportWithSchema() {
   const typeResponse = await makeRequest('GET', '/api/types?name=SchemaValidatedProduct');
   const typeId = typeResponse.data.data[0].id;
 
-  // Import with mixed valid and invalid entities
-  const importResponse = await makeRequest('POST', '/api/export', {
+  // Import with mixed valid and invalid entities (requires authentication)
+  const importResponse = await makeAuthRequest('POST', '/api/export', {
     types: [],
     entities: [
       {
@@ -9686,17 +9688,18 @@ async function testSanitizationImport() {
     links: [],
   };
 
-  const importResponse = await makeRequest('POST', '/api/export', importPayload);
+  // Import requires authentication
+  const importResponse = await makeAuthRequest('POST', '/api/export', importPayload);
 
   assertEquals(importResponse.status, 201, 'Should import successfully');
 
-  // Verify the imported entity is sanitized
+  // Verify the imported entity is sanitized (need auth to see entities with ACLs)
   const entityResult = importResponse.data.data.entity_results.find(
     r => r.client_id === 'xss-import-1'
   );
 
   if (entityResult && entityResult.success) {
-    const entityResponse = await makeRequest('GET', `/api/entities/${entityResult.id}`);
+    const entityResponse = await makeAuthRequest('GET', `/api/entities/${entityResult.id}`);
     const entity = entityResponse.data.data;
 
     assert(

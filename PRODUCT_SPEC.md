@@ -678,6 +678,8 @@ This feature enhances property filtering capabilities beyond basic equality matc
 ### ✅ Export and Import
 
 - Export subgraph as JSON via GET /api/export
+  - ACL-aware: only exports entities/links the user has read permission on
+  - Unauthenticated requests only see public resources (NULL acl_id)
   - Filter by entity type IDs
   - Filter by creation date range
   - Option to include deleted entities/links
@@ -685,6 +687,8 @@ This feature enhances property filtering capabilities beyond basic equality matc
   - Includes referenced types in export
   - Returns format_version, exported_at timestamp, and metadata
 - Import graph structure from JSON via POST /api/export
+  - Authentication required
+  - Imported entities/links are owned by the authenticated user (creator gets write permission)
   - Support for creating new types as part of import
   - Support for creating entities and links in a single request
   - Client ID mapping for referential integrity
