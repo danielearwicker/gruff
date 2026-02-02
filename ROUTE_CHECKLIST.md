@@ -75,7 +75,7 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `GET /api/links/{id}` - Get latest version of link (cached)
 - [✅] `PUT /api/links/{id}` - Update link (creates new version, auth required)
 - [✅] `DELETE /api/links/{id}` - Soft delete link (auth required)
-- [ ] `POST /api/links/{id}/restore` - Restore soft-deleted link (auth required)
+- [✅] `POST /api/links/{id}/restore` - Restore soft-deleted link (auth required)
 - [ ] `GET /api/links/{id}/versions` - Get all versions of link
 - [ ] `GET /api/links/{id}/versions/{version}` - Get specific version of link
 - [ ] `GET /api/links/{id}/history` - Get version history with diffs
