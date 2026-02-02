@@ -1255,6 +1255,12 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/users`     | GET    | User list (admin only)         |
 | `/ui/users/:id` | GET    | User detail page (admin only)  |
 
+### ✅ Audit Log Routes
+
+| Route       | Method | Description                      |
+| ----------- | ------ | -------------------------------- |
+| `/ui/audit` | GET    | Audit log viewer (admin only)    |
+
 ### ✅ UI Authentication Routes
 
 | Route                      | Method | Description                    |

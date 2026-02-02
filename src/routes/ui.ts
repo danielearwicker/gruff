@@ -9003,4 +9003,313 @@ ui.get('/users/:id', async c => {
   return c.html(html);
 });
 
+/**
+ * Audit log viewer (admin only)
+ * GET /ui/audit
+ */
+ui.get('/audit', async c => {
+  const user = c.get('user');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/audit'));
+  }
+
+  // Require admin role (matches the API's admin-only requirement for GET /api/audit)
+  if (!user.is_admin) {
+    return c.redirect('/ui?error=' + encodeURIComponent('Admin access required to view audit logs'));
+  }
+
+  // Get filter/pagination parameters
+  const userIdFilter = c.req.query('user_id') || '';
+  const resourceTypeFilter = c.req.query('resource_type') || '';
+  const resourceIdFilter = c.req.query('resource_id') || '';
+  const operationFilter = c.req.query('operation') || '';
+  const startDateFilter = c.req.query('start_date') || '';
+  const endDateFilter = c.req.query('end_date') || '';
+  const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
+  const cursor = c.req.query('cursor') || '';
+
+  // Build query
+  let query = `
+    SELECT al.*, u.email as user_email, u.display_name as user_display_name
+    FROM audit_logs al
+    LEFT JOIN users u ON al.user_id = u.id
+    WHERE 1=1
+  `;
+  const params: (string | number)[] = [];
+
+  if (userIdFilter) {
+    query += ' AND al.user_id = ?';
+    params.push(userIdFilter);
+  }
+
+  if (resourceTypeFilter) {
+    query += ' AND al.resource_type = ?';
+    params.push(resourceTypeFilter);
+  }
+
+  if (resourceIdFilter) {
+    query += ' AND al.resource_id = ?';
+    params.push(resourceIdFilter);
+  }
+
+  if (operationFilter) {
+    query += ' AND al.operation = ?';
+    params.push(operationFilter);
+  }
+
+  if (startDateFilter) {
+    const startTimestamp = new Date(startDateFilter).getTime();
+    if (!isNaN(startTimestamp)) {
+      query += ' AND al.timestamp >= ?';
+      params.push(startTimestamp);
+    }
+  }
+
+  if (endDateFilter) {
+    const endTimestamp = new Date(endDateFilter).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+    if (!isNaN(endTimestamp)) {
+      query += ' AND al.timestamp <= ?';
+      params.push(endTimestamp);
+    }
+  }
+
+  // Handle cursor-based pagination (cursor is the timestamp of the last item)
+  if (cursor) {
+    query += ' AND al.timestamp < ?';
+    params.push(parseInt(cursor, 10));
+  }
+
+  query += ' ORDER BY al.timestamp DESC LIMIT ?';
+  params.push(limit + 1); // Fetch one extra to check if there are more
+
+  interface AuditLogRow {
+    id: number;
+    operation: string;
+    resource_type: string;
+    resource_id: string;
+    user_id: string;
+    timestamp: number;
+    details: string | null;
+    ip_address: string | null;
+    user_agent: string | null;
+    user_email: string | null;
+    user_display_name: string | null;
+  }
+
+  const results = await c.env.DB.prepare(query).bind(...params).all<AuditLogRow>();
+
+  const logs = results.results || [];
+  const hasMore = logs.length > limit;
+  if (hasMore) logs.pop(); // Remove the extra one
+
+  // Get next cursor (timestamp of last item)
+  const nextCursor = hasMore && logs.length > 0 ? String(logs[logs.length - 1].timestamp) : null;
+
+  // Get all users for filter dropdown
+  const usersResult = await c.env.DB.prepare(
+    'SELECT id, email, display_name FROM users ORDER BY email ASC'
+  ).all<{ id: string; email: string; display_name: string | null }>();
+  const allUsers = usersResult.results || [];
+
+  // Get distinct resource types for filter dropdown
+  const resourceTypesResult = await c.env.DB.prepare(
+    'SELECT DISTINCT resource_type FROM audit_logs ORDER BY resource_type ASC'
+  ).all<{ resource_type: string }>();
+  const resourceTypes = (resourceTypesResult.results || []).map(r => r.resource_type);
+
+  // Get distinct operations for filter dropdown
+  const operationsResult = await c.env.DB.prepare(
+    'SELECT DISTINCT operation FROM audit_logs ORDER BY operation ASC'
+  ).all<{ operation: string }>();
+  const operations = (operationsResult.results || []).map(o => o.operation);
+
+  // Build filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/audit" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="user_id">User:</label>
+            <select id="user_id" name="user_id">
+              <option value="">All Users</option>
+              ${allUsers.map(u => `<option value="${escapeHtml(u.id)}" ${userIdFilter === u.id ? 'selected' : ''}>${escapeHtml(u.display_name || u.email)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="resource_type">Resource Type:</label>
+            <select id="resource_type" name="resource_type">
+              <option value="">All Types</option>
+              ${resourceTypes.map(rt => `<option value="${escapeHtml(rt)}" ${resourceTypeFilter === rt ? 'selected' : ''}>${escapeHtml(rt)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="operation">Operation:</label>
+            <select id="operation" name="operation">
+              <option value="">All Operations</option>
+              ${operations.map(op => `<option value="${escapeHtml(op)}" ${operationFilter === op ? 'selected' : ''}>${escapeHtml(op)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="resource_id">Resource ID:</label>
+            <input type="text" id="resource_id" name="resource_id" value="${escapeHtml(resourceIdFilter)}" placeholder="Enter resource ID...">
+          </div>
+          <div class="form-group">
+            <label for="start_date">From Date:</label>
+            <input type="date" id="start_date" name="start_date" value="${escapeHtml(startDateFilter)}">
+          </div>
+          <div class="form-group">
+            <label for="end_date">To Date:</label>
+            <input type="date" id="end_date" name="end_date" value="${escapeHtml(endDateFilter)}">
+          </div>
+        </div>
+        <div class="button-group">
+          <button type="submit" class="button">Search</button>
+          <a href="/ui/audit" class="button secondary">Clear</a>
+        </div>
+      </form>
+    </div>
+  `;
+
+  // Helper to get resource link
+  const getResourceLink = (resourceType: string, resourceId: string): string => {
+    switch (resourceType) {
+      case 'entity':
+        return `/ui/entities/${resourceId}`;
+      case 'link':
+        return `/ui/links/${resourceId}`;
+      case 'type':
+        return `/ui/types/${resourceId}`;
+      case 'user':
+        return `/ui/users/${resourceId}`;
+      default:
+        return '#';
+    }
+  };
+
+  // Helper to format operation as badge
+  const getOperationBadge = (operation: string): string => {
+    switch (operation) {
+      case 'create':
+        return '<span class="badge success">create</span>';
+      case 'update':
+        return '<span class="badge">update</span>';
+      case 'delete':
+        return '<span class="badge danger">delete</span>';
+      case 'restore':
+        return '<span class="badge warning">restore</span>';
+      default:
+        return `<span class="badge muted">${escapeHtml(operation)}</span>`;
+    }
+  };
+
+  // Build audit logs table
+  const logsTable =
+    logs.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>User</th>
+          <th>Operation</th>
+          <th>Resource</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${logs
+          .map(log => {
+            const userName = log.user_display_name || log.user_email || log.user_id;
+            const resourceLink = getResourceLink(log.resource_type, log.resource_id);
+            let detailsPreview = '';
+            if (log.details) {
+              try {
+                const details = JSON.parse(log.details);
+                // Show a brief summary of details
+                const keys = Object.keys(details);
+                if (keys.length > 0) {
+                  detailsPreview = keys.slice(0, 3).join(', ');
+                  if (keys.length > 3) {
+                    detailsPreview += '...';
+                  }
+                }
+              } catch {
+                detailsPreview = '(invalid JSON)';
+              }
+            }
+            return `
+          <tr>
+            <td class="muted small">${formatTimestamp(log.timestamp)}</td>
+            <td>
+              <a href="/ui/users/${log.user_id}">${escapeHtml(userName)}</a>
+            </td>
+            <td>${getOperationBadge(log.operation)}</td>
+            <td>
+              <span class="badge muted">${escapeHtml(log.resource_type)}</span>
+              <a href="${resourceLink}" class="id-link">${log.resource_id.substring(0, 8)}...</a>
+            </td>
+            <td class="muted small">${detailsPreview ? escapeHtml(detailsPreview) : '-'}</td>
+          </tr>
+        `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No audit logs found matching the criteria.</p>';
+
+  // Build pagination
+  const buildPageUrl = (newCursor: string | null) => {
+    const params = new URLSearchParams();
+    if (userIdFilter) params.set('user_id', userIdFilter);
+    if (resourceTypeFilter) params.set('resource_type', resourceTypeFilter);
+    if (resourceIdFilter) params.set('resource_id', resourceIdFilter);
+    if (operationFilter) params.set('operation', operationFilter);
+    if (startDateFilter) params.set('start_date', startDateFilter);
+    if (endDateFilter) params.set('end_date', endDateFilter);
+    params.set('limit', String(limit));
+    if (newCursor) params.set('cursor', newCursor);
+    return `/ui/audit?${params.toString()}`;
+  };
+
+  const pagination = hasMore
+    ? `
+    <div class="pagination">
+      <span class="muted">Showing ${logs.length} logs</span>
+      ${nextCursor ? `<a href="${buildPageUrl(nextCursor)}" class="button small secondary">Load More &raquo;</a>` : ''}
+    </div>
+  `
+    : logs.length > 0
+      ? `<div class="pagination"><span class="muted">Showing all ${logs.length} logs</span></div>`
+      : '';
+
+  const content = `
+    <h2>Audit Logs</h2>
+    <p>View the audit trail of all operations performed in the system. Only administrators can access this page.</p>
+
+    <h3>Filter Logs</h3>
+    ${filterForm}
+
+    <h3>Audit Log Entries</h3>
+    ${logsTable}
+    ${pagination}
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Audit Logs',
+      user,
+      activePath: '/ui/audit',
+      breadcrumbs: [{ label: 'Home', href: '/ui' }, { label: 'Audit Logs' }],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
 export default ui;
