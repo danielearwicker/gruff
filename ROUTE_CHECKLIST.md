@@ -128,9 +128,9 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Documentation Routes (`/docs`)
 
-- [ ] `GET /docs/openapi.json` - OpenAPI specification (JSON)
-- [ ] `GET /docs/openapi.yaml` - OpenAPI specification (YAML)
-- [ ] `GET /docs` - Interactive API documentation (Scalar UI)
+- [✅] `GET /docs/openapi.json` - OpenAPI specification (JSON)
+- [✅] `GET /docs/openapi.yaml` - OpenAPI specification (YAML)
+- [✅] `GET /docs` - Interactive API documentation (Scalar UI)
 
 ## UI Routes (`/ui`)
 
