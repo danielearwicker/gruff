@@ -76,11 +76,11 @@ Complete list of all routes exposed by this Cloudflare Worker.
 - [✅] `PUT /api/links/{id}` - Update link (creates new version, auth required)
 - [✅] `DELETE /api/links/{id}` - Soft delete link (auth required)
 - [✅] `POST /api/links/{id}/restore` - Restore soft-deleted link (auth required)
-- [ ] `GET /api/links/{id}/versions` - Get all versions of link
-- [ ] `GET /api/links/{id}/versions/{version}` - Get specific version of link
-- [ ] `GET /api/links/{id}/history` - Get version history with diffs
-- [ ] `GET /api/links/{id}/acl` - Get link's ACL (auth required)
-- [ ] `PUT /api/links/{id}/acl` - Set link's ACL (auth required)
+- [✅] `GET /api/links/{id}/versions` - Get all versions of link
+- [✅] `GET /api/links/{id}/versions/{version}` - Get specific version of link
+- [✅] `GET /api/links/{id}/history` - Get version history with diffs
+- [✅] `GET /api/links/{id}/acl` - Get link's ACL (auth required)
+- [✅] `PUT /api/links/{id}/acl` - Set link's ACL (auth required)
 
 ## Graph Traversal Routes (`/api/graph`)
 
