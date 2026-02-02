@@ -6,10 +6,11 @@
 
 import { Hono } from 'hono';
 import { validateQuery } from '../middleware/validation.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
 import { auditLogQuerySchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
+import { hasPermission } from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -36,7 +37,7 @@ const auditRouter = new Hono<{ Bindings: Bindings }>();
  * GET /api/audit
  *
  * Query audit logs with filtering and pagination
- * Requires authentication
+ * Requires admin role
  *
  * Query parameters:
  * - user_id: Filter by user who performed the action
@@ -48,7 +49,7 @@ const auditRouter = new Hono<{ Bindings: Bindings }>();
  * - limit: Number of results (default 20, max 100)
  * - cursor: Pagination cursor
  */
-auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async c => {
+auditRouter.get('/', requireAuth(), requireAdmin(), validateQuery(auditLogQuerySchema), async c => {
   const logger = getLogger(c);
   const validated = c.get('validated_query') as {
     user_id?: string;
@@ -153,10 +154,14 @@ auditRouter.get('/', requireAuth(), validateQuery(auditLogQuerySchema), async c 
  * GET /api/audit/resource/:resource_type/:resource_id
  *
  * Get audit history for a specific resource
- * Requires authentication
+ * Requires authentication and read permission on the resource (for entities/links)
+ * For type and user resources, requires admin role
  */
 auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async c => {
   const logger = getLogger(c);
+  const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const resourceType = c.req.param('resource_type');
   const resourceId = c.req.param('resource_id');
 
@@ -179,12 +184,40 @@ auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async c 
   }
 
   try {
-    const results = await c.env.DB.prepare(
-      `SELECT * FROM audit_logs
+    // Check authorization based on resource type
+    if (resourceType === 'entity' || resourceType === 'link') {
+      // Check if user has read permission on the entity or link
+      const canRead = await hasPermission(
+        db,
+        kv,
+        user.user_id,
+        resourceType as 'entity' | 'link',
+        resourceId,
+        'read'
+      );
+      if (!canRead) {
+        return c.json(
+          response.forbidden('You do not have permission to view audit history for this resource'),
+          403
+        );
+      }
+    } else {
+      // For type and user audit history, require admin role
+      if (!user.is_admin) {
+        return c.json(
+          response.forbidden('Admin access required to view audit history for this resource type'),
+          403
+        );
+      }
+    }
+
+    const results = await db
+      .prepare(
+        `SELECT * FROM audit_logs
        WHERE resource_type = ? AND resource_id = ?
        ORDER BY timestamp DESC
        LIMIT 100`
-    )
+      )
       .bind(resourceType, resourceId)
       .all();
 
@@ -230,9 +263,9 @@ auditRouter.get('/resource/:resource_type/:resource_id', requireAuth(), async c 
  * GET /api/audit/user/:user_id
  *
  * Get audit logs for actions performed by a specific user
- * Requires authentication
+ * Requires admin role or the user requesting their own audit logs
  */
-auditRouter.get('/user/:user_id', requireAuth(), async c => {
+auditRouter.get('/user/:user_id', requireAuth(), requireAdminOrSelf('user_id'), async c => {
   const logger = getLogger(c);
   const userId = c.req.param('user_id');
 

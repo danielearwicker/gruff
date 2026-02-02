@@ -107,9 +107,9 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Audit Log Routes (`/api/audit`)
 
-- [ ] `GET /api/audit` - Query audit logs with filtering (auth required)
-- [ ] `GET /api/audit/resource/{resourceType}/{resourceId}` - Get audit history for specific resource (auth required)
-- [ ] `GET /api/audit/user/{userId}` - Get audit logs for specific user (auth required)
+- [✅] `GET /api/audit` - Query audit logs with filtering (admin only)
+- [✅] `GET /api/audit/resource/{resourceType}/{resourceId}` - Get audit history for specific resource (requires read permission on entity/link, admin for type/user)
+- [✅] `GET /api/audit/user/{userId}` - Get audit logs for specific user (admin or self)
 
 ## Schema Information Routes (`/api/schema`)
 

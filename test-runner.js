@@ -8855,40 +8855,23 @@ async function testRateLimitPerCategory() {
 async function testAuditLogQueryEndpoint() {
   logTest('Audit Logging - Query Audit Logs Endpoint');
 
-  // Register a user to get auth token
-  const registerResponse = await makeRequest('POST', '/api/auth/register', {
-    email: 'audit-test@example.com',
-    password: 'testPassword123',
-  });
-  const token = registerResponse.data.data.access_token;
-
-  // Query audit logs
-  const response = await fetch(`${DEV_SERVER_URL}/api/audit`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
+  // Query audit logs (requires admin)
+  const response = await makeAdminAuthRequest('GET', '/api/audit');
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(data.success, 'Should have success: true');
-  assert(Array.isArray(data.data), 'Data should be an array');
-  assert(data.metadata !== undefined, 'Should have metadata');
+  assert(response.data.success, 'Should have success: true');
+  assert(Array.isArray(response.data.data), 'Data should be an array');
+  assert(response.data.metadata !== undefined, 'Should have metadata');
 }
 
 async function testAuditLogQueryWithFilters() {
   logTest('Audit Logging - Query Audit Logs with Filters');
 
-  // Register a user
-  const registerResponse = await makeRequest('POST', '/api/auth/register', {
-    email: 'audit-filter-test@example.com',
-    password: 'testPassword123',
-  });
-  const token = registerResponse.data.data.access_token;
-
-  // Query with filters
+  // Query with filters (requires admin)
   const response = await fetch(
     `${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=create&limit=10`,
     {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${adminAuthToken}` },
     }
   );
   const data = await response.json();
@@ -8901,13 +8884,6 @@ async function testAuditLogQueryWithFilters() {
 async function testAuditLogResourceHistory() {
   logTest('Audit Logging - Get Resource Audit History');
 
-  // Register a user
-  const registerResponse = await makeRequest('POST', '/api/auth/register', {
-    email: 'audit-history@example.com',
-    password: 'testPassword123',
-  });
-  const token = registerResponse.data.data.access_token;
-
   // Create a type first
   const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditHistoryTestType',
@@ -8915,26 +8891,23 @@ async function testAuditLogResourceHistory() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
+  // Create an entity using globalAuthToken
   const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'Audit Test Entity' },
   });
   const entityId = entityResponse.data.data.id;
 
-  // Get audit history for the entity
-  const response = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
+  // Get audit history for the entity using globalAuthToken (entity creator has read permission)
+  const response = await makeAuthRequest('GET', `/api/audit/resource/entity/${entityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
-  assert(data.success, 'Should have success: true');
-  assert(data.data.audit_history, 'Should have audit_history array');
-  assert(Array.isArray(data.data.audit_history), 'audit_history should be an array');
-  assert(data.data.audit_history.length >= 1, 'Should have at least 1 audit entry for create');
-  assertEquals(data.data.resource_type, 'entity', 'Should match resource type');
-  assertEquals(data.data.resource_id, entityId, 'Should match resource ID');
+  assert(response.data.success, 'Should have success: true');
+  assert(response.data.data.audit_history, 'Should have audit_history array');
+  assert(Array.isArray(response.data.data.audit_history), 'audit_history should be an array');
+  assert(response.data.data.audit_history.length >= 1, 'Should have at least 1 audit entry for create');
+  assertEquals(response.data.data.resource_type, 'entity', 'Should match resource type');
+  assertEquals(response.data.data.resource_id, entityId, 'Should match resource ID');
 }
 
 async function testAuditLogUserActions() {
