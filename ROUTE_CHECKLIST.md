@@ -84,8 +84,8 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ## Graph Traversal Routes (`/api/graph`)
 
-- [ ] `GET /api/graph/path` - Find shortest path between two entities (BFS)
-- [ ] `POST /api/graph/traverse` - Multi-hop graph traversal with filtering
+- [✅] `GET /api/graph/path` - Find shortest path between two entities (BFS)
+- [✅] `POST /api/graph/traverse` - Multi-hop graph traversal with filtering
 
 ## Search Routes (`/api/search`)
 

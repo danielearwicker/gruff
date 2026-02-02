@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { validateQuery } from '../middleware/validation.js';
+import { optionalAuth } from '../middleware/auth.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { z } from 'zod';
+import { buildAclFilterClause, hasPermissionByAclId } from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;
@@ -75,9 +77,15 @@ async function findLatestVersion(
 /**
  * POST /api/graph/traverse
  * Advanced multi-hop graph traversal with configurable depth and filtering
+ *
+ * ACL filtering is applied:
+ * - Authenticated users can only traverse entities and links they have read permission on
+ * - Unauthenticated users can only traverse public entities and links (NULL acl_id)
  */
-graph.post('/traverse', async c => {
+graph.post('/traverse', optionalAuth(), async c => {
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c).child({ module: 'graph' });
 
   try {
@@ -89,6 +97,29 @@ graph.post('/traverse', async c => {
     const startEntity = await findLatestVersion(db, params.start_entity_id);
     if (!startEntity) {
       return c.json(response.notFound('Starting entity'), 404);
+    }
+
+    // Check permission on starting entity
+    const startAclId = startEntity.acl_id as number | null;
+    if (user) {
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, startAclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to access this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities
+      if (startAclId !== null) {
+        return c.json(response.forbidden('Authentication required to access this entity'), 403);
+      }
+    }
+
+    // Build ACL filter for entities and links
+    let entityAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+    let linkAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      entityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+      linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
     }
 
     // BFS traversal with depth limits and filtering
@@ -151,12 +182,14 @@ graph.post('/traverse', async c => {
             l.id as link_id,
             l.type_id as link_type_id,
             l.properties as link_properties,
+            l.acl_id as link_acl_id,
             e.id as entity_id,
             e.type_id as entity_type_id,
             e.properties as entity_properties,
             e.version as entity_version,
             e.created_at as entity_created_at,
-            e.is_deleted as entity_is_deleted
+            e.is_deleted as entity_is_deleted,
+            e.acl_id as entity_acl_id
           FROM links l
           INNER JOIN entities e ON l.target_entity_id = e.id
           WHERE l.source_entity_id = ?
@@ -167,6 +200,21 @@ graph.post('/traverse', async c => {
 
         if (!params.include_deleted) {
           sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+        }
+
+        // Apply ACL filtering for both entities and links
+        if (user) {
+          if (entityAclFilter && entityAclFilter.useFilter) {
+            sql += ` AND ${entityAclFilter.whereClause}`;
+            bindings.push(...(entityAclFilter.bindings as (string | number)[]));
+          }
+          if (linkAclFilter && linkAclFilter.useFilter) {
+            sql += ` AND ${linkAclFilter.whereClause}`;
+            bindings.push(...(linkAclFilter.bindings as (string | number)[]));
+          }
+        } else {
+          // Unauthenticated: only show public entities and links
+          sql += ' AND e.acl_id IS NULL AND l.acl_id IS NULL';
         }
 
         if (params.link_type_ids && params.link_type_ids.length > 0) {
@@ -189,12 +237,14 @@ graph.post('/traverse', async c => {
             l.id as link_id,
             l.type_id as link_type_id,
             l.properties as link_properties,
+            l.acl_id as link_acl_id,
             e.id as entity_id,
             e.type_id as entity_type_id,
             e.properties as entity_properties,
             e.version as entity_version,
             e.created_at as entity_created_at,
-            e.is_deleted as entity_is_deleted
+            e.is_deleted as entity_is_deleted,
+            e.acl_id as entity_acl_id
           FROM links l
           INNER JOIN entities e ON l.source_entity_id = e.id
           WHERE l.target_entity_id = ?
@@ -205,6 +255,21 @@ graph.post('/traverse', async c => {
 
         if (!params.include_deleted) {
           sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+        }
+
+        // Apply ACL filtering for both entities and links
+        if (user) {
+          if (entityAclFilter && entityAclFilter.useFilter) {
+            sql += ` AND ${entityAclFilter.whereClause}`;
+            bindings.push(...(entityAclFilter.bindings as (string | number)[]));
+          }
+          if (linkAclFilter && linkAclFilter.useFilter) {
+            sql += ` AND ${linkAclFilter.whereClause}`;
+            bindings.push(...(linkAclFilter.bindings as (string | number)[]));
+          }
+        } else {
+          // Unauthenticated: only show public entities and links
+          sql += ' AND e.acl_id IS NULL AND l.acl_id IS NULL';
         }
 
         if (params.link_type_ids && params.link_type_ids.length > 0) {
@@ -227,7 +292,24 @@ graph.post('/traverse', async c => {
           .bind(...query.bindings)
           .all();
 
-        for (const neighbor of results) {
+        // Apply per-row ACL filtering if needed (when useFilter is false)
+        let filteredResults = results;
+        if (user && entityAclFilter && !entityAclFilter.useFilter) {
+          filteredResults = filteredResults.filter(r => {
+            const entityAclId = r.entity_acl_id as number | null;
+            if (entityAclId === null) return true;
+            return entityAclFilter.accessibleAclIds.has(entityAclId);
+          });
+        }
+        if (user && linkAclFilter && !linkAclFilter.useFilter) {
+          filteredResults = filteredResults.filter(r => {
+            const linkAclId = r.link_acl_id as number | null;
+            if (linkAclId === null) return true;
+            return linkAclFilter.accessibleAclIds.has(linkAclId);
+          });
+        }
+
+        for (const neighbor of filteredResults) {
           const neighborId = neighbor.entity_id as string;
           const newPath = [
             ...current.path,
@@ -318,10 +400,16 @@ graph.post('/traverse', async c => {
 /**
  * GET /api/graph/path
  * Find the shortest path between two entities using BFS
+ *
+ * ACL filtering is applied:
+ * - Authenticated users can only traverse entities and links they have read permission on
+ * - Unauthenticated users can only traverse public entities and links (NULL acl_id)
  */
-graph.get('/path', validateQuery(shortestPathSchema), async c => {
+graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c => {
   const query = c.get('validated_query') as z.infer<typeof shortestPathSchema>;
   const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
   const logger = getLogger(c).child({ module: 'graph' });
 
   try {
@@ -335,6 +423,38 @@ graph.get('/path', validateQuery(shortestPathSchema), async c => {
 
     if (!toEntity) {
       return c.json(response.notFound('Target entity'), 404);
+    }
+
+    // Check permission on source and target entities
+    const fromAclId = fromEntity.acl_id as number | null;
+    const toAclId = toEntity.acl_id as number | null;
+
+    if (user) {
+      const canReadFrom = await hasPermissionByAclId(db, kv, user.user_id, fromAclId, 'read');
+      if (!canReadFrom) {
+        return c.json(response.forbidden('You do not have permission to access the source entity'), 403);
+      }
+      const canReadTo = await hasPermissionByAclId(db, kv, user.user_id, toAclId, 'read');
+      if (!canReadTo) {
+        return c.json(response.forbidden('You do not have permission to access the target entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities
+      if (fromAclId !== null) {
+        return c.json(response.forbidden('Authentication required to access the source entity'), 403);
+      }
+      if (toAclId !== null) {
+        return c.json(response.forbidden('Authentication required to access the target entity'), 403);
+      }
+    }
+
+    // Build ACL filter for entities and links during traversal
+    let entityAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+    let linkAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      entityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+      linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
     }
 
     // If source and target are the same, return empty path
@@ -390,9 +510,11 @@ graph.get('/path', validateQuery(shortestPathSchema), async c => {
           l.id as link_id,
           l.type_id as link_type_id,
           l.properties as link_properties,
+          l.acl_id as link_acl_id,
           e.id as entity_id,
           e.type_id as entity_type_id,
-          e.properties as entity_properties
+          e.properties as entity_properties,
+          e.acl_id as entity_acl_id
         FROM links l
         INNER JOIN entities e ON l.target_entity_id = e.id
         WHERE l.source_entity_id = ?
@@ -405,6 +527,21 @@ graph.get('/path', validateQuery(shortestPathSchema), async c => {
         sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
       }
 
+      // Apply ACL filtering for both entities and links
+      if (user) {
+        if (entityAclFilter && entityAclFilter.useFilter) {
+          sql += ` AND ${entityAclFilter.whereClause}`;
+          bindings.push(...(entityAclFilter.bindings as (string | number)[]));
+        }
+        if (linkAclFilter && linkAclFilter.useFilter) {
+          sql += ` AND ${linkAclFilter.whereClause}`;
+          bindings.push(...(linkAclFilter.bindings as (string | number)[]));
+        }
+      } else {
+        // Unauthenticated: only traverse through public entities and links
+        sql += ' AND e.acl_id IS NULL AND l.acl_id IS NULL';
+      }
+
       if (query.type_id) {
         sql += ' AND l.type_id = ?';
         bindings.push(query.type_id);
@@ -415,7 +552,24 @@ graph.get('/path', validateQuery(shortestPathSchema), async c => {
         .bind(...bindings)
         .all();
 
-      for (const neighbor of results) {
+      // Apply per-row ACL filtering if needed (when useFilter is false)
+      let filteredResults = results;
+      if (user && entityAclFilter && !entityAclFilter.useFilter) {
+        filteredResults = filteredResults.filter(r => {
+          const entityAclId = r.entity_acl_id as number | null;
+          if (entityAclId === null) return true;
+          return entityAclFilter.accessibleAclIds.has(entityAclId);
+        });
+      }
+      if (user && linkAclFilter && !linkAclFilter.useFilter) {
+        filteredResults = filteredResults.filter(r => {
+          const linkAclId = r.link_acl_id as number | null;
+          if (linkAclId === null) return true;
+          return linkAclFilter.accessibleAclIds.has(linkAclId);
+        });
+      }
+
+      for (const neighbor of filteredResults) {
         const neighborId = neighbor.entity_id as string;
 
         // Check if we've reached the target

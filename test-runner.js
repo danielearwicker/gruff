@@ -4623,7 +4623,7 @@ async function testShortestPath() {
   });
 
   // Test: Find shortest path from A to D
-  const response = await makeRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityDId}`);
+  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityDId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -4656,7 +4656,7 @@ async function testShortestPathSameEntity() {
   const entityId = entity.data.data.id;
 
   // Test: Find path from entity to itself
-  const response = await makeRequest('GET', `/api/graph/path?from=${entityId}&to=${entityId}`);
+  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entityId}&to=${entityId}`);
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(response.data.data.length, 0, 'Path length should be 0 for same entity');
@@ -4689,7 +4689,7 @@ async function testShortestPathNoPath() {
   const entity2Id = entity2.data.data.id;
 
   // Test: Find path between disconnected entities
-  const response = await makeRequest('GET', `/api/graph/path?from=${entity1Id}&to=${entity2Id}`);
+  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entity1Id}&to=${entity2Id}`);
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -4760,7 +4760,7 @@ async function testShortestPathWithLinkTypeFilter() {
   });
 
   // Test: Find path using only linkType1 (should go A->B->C)
-  const response = await makeRequest(
+  const response = await makeAuthRequest(
     'GET',
     `/api/graph/path?from=${entityAId}&to=${entityCId}&type_id=${linkType1Id}`
   );
@@ -4793,7 +4793,8 @@ async function testShortestPathInvalidSourceEntity() {
   const invalidId = '00000000-0000-0000-0000-000000000000';
 
   // Test: Find path from invalid entity
-  const response = await makeRequest('GET', `/api/graph/path?from=${invalidId}&to=${entityId}`);
+  // Note: Using makeAuthRequest because the valid entity has ACL protection
+  const response = await makeAuthRequest('GET', `/api/graph/path?from=${invalidId}&to=${entityId}`);
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -4818,7 +4819,8 @@ async function testShortestPathInvalidTargetEntity() {
   const invalidId = '00000000-0000-0000-0000-000000000000';
 
   // Test: Find path to invalid entity
-  const response = await makeRequest('GET', `/api/graph/path?from=${entityId}&to=${invalidId}`);
+  // Note: Using makeAuthRequest because the valid entity has ACL protection
+  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entityId}&to=${invalidId}`);
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -4901,7 +4903,7 @@ async function testMultiHopTraversal() {
   });
 
   // Test: Traverse from A with depth 2 (should find B, C, D, E)
-  const response = await makeRequest('POST', '/api/graph/traverse', {
+  const response = await makeAuthRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityAId,
     max_depth: 2,
     direction: 'outbound',
@@ -4987,7 +4989,7 @@ async function testMultiHopTraversalWithDepthLimit() {
   });
 
   // Test: Traverse from A with depth 1 (should only find A, B)
-  const response = await makeRequest('POST', '/api/graph/traverse', {
+  const response = await makeAuthRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityAId,
     max_depth: 1,
     direction: 'outbound',
@@ -5054,7 +5056,7 @@ async function testMultiHopTraversalBidirectional() {
   });
 
   // Test: Traverse from B in both directions (should find A and C)
-  const response = await makeRequest('POST', '/api/graph/traverse', {
+  const response = await makeAuthRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityBId,
     max_depth: 1,
     direction: 'both',
@@ -5132,7 +5134,7 @@ async function testMultiHopTraversalWithTypeFilters() {
   });
 
   // Test: Traverse from A, filter by entity type 1 only
-  const response = await makeRequest('POST', '/api/graph/traverse', {
+  const response = await makeAuthRequest('POST', '/api/graph/traverse', {
     start_entity_id: entityAId,
     max_depth: 2,
     direction: 'outbound',
@@ -5154,7 +5156,8 @@ async function testMultiHopTraversalInvalidStartEntity() {
   const invalidId = '00000000-0000-0000-0000-000000000000';
 
   // Test: Traverse from non-existent entity
-  const response = await makeRequest('POST', '/api/graph/traverse', {
+  // Note: Using makeAuthRequest to ensure proper auth context
+  const response = await makeAuthRequest('POST', '/api/graph/traverse', {
     start_entity_id: invalidId,
     max_depth: 2,
     direction: 'outbound',
