@@ -87,81 +87,87 @@ queryPlanRouter.get('/templates/:template', requireAuth(), requireAdmin(), c => 
  *
  * Returns the query execution plan with analysis and recommendations.
  */
-queryPlanRouter.post('/', requireAuth(), requireAdmin(), validateJson(analyzeQueryPlanSchema), async c => {
-  const body = c.get('validated_json') as {
-    template?: QueryTemplate;
-    parameters?: Record<string, string | number | boolean>;
-    sql?: string;
-  };
-  const db = c.env.DB;
-  const logger = getLogger(c);
+queryPlanRouter.post(
+  '/',
+  requireAuth(),
+  requireAdmin(),
+  validateJson(analyzeQueryPlanSchema),
+  async c => {
+    const body = c.get('validated_json') as {
+      template?: QueryTemplate;
+      parameters?: Record<string, string | number | boolean>;
+      sql?: string;
+    };
+    const db = c.env.DB;
+    const logger = getLogger(c);
 
-  logger.info('Analyzing query plan', {
-    template: body.template,
-    hasCustomSQL: !!body.sql,
-  });
+    logger.info('Analyzing query plan', {
+      template: body.template,
+      hasCustomSQL: !!body.sql,
+    });
 
-  try {
-    let sql: string;
+    try {
+      let sql: string;
 
-    // Generate SQL from template or use custom SQL
-    if (body.template) {
-      sql = generateTemplateSQL(body.template, body.parameters);
-    } else if (body.sql) {
-      // Validate custom SQL is safe
-      if (!isValidAnalysisQuery(body.sql)) {
+      // Generate SQL from template or use custom SQL
+      if (body.template) {
+        sql = generateTemplateSQL(body.template, body.parameters);
+      } else if (body.sql) {
+        // Validate custom SQL is safe
+        if (!isValidAnalysisQuery(body.sql)) {
+          return c.json(
+            response.error(
+              'Invalid SQL query. Only SELECT statements are allowed for analysis.',
+              'INVALID_SQL'
+            ),
+            400
+          );
+        }
+        sql = body.sql;
+      } else {
+        // This shouldn't happen due to schema validation, but handle it anyway
         return c.json(
-          response.error(
-            'Invalid SQL query. Only SELECT statements are allowed for analysis.',
-            'INVALID_SQL'
-          ),
+          response.error('Either template or sql must be provided', 'MISSING_QUERY'),
           400
         );
       }
-      sql = body.sql;
-    } else {
-      // This shouldn't happen due to schema validation, but handle it anyway
-      return c.json(
-        response.error('Either template or sql must be provided', 'MISSING_QUERY'),
-        400
-      );
-    }
 
-    // Execute EXPLAIN QUERY PLAN
-    const planSteps = await executeQueryPlan(db, sql);
+      // Execute EXPLAIN QUERY PLAN
+      const planSteps = await executeQueryPlan(db, sql);
 
-    // Analyze the query plan
-    const analysis = analyzeQueryPlanSteps(planSteps);
+      // Analyze the query plan
+      const analysis = analyzeQueryPlanSteps(planSteps);
 
-    // Generate recommendations
-    const recommendations = generateRecommendations(analysis, sql);
+      // Generate recommendations
+      const recommendations = generateRecommendations(analysis, sql);
 
-    logger.info('Query plan analyzed', {
-      template: body.template,
-      uses_index: analysis.uses_index,
-      has_table_scan: analysis.has_table_scan,
-      indexes_used: analysis.indexes_used.length,
-    });
-
-    return c.json(
-      response.success({
-        sql: sql.trim().replace(/\s+/g, ' '), // Normalize whitespace
+      logger.info('Query plan analyzed', {
         template: body.template,
-        plan: planSteps,
-        analysis,
-        recommendations,
-      })
-    );
-  } catch (error) {
-    logger.error('Failed to analyze query plan', error as Error);
+        uses_index: analysis.uses_index,
+        has_table_scan: analysis.has_table_scan,
+        indexes_used: analysis.indexes_used.length,
+      });
 
-    // Check for SQL syntax errors
-    if (error instanceof Error && error.message.includes('SQLITE_ERROR')) {
-      return c.json(response.error(`SQL error: ${error.message}`, 'SQL_ERROR'), 400);
+      return c.json(
+        response.success({
+          sql: sql.trim().replace(/\s+/g, ' '), // Normalize whitespace
+          template: body.template,
+          plan: planSteps,
+          analysis,
+          recommendations,
+        })
+      );
+    } catch (error) {
+      logger.error('Failed to analyze query plan', error as Error);
+
+      // Check for SQL syntax errors
+      if (error instanceof Error && error.message.includes('SQLITE_ERROR')) {
+        return c.json(response.error(`SQL error: ${error.message}`, 'SQL_ERROR'), 400);
+      }
+
+      return c.json(response.error('Failed to analyze query plan', 'DATABASE_ERROR'), 500);
     }
-
-    return c.json(response.error('Failed to analyze query plan', 'DATABASE_ERROR'), 500);
   }
-});
+);
 
 export default queryPlanRouter;

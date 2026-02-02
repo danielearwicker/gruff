@@ -531,6 +531,28 @@ PUT    /api/users/{id}             # Update user profile
 GET    /api/users/{id}/activity    # Get user's creation/edit history
 ```
 
+### 🟦 Admin Role Management Endpoint
+
+```
+PUT    /api/users/{id}/admin          # Grant or revoke admin role (admin only)
+```
+
+#### Endpoint Details
+
+- **Authentication**: Requires admin role
+- **Request body**:
+  ```json
+  {
+    "is_admin": true
+  }
+  ```
+- **Constraints**:
+  - 🟦 Only existing admins can grant or revoke admin status
+  - 🟦 Admins cannot revoke their own admin status (prevents lockout)
+  - 🟦 At least one admin must remain in the system
+- **Response**: Updated user object with new admin status
+- **Audit**: 🟦 All admin role changes are logged to the audit log with operation type `admin_role_change`
+
 ### ✅ Group Management Endpoints
 
 ```
@@ -1250,27 +1272,39 @@ The entity and link detail views include an ACL section for managing access cont
 
 ### ✅ User Administration Routes
 
-| Route           | Method | Description                    |
-| --------------- | ------ | ------------------------------ |
-| `/ui/users`     | GET    | User list (admin only)         |
-| `/ui/users/:id` | GET    | User detail page (admin only)  |
+| Route           | Method | Description                   |
+| --------------- | ------ | ----------------------------- |
+| `/ui/users`     | GET    | User list (admin only)        |
+| `/ui/users/:id` | GET    | User detail page (admin only) |
+
+#### 🟦 User Detail Page Admin Management
+
+The user detail page (`/ui/users/:id`) includes admin role management:
+
+- 🟦 **Admin status badge**: Shows whether user is an admin
+- 🟦 **Toggle admin button**: Available when viewing other users (not self)
+  - "Grant Admin" button for non-admin users
+  - "Revoke Admin" button for admin users
+- 🟦 **Confirmation dialog**: Required before changing admin status
+- 🟦 **Self-protection**: Button disabled when viewing own profile with tooltip explaining why
+- 🟦 **Last admin protection**: Button disabled if user is the only remaining admin
 
 ### ✅ Audit Log Routes
 
-| Route       | Method | Description                      |
-| ----------- | ------ | -------------------------------- |
-| `/ui/audit` | GET    | Audit log viewer (admin only)    |
+| Route       | Method | Description                   |
+| ----------- | ------ | ----------------------------- |
+| `/ui/audit` | GET    | Audit log viewer (admin only) |
 
 ### ✅ UI Authentication Routes
 
-| Route                      | Method | Description                    |
-| -------------------------- | ------ | ------------------------------ |
-| `/ui/auth/login`           | GET    | Login page                     |
-| `/ui/auth/login`           | POST   | Login form submission          |
-| `/ui/auth/register`        | GET    | Registration page              |
-| `/ui/auth/register`        | POST   | Registration form submission   |
-| `/ui/auth/logout`          | POST   | Logout handler (clears session)|
-| `/ui/auth/oauth/callback`  | GET    | OAuth callback handler         |
+| Route                     | Method | Description                     |
+| ------------------------- | ------ | ------------------------------- |
+| `/ui/auth/login`          | GET    | Login page                      |
+| `/ui/auth/login`          | POST   | Login form submission           |
+| `/ui/auth/register`       | GET    | Registration page               |
+| `/ui/auth/register`       | POST   | Registration form submission    |
+| `/ui/auth/logout`         | POST   | Logout handler (clears session) |
+| `/ui/auth/oauth/callback` | GET    | OAuth callback handler          |
 
 Note: Entity and link form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success. Authentication forms have dedicated UI handlers to manage cookie-based sessions.
 

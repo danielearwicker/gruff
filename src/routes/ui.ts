@@ -1656,7 +1656,13 @@ ui.get('/entities/:id', async c => {
 
     if (user) {
       // Build ACL filters for authenticated users
-      linkAclFilter = await buildAclFilterClause(c.env.DB, c.env.KV, user.user_id, 'read', 'l.acl_id');
+      linkAclFilter = await buildAclFilterClause(
+        c.env.DB,
+        c.env.KV,
+        user.user_id,
+        'read',
+        'l.acl_id'
+      );
       targetEntityAclFilter = await buildAclFilterClause(
         c.env.DB,
         c.env.KV,
@@ -8751,7 +8757,9 @@ ui.get('/users/:id', async c => {
 
   // Require admin role
   if (!user.is_admin) {
-    return c.redirect('/ui?error=' + encodeURIComponent('Admin access required to view user details'));
+    return c.redirect(
+      '/ui?error=' + encodeURIComponent('Admin access required to view user details')
+    );
   }
 
   // Fetch the user
@@ -9017,7 +9025,9 @@ ui.get('/audit', async c => {
 
   // Require admin role (matches the API's admin-only requirement for GET /api/audit)
   if (!user.is_admin) {
-    return c.redirect('/ui?error=' + encodeURIComponent('Admin access required to view audit logs'));
+    return c.redirect(
+      '/ui?error=' + encodeURIComponent('Admin access required to view audit logs')
+    );
   }
 
   // Get filter/pagination parameters
@@ -9098,7 +9108,9 @@ ui.get('/audit', async c => {
     user_display_name: string | null;
   }
 
-  const results = await c.env.DB.prepare(query).bind(...params).all<AuditLogRow>();
+  const results = await c.env.DB.prepare(query)
+    .bind(...params)
+    .all<AuditLogRow>();
 
   const logs = results.results || [];
   const hasMore = logs.length > limit;

@@ -11,11 +11,7 @@ import {
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
-import {
-  buildAclFilterClause,
-  filterByAclPermission,
-  createResourceAcl,
-} from '../utils/acl.js';
+import { buildAclFilterClause, filterByAclPermission, createResourceAcl } from '../utils/acl.js';
 
 type Bindings = {
   DB: D1Database;

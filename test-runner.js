@@ -4647,7 +4647,10 @@ async function testShortestPath() {
   });
 
   // Test: Find shortest path from A to D
-  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entityAId}&to=${entityDId}`);
+  const response = await makeAuthRequest(
+    'GET',
+    `/api/graph/path?from=${entityAId}&to=${entityDId}`
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.ok, 'Response should be OK');
@@ -4713,7 +4716,10 @@ async function testShortestPathNoPath() {
   const entity2Id = entity2.data.data.id;
 
   // Test: Find path between disconnected entities
-  const response = await makeAuthRequest('GET', `/api/graph/path?from=${entity1Id}&to=${entity2Id}`);
+  const response = await makeAuthRequest(
+    'GET',
+    `/api/graph/path?from=${entity1Id}&to=${entity2Id}`
+  );
 
   assertEquals(response.status, 404, 'Status code should be 404');
   assert(!response.ok, 'Response should not be OK');
@@ -6109,7 +6115,10 @@ async function testTypeAheadSuggestions() {
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data, 'Should have data field');
-  assert(response.data.data.length >= 3, 'Should find at least 3 cities starting with/containing "San"');
+  assert(
+    response.data.data.length >= 3,
+    'Should find at least 3 cities starting with/containing "San"'
+  );
 
   // Verify all results contain "San"
   const allContainSan = response.data.data.every(
@@ -6149,7 +6158,10 @@ async function testTypeAheadSuggestionsWithTypeFilter() {
   });
 
   // Search only for cars with "Honda"
-  const response = await makeAuthRequest('GET', `/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`);
+  const response = await makeAuthRequest(
+    'GET',
+    `/api/search/suggest?query=Honda&property_path=name&type_id=${carTypeId}`
+  );
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data.length >= 2, 'Should find at least 2 Honda cars');
@@ -6179,7 +6191,10 @@ async function testTypeAheadSuggestionsLimit() {
   }
 
   // Request with limit of 3
-  const response = await makeAuthRequest('GET', '/api/search/suggest?query=R&property_path=name&limit=3');
+  const response = await makeAuthRequest(
+    'GET',
+    '/api/search/suggest?query=R&property_path=name&limit=3'
+  );
 
   assertEquals(response.status, 200, 'Should return 200');
   assertEquals(response.data.data.length, 3, 'Should return exactly 3 suggestions');
@@ -6219,7 +6234,10 @@ async function testTypeAheadSuggestionsCustomProperty() {
   });
 
   // Search by author property instead of name
-  const response = await makeAuthRequest('GET', '/api/search/suggest?query=George&property_path=author');
+  const response = await makeAuthRequest(
+    'GET',
+    '/api/search/suggest?query=George&property_path=author'
+  );
 
   assertEquals(response.status, 200, 'Should return 200');
   assert(response.data.data.length >= 2, 'Should find at least 2 books by George');
@@ -6229,7 +6247,11 @@ async function testTypeAheadSuggestionsCustomProperty() {
     item => item.matched_value && item.matched_value.includes('George')
   );
   assert(allMatchGeorge, 'All suggestions should have "George" in author field');
-  assertEquals(response.data.data[0].property_path, 'author', 'Should indicate matched property path');
+  assertEquals(
+    response.data.data[0].property_path,
+    'author',
+    'Should indicate matched property path'
+  );
 }
 
 // ============================================================================
@@ -8929,7 +8951,10 @@ async function testAuditLogResourceHistory() {
   assert(response.data.success, 'Should have success: true');
   assert(response.data.data.audit_history, 'Should have audit_history array');
   assert(Array.isArray(response.data.data.audit_history), 'audit_history should be an array');
-  assert(response.data.data.audit_history.length >= 1, 'Should have at least 1 audit entry for create');
+  assert(
+    response.data.data.audit_history.length >= 1,
+    'Should have at least 1 audit entry for create'
+  );
   assertEquals(response.data.data.resource_type, 'entity', 'Should match resource type');
   assertEquals(response.data.data.resource_id, entityId, 'Should match resource ID');
 }
@@ -9832,7 +9857,9 @@ async function testUIEntityListSorting() {
   logTest('UI - Entity List Page - Sorting');
 
   // Test sort by date ascending
-  const response = await makeAuthenticatedUIRequest('/ui/entities?sort_by=created_at&sort_order=asc');
+  const response = await makeAuthenticatedUIRequest(
+    '/ui/entities?sort_by=created_at&sort_order=asc'
+  );
   const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -9889,7 +9916,9 @@ async function testUIEntityListShowDeleted() {
   await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
   // Request with show_deleted=true, filter by type to ensure we see the deleted entity
-  const response = await makeAuthenticatedUIRequest(`/ui/entities?show_deleted=true&type_id=${typeId}`);
+  const response = await makeAuthenticatedUIRequest(
+    `/ui/entities?show_deleted=true&type_id=${typeId}`
+  );
   const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
@@ -10024,10 +10053,7 @@ async function testUIEntityDetailBasic() {
   assert(response.text.includes('Actions'), 'Should have actions section');
   assert(response.text.includes(entityId), 'Should display entity ID');
   assert(response.text.includes('EntityDetailTestType'), 'Should display entity type');
-  assert(
-    response.text.includes('class="badge success">Latest</span>'),
-    'Should show latest badge'
-  );
+  assert(response.text.includes('class="badge success">Latest</span>'), 'Should show latest badge');
   assert(response.text.includes('Edit Entity'), 'Should have edit button');
   assert(response.text.includes('Delete Entity'), 'Should have delete button');
 }
@@ -10999,7 +11025,10 @@ async function testGeneratedColumnsFilterByTable() {
   assert(entityColumns.length >= 3, 'Should have at least 3 entity columns');
 
   // Test filtering by links table
-  const linksResponse = await makeAdminAuthRequest('GET', '/api/schema/generated-columns?table_name=links');
+  const linksResponse = await makeAdminAuthRequest(
+    'GET',
+    '/api/schema/generated-columns?table_name=links'
+  );
 
   assertEquals(linksResponse.status, 200, 'Status code should be 200');
   const linkColumns = linksResponse.data.data;
@@ -11526,7 +11555,10 @@ async function testQueryPlanTemplatesEndpoint() {
 async function testQueryPlanTemplateDetails() {
   logTest('Query Plan - Get specific template details');
 
-  const response = await makeAdminAuthRequest('GET', '/api/schema/query-plan/templates/entity_by_type');
+  const response = await makeAdminAuthRequest(
+    'GET',
+    '/api/schema/query-plan/templates/entity_by_type'
+  );
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.success, 'Response should be successful');
@@ -11846,7 +11878,10 @@ async function testQueryPerformanceTrackingSearchOperations() {
   assert(Array.isArray(searchResponse.data.data), 'Search should return results array');
 
   // Test suggest operation
-  const suggestResponse = await makeAuthRequest('GET', '/api/search/suggest?query=Searchable&limit=5');
+  const suggestResponse = await makeAuthRequest(
+    'GET',
+    '/api/search/suggest?query=Searchable&limit=5'
+  );
   assertEquals(suggestResponse.status, 200, 'Suggest should succeed with query tracking');
 
   logInfo('Search operations work correctly with query performance tracking');

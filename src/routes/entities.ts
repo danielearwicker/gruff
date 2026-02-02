@@ -1284,7 +1284,10 @@ entities.get('/:id/outbound', optionalAuth(), async c => {
       }
       if (targetEntityAclFilter && !targetEntityAclFilter.useFilter) {
         filteredResults = filteredResults.filter(item => {
-          const targetAclId = (item as Record<string, unknown>).target_acl_id as number | null | undefined;
+          const targetAclId = (item as Record<string, unknown>).target_acl_id as
+            | number
+            | null
+            | undefined;
           if (targetAclId === null || targetAclId === undefined) {
             return true;
           }
@@ -1433,7 +1436,10 @@ entities.get('/:id/inbound', optionalAuth(), async c => {
       }
       if (sourceEntityAclFilter && !sourceEntityAclFilter.useFilter) {
         filteredResults = filteredResults.filter(item => {
-          const sourceAclId = (item as Record<string, unknown>).source_acl_id as number | null | undefined;
+          const sourceAclId = (item as Record<string, unknown>).source_acl_id as
+            | number
+            | null
+            | undefined;
           if (sourceAclId === null || sourceAclId === undefined) {
             return true;
           }
@@ -1523,7 +1529,13 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
     if (user) {
       // Build ACL filters for authenticated users
       linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
-      neighborEntityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+      neighborEntityAclFilter = await buildAclFilterClause(
+        db,
+        kv,
+        user.user_id,
+        'read',
+        'e.acl_id'
+      );
     }
 
     const neighbors: Record<string, unknown>[] = [];
@@ -1596,7 +1608,10 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
       if (user) {
         if (linkAclFilter && !linkAclFilter.useFilter) {
           filteredOutbound = filteredOutbound.filter(item => {
-            const aclId = (item as Record<string, unknown>).link_acl_id as number | null | undefined;
+            const aclId = (item as Record<string, unknown>).link_acl_id as
+              | number
+              | null
+              | undefined;
             if (aclId === null || aclId === undefined) {
               return true;
             }
@@ -1605,7 +1620,10 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
         }
         if (neighborEntityAclFilter && !neighborEntityAclFilter.useFilter) {
           filteredOutbound = filteredOutbound.filter(item => {
-            const aclId = (item as Record<string, unknown>).entity_acl_id as number | null | undefined;
+            const aclId = (item as Record<string, unknown>).entity_acl_id as
+              | number
+              | null
+              | undefined;
             if (aclId === null || aclId === undefined) {
               return true;
             }
@@ -1685,7 +1703,10 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
       if (user) {
         if (linkAclFilter && !linkAclFilter.useFilter) {
           filteredInbound = filteredInbound.filter(item => {
-            const aclId = (item as Record<string, unknown>).link_acl_id as number | null | undefined;
+            const aclId = (item as Record<string, unknown>).link_acl_id as
+              | number
+              | null
+              | undefined;
             if (aclId === null || aclId === undefined) {
               return true;
             }
@@ -1694,7 +1715,10 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
         }
         if (neighborEntityAclFilter && !neighborEntityAclFilter.useFilter) {
           filteredInbound = filteredInbound.filter(item => {
-            const aclId = (item as Record<string, unknown>).entity_acl_id as number | null | undefined;
+            const aclId = (item as Record<string, unknown>).entity_acl_id as
+              | number
+              | null
+              | undefined;
             if (aclId === null || aclId === undefined) {
               return true;
             }

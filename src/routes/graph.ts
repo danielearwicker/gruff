@@ -432,19 +432,31 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
     if (user) {
       const canReadFrom = await hasPermissionByAclId(db, kv, user.user_id, fromAclId, 'read');
       if (!canReadFrom) {
-        return c.json(response.forbidden('You do not have permission to access the source entity'), 403);
+        return c.json(
+          response.forbidden('You do not have permission to access the source entity'),
+          403
+        );
       }
       const canReadTo = await hasPermissionByAclId(db, kv, user.user_id, toAclId, 'read');
       if (!canReadTo) {
-        return c.json(response.forbidden('You do not have permission to access the target entity'), 403);
+        return c.json(
+          response.forbidden('You do not have permission to access the target entity'),
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities
       if (fromAclId !== null) {
-        return c.json(response.forbidden('Authentication required to access the source entity'), 403);
+        return c.json(
+          response.forbidden('Authentication required to access the source entity'),
+          403
+        );
       }
       if (toAclId !== null) {
-        return c.json(response.forbidden('Authentication required to access the target entity'), 403);
+        return c.json(
+          response.forbidden('Authentication required to access the target entity'),
+          403
+        );
       }
     }
 

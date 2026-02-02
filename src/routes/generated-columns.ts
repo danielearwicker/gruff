@@ -35,39 +35,40 @@ generatedColumnsRouter.get(
   requireAdmin(),
   validateQuery(listGeneratedColumnsQuerySchema),
   async c => {
-  const query = c.get('validated_query') as { table_name?: string; is_indexed?: number };
-  const db = c.env.DB;
-  const logger = getLogger(c);
+    const query = c.get('validated_query') as { table_name?: string; is_indexed?: number };
+    const db = c.env.DB;
+    const logger = getLogger(c);
 
-  logger.info('Listing generated columns', { query });
+    logger.info('Listing generated columns', { query });
 
-  try {
-    let columns;
-    if (query.table_name) {
-      columns = await getGeneratedColumnsForTable(db, query.table_name as 'entities' | 'links');
-    } else {
-      columns = await getGeneratedColumns(db);
+    try {
+      let columns;
+      if (query.table_name) {
+        columns = await getGeneratedColumnsForTable(db, query.table_name as 'entities' | 'links');
+      } else {
+        columns = await getGeneratedColumns(db);
+      }
+
+      // Apply is_indexed filter if specified
+      if (query.is_indexed !== undefined) {
+        columns = columns.filter(c => c.is_indexed === query.is_indexed);
+      }
+
+      // Convert is_indexed to boolean for response
+      const formattedColumns = columns.map(c => ({
+        ...c,
+        is_indexed: c.is_indexed === 1,
+      }));
+
+      logger.info('Generated columns retrieved', { count: formattedColumns.length });
+
+      return c.json(response.success(formattedColumns));
+    } catch (error) {
+      logger.error('Failed to retrieve generated columns', error as Error);
+      return c.json(response.error('Failed to retrieve generated columns', 'DATABASE_ERROR'), 500);
     }
-
-    // Apply is_indexed filter if specified
-    if (query.is_indexed !== undefined) {
-      columns = columns.filter(c => c.is_indexed === query.is_indexed);
-    }
-
-    // Convert is_indexed to boolean for response
-    const formattedColumns = columns.map(c => ({
-      ...c,
-      is_indexed: c.is_indexed === 1,
-    }));
-
-    logger.info('Generated columns retrieved', { count: formattedColumns.length });
-
-    return c.json(response.success(formattedColumns));
-  } catch (error) {
-    logger.error('Failed to retrieve generated columns', error as Error);
-    return c.json(response.error('Failed to retrieve generated columns', 'DATABASE_ERROR'), 500);
   }
-});
+);
 
 /**
  * GET /api/schema/generated-columns/optimization

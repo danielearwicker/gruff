@@ -12,6 +12,8 @@ Having chosen a feature to implement, you should read around related areas of th
 - Update its entry in the specification to have the ✅ marker,
 - Commit the changes to this git repository with a short, snappy description of the feature.
 
+If you determine that the feature is already implemented, just update it to have the ✅ marker.
+
 ## Testing
 
 In addition, to preserve the robustness of the product, refer to `TESTING.md`. Extend the tests to cover your newly implemented feature. You **MUST** run the tests and address any discrepancies:
@@ -28,6 +30,8 @@ You **MUST** run `npm run format:check` to ensure the code is correctly formatte
 ## Fix Broken Windows!
 
 Be a good engineer: if you spot a broken test, even if it's not in the area you're working on and you suspect it was already broken before you started work, **investigate and fix it**. Leave the codebase in a better state than you found it, so the next engineer (which may be you!) doesn't have to waste time stepping over the accumulating mess.
+
+Pay careful attention to test output - there may be error messages even though the test doesn't fail. Challenge these: do they indicate an underlying problem? Is the error message expected for that test? Investigate thoroughly and fix as appropriate, being guided by `PRODUCT_SPEC.md`.
 
 ## What to do if there's nothing to do!
 

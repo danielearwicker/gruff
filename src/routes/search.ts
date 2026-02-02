@@ -159,7 +159,8 @@ search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), asy
 
     // Query for entities (limit + 1 to check if there are more results)
     // If using per-row ACL filtering, fetch more to account for filtered items
-    const fetchLimit = aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
+    const fetchLimit =
+      aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
 
     const query = `
       SELECT e.*, t.name as type_name, t.category as type_category
@@ -380,7 +381,8 @@ search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c =
 
     // Query for links with type information and connected entities
     // If using per-row ACL filtering, fetch more to account for filtered items
-    const fetchLimit = aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
+    const fetchLimit =
+      aclFilter && !aclFilter.useFilter ? (criteria.limit + 1) * 3 : criteria.limit + 1;
 
     const query = `
       SELECT
