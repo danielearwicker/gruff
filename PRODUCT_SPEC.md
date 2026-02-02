@@ -1248,6 +1248,13 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/groups/:id`      | GET    | Group detail with members |
 | `/ui/groups/:id/edit` | GET    | Edit group form           |
 
+### ✅ User Administration Routes
+
+| Route           | Method | Description                    |
+| --------------- | ------ | ------------------------------ |
+| `/ui/users`     | GET    | User list (admin only)         |
+| `/ui/users/:id` | GET    | User detail page (admin only)  |
+
 ### ✅ UI Authentication Routes
 
 | Route                      | Method | Description                    |

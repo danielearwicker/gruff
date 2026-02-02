@@ -8517,4 +8517,490 @@ ui.get('/auth/oauth/callback', async c => {
   return c.redirect(returnTo);
 });
 
+/**
+ * Users browser (admin only)
+ * GET /ui/users
+ */
+ui.get('/users', async c => {
+  const user = c.get('user');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/users'));
+  }
+
+  // Require admin role
+  if (!user.is_admin) {
+    // Redirect non-admins to home with error
+    return c.redirect('/ui?error=' + encodeURIComponent('Admin access required to view users'));
+  }
+
+  // Get filter/pagination parameters
+  const emailFilter = c.req.query('email') || '';
+  const providerFilter = c.req.query('provider') || '';
+  const isActiveFilter = c.req.query('is_active') || '';
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+
+  // Build query
+  let query = `
+    SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin
+    FROM users
+    WHERE 1=1
+  `;
+  const params: unknown[] = [];
+
+  if (emailFilter) {
+    query += ' AND email LIKE ?';
+    params.push(`%${emailFilter}%`);
+  }
+
+  if (providerFilter) {
+    query += ' AND provider = ?';
+    params.push(providerFilter);
+  }
+
+  if (isActiveFilter === 'true' || isActiveFilter === '1') {
+    query += ' AND is_active = 1';
+  } else if (isActiveFilter === 'false' || isActiveFilter === '0') {
+    query += ' AND is_active = 0';
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit + 1, offset); // Fetch one extra to check if there are more
+
+  const results = await c.env.DB.prepare(query)
+    .bind(...params)
+    .all<{
+      id: string;
+      email: string;
+      display_name: string | null;
+      provider: string;
+      created_at: number;
+      updated_at: number;
+      is_active: number;
+      is_admin: number;
+    }>();
+
+  const users = results.results || [];
+  const hasMore = users.length > limit;
+  if (hasMore) users.pop(); // Remove the extra one
+
+  // Get total count for display
+  let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
+  const countParams: unknown[] = [];
+  if (emailFilter) {
+    countQuery += ' AND email LIKE ?';
+    countParams.push(`%${emailFilter}%`);
+  }
+  if (providerFilter) {
+    countQuery += ' AND provider = ?';
+    countParams.push(providerFilter);
+  }
+  if (isActiveFilter === 'true' || isActiveFilter === '1') {
+    countQuery += ' AND is_active = 1';
+  } else if (isActiveFilter === 'false' || isActiveFilter === '0') {
+    countQuery += ' AND is_active = 0';
+  }
+  const countResult = await c.env.DB.prepare(countQuery)
+    .bind(...countParams)
+    .first<{ total: number }>();
+  const total = countResult?.total || 0;
+
+  // Get available providers for filter dropdown
+  const providersResult = await c.env.DB.prepare(
+    'SELECT DISTINCT provider FROM users ORDER BY provider'
+  ).all<{ provider: string }>();
+  const providers = (providersResult.results || []).map(p => p.provider);
+
+  // Build filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/users" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="email">Search by Email:</label>
+            <input type="text" id="email" name="email" value="${escapeHtml(emailFilter)}" placeholder="Enter email...">
+          </div>
+          <div class="form-group">
+            <label for="provider">Provider:</label>
+            <select id="provider" name="provider">
+              <option value="">All Providers</option>
+              ${providers.map(p => `<option value="${escapeHtml(p)}" ${providerFilter === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="is_active">Status:</label>
+            <select id="is_active" name="is_active">
+              <option value="">All</option>
+              <option value="true" ${isActiveFilter === 'true' ? 'selected' : ''}>Active</option>
+              <option value="false" ${isActiveFilter === 'false' ? 'selected' : ''}>Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div class="button-group">
+          <button type="submit" class="button">Search</button>
+          <a href="/ui/users" class="button secondary">Clear</a>
+        </div>
+      </form>
+    </div>
+  `;
+
+  // Build users table
+  const usersTable =
+    users.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Display Name</th>
+          <th>Provider</th>
+          <th>Status</th>
+          <th>Role</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${users
+          .map(
+            u => `
+          <tr>
+            <td>${escapeHtml(u.email)}</td>
+            <td>${u.display_name ? escapeHtml(u.display_name) : '<span class="muted">-</span>'}</td>
+            <td><span class="badge muted">${escapeHtml(u.provider)}</span></td>
+            <td>${u.is_active ? '<span class="badge success">Active</span>' : '<span class="badge danger">Inactive</span>'}</td>
+            <td>${u.is_admin ? '<span class="badge">Admin</span>' : '<span class="muted">User</span>'}</td>
+            <td class="muted small">${formatTimestamp(u.created_at)}</td>
+            <td>
+              <div class="button-group compact">
+                <a href="/ui/users/${u.id}" class="button small">View</a>
+              </div>
+            </td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No users found.</p>';
+
+  // Build pagination
+  const currentPage = Math.floor(offset / limit) + 1;
+  const totalPages = Math.ceil(total / limit);
+  const buildPageUrl = (newOffset: number) => {
+    const params = new URLSearchParams();
+    if (emailFilter) params.set('email', emailFilter);
+    if (providerFilter) params.set('provider', providerFilter);
+    if (isActiveFilter) params.set('is_active', isActiveFilter);
+    params.set('limit', String(limit));
+    params.set('offset', String(newOffset));
+    return `/ui/users?${params.toString()}`;
+  };
+
+  const pagination =
+    total > limit
+      ? `
+    <div class="pagination">
+      ${offset > 0 ? `<a href="${buildPageUrl(Math.max(0, offset - limit))}" class="button small secondary">&laquo; Previous</a>` : ''}
+      <span class="muted">Page ${currentPage} of ${totalPages} (${total} total users)</span>
+      ${hasMore ? `<a href="${buildPageUrl(offset + limit)}" class="button small secondary">Next &raquo;</a>` : ''}
+    </div>
+  `
+      : '';
+
+  const content = `
+    <h2>Users</h2>
+    <p>View and manage user accounts. Only administrators can access this page.</p>
+
+    <h3>Filter Users</h3>
+    ${filterForm}
+
+    <h3>All Users</h3>
+    ${usersTable}
+    ${pagination}
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Users',
+      user,
+      activePath: '/ui/users',
+      breadcrumbs: [{ label: 'Home', href: '/ui' }, { label: 'Users' }],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
+/**
+ * User detail page (admin only)
+ * GET /ui/users/:id
+ */
+ui.get('/users/:id', async c => {
+  const user = c.get('user');
+  const userId = c.req.param('id');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent(`/ui/users/${userId}`));
+  }
+
+  // Require admin role
+  if (!user.is_admin) {
+    return c.redirect('/ui?error=' + encodeURIComponent('Admin access required to view user details'));
+  }
+
+  // Fetch the user
+  const targetUser = await c.env.DB.prepare(
+    'SELECT id, email, display_name, provider, provider_id, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+  )
+    .bind(userId)
+    .first<{
+      id: string;
+      email: string;
+      display_name: string | null;
+      provider: string;
+      provider_id: string | null;
+      created_at: number;
+      updated_at: number;
+      is_active: number;
+      is_admin: number;
+    }>();
+
+  if (!targetUser) {
+    const content = `
+      <h2>User Not Found</h2>
+      <p class="muted">The user with ID "${escapeHtml(userId)}" was not found.</p>
+      <a href="/ui/users" class="button">Back to Users</a>
+    `;
+
+    const html = renderPage(
+      {
+        title: 'User Not Found',
+        user,
+        activePath: '/ui/users',
+        breadcrumbs: [
+          { label: 'Home', href: '/ui' },
+          { label: 'Users', href: '/ui/users' },
+          { label: 'Not Found' },
+        ],
+      },
+      content
+    );
+
+    return c.html(html, 404);
+  }
+
+  // Get groups the user belongs to
+  const groupsResult = await c.env.DB.prepare(
+    `SELECT g.id, g.name, gm.created_at as joined_at
+     FROM groups g
+     INNER JOIN group_members gm ON g.id = gm.group_id
+     WHERE gm.member_type = 'user' AND gm.member_id = ?
+     ORDER BY g.name ASC`
+  )
+    .bind(userId)
+    .all<{ id: string; name: string; joined_at: number }>();
+
+  const groups = groupsResult.results || [];
+
+  // Get recent activity (entities and links created by this user)
+  const recentEntities = await c.env.DB.prepare(
+    `SELECT e.id, t.name as type_name, e.properties, e.created_at
+     FROM entities e
+     LEFT JOIN types t ON e.type_id = t.id
+     WHERE e.created_by = ? AND e.is_latest = 1
+     ORDER BY e.created_at DESC
+     LIMIT 10`
+  )
+    .bind(userId)
+    .all<{ id: string; type_name: string | null; properties: string; created_at: number }>();
+
+  const recentLinks = await c.env.DB.prepare(
+    `SELECT l.id, t.name as type_name, l.source_entity_id, l.target_entity_id, l.created_at
+     FROM links l
+     LEFT JOIN types t ON l.type_id = t.id
+     WHERE l.created_by = ? AND l.is_latest = 1
+     ORDER BY l.created_at DESC
+     LIMIT 10`
+  )
+    .bind(userId)
+    .all<{
+      id: string;
+      type_name: string | null;
+      source_entity_id: string;
+      target_entity_id: string;
+      created_at: number;
+    }>();
+
+  // Build groups section
+  const groupsSection =
+    groups.length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Group Name</th>
+          <th>Joined</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${groups
+          .map(
+            g => `
+          <tr>
+            <td><a href="/ui/groups/${g.id}">${escapeHtml(g.name)}</a></td>
+            <td class="muted small">${formatTimestamp(g.joined_at)}</td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">User is not a member of any groups.</p>';
+
+  // Build recent entities section
+  const entitiesSection =
+    (recentEntities.results || []).length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Entity</th>
+          <th>Type</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(recentEntities.results || [])
+          .map(e => {
+            let entityName = e.id.substring(0, 8) + '...';
+            try {
+              const props = JSON.parse(e.properties || '{}');
+              if (props.name) entityName = props.name;
+              else if (props.title) entityName = props.title;
+            } catch {
+              // Use truncated ID
+            }
+            return `
+          <tr>
+            <td><a href="/ui/entities/${e.id}">${escapeHtml(entityName)}</a></td>
+            <td><span class="badge muted">${e.type_name ? escapeHtml(e.type_name) : '-'}</span></td>
+            <td class="muted small">${formatTimestamp(e.created_at)}</td>
+          </tr>
+        `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No entities created by this user.</p>';
+
+  // Build recent links section
+  const linksSection =
+    (recentLinks.results || []).length > 0
+      ? `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Link Type</th>
+          <th>Source</th>
+          <th>Target</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(recentLinks.results || [])
+          .map(
+            l => `
+          <tr>
+            <td><span class="badge muted">${l.type_name ? escapeHtml(l.type_name) : '-'}</span></td>
+            <td><a href="/ui/entities/${l.source_entity_id}" class="id-link">${l.source_entity_id.substring(0, 8)}...</a></td>
+            <td><a href="/ui/entities/${l.target_entity_id}" class="id-link">${l.target_entity_id.substring(0, 8)}...</a></td>
+            <td class="muted small">${formatTimestamp(l.created_at)}</td>
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `
+      : '<p class="muted">No links created by this user.</p>';
+
+  const content = `
+    <h2>User Details</h2>
+
+    <div class="card">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-label">ID</span>
+          <span class="detail-value"><code>${escapeHtml(targetUser.id)}</code></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Email</span>
+          <span class="detail-value">${escapeHtml(targetUser.email)}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Display Name</span>
+          <span class="detail-value">${targetUser.display_name ? escapeHtml(targetUser.display_name) : '<span class="muted">Not set</span>'}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Provider</span>
+          <span class="detail-value"><span class="badge muted">${escapeHtml(targetUser.provider)}</span></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Status</span>
+          <span class="detail-value">${targetUser.is_active ? '<span class="badge success">Active</span>' : '<span class="badge danger">Inactive</span>'}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Role</span>
+          <span class="detail-value">${targetUser.is_admin ? '<span class="badge">Admin</span>' : '<span class="muted">User</span>'}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Created</span>
+          <span class="detail-value">${formatTimestamp(targetUser.created_at)}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Last Updated</span>
+          <span class="detail-value">${formatTimestamp(targetUser.updated_at)}</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>Group Memberships</h3>
+    ${groupsSection}
+
+    <h3>Recent Entities</h3>
+    ${entitiesSection}
+
+    <h3>Recent Links</h3>
+    ${linksSection}
+
+    <div class="button-group" style="margin-top: 2rem;">
+      <a href="/ui/users" class="button secondary">Back to Users</a>
+    </div>
+  `;
+
+  const html = renderPage(
+    {
+      title: `User: ${targetUser.display_name || targetUser.email}`,
+      user,
+      activePath: '/ui/users',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Users', href: '/ui/users' },
+        { label: targetUser.display_name || targetUser.email },
+      ],
+    },
+    content
+  );
+
+  return c.html(html);
+});
+
 export default ui;
