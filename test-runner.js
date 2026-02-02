@@ -10916,7 +10916,7 @@ async function testETagWithStarWildcard() {
 async function testGeneratedColumnsEndpoint() {
   logTest('Generated Columns - List All Generated Columns');
 
-  const response = await makeRequest('GET', '/api/schema/generated-columns');
+  const response = await makeAdminAuthRequest('GET', '/api/schema/generated-columns');
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data, 'Should return data array');
@@ -10943,7 +10943,7 @@ async function testGeneratedColumnsFilterByTable() {
   logTest('Generated Columns - Filter by Table Name');
 
   // Test filtering by entities table
-  const entitiesResponse = await makeRequest(
+  const entitiesResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns?table_name=entities'
   );
@@ -10958,7 +10958,7 @@ async function testGeneratedColumnsFilterByTable() {
   assert(entityColumns.length >= 3, 'Should have at least 3 entity columns');
 
   // Test filtering by links table
-  const linksResponse = await makeRequest('GET', '/api/schema/generated-columns?table_name=links');
+  const linksResponse = await makeAdminAuthRequest('GET', '/api/schema/generated-columns?table_name=links');
 
   assertEquals(linksResponse.status, 200, 'Status code should be 200');
   const linkColumns = linksResponse.data.data;
@@ -10973,7 +10973,7 @@ async function testGeneratedColumnsFilterByTable() {
 async function testGeneratedColumnsOptimizationInfo() {
   logTest('Generated Columns - Query Optimization Info');
 
-  const response = await makeRequest('GET', '/api/schema/generated-columns/optimization');
+  const response = await makeAdminAuthRequest('GET', '/api/schema/generated-columns/optimization');
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data, 'Should return data');
@@ -11000,7 +11000,7 @@ async function testGeneratedColumnsAnalyze() {
   logTest('Generated Columns - Analyze Query Path');
 
   // Test analyzing a path with a generated column
-  const optimizedResponse = await makeRequest(
+  const optimizedResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns/analyze?table=entities&path=name'
   );
@@ -11015,7 +11015,7 @@ async function testGeneratedColumnsAnalyze() {
   assertEquals(optimizedData.dataType, 'TEXT', 'Data type should be TEXT');
 
   // Test analyzing a path without a generated column
-  const nonOptimizedResponse = await makeRequest(
+  const nonOptimizedResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns/analyze?table=entities&path=description'
   );
@@ -11036,21 +11036,21 @@ async function testGeneratedColumnsAnalyzeMissingParams() {
   logTest('Generated Columns - Analyze Missing Parameters');
 
   // Test missing table parameter
-  const missingTableResponse = await makeRequest(
+  const missingTableResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns/analyze?path=name'
   );
   assertEquals(missingTableResponse.status, 400, 'Should return 400 for missing table');
 
   // Test missing path parameter
-  const missingPathResponse = await makeRequest(
+  const missingPathResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns/analyze?table=entities'
   );
   assertEquals(missingPathResponse.status, 400, 'Should return 400 for missing path');
 
   // Test invalid table name
-  const invalidTableResponse = await makeRequest(
+  const invalidTableResponse = await makeAdminAuthRequest(
     'GET',
     '/api/schema/generated-columns/analyze?table=invalid&path=name'
   );
@@ -11060,7 +11060,7 @@ async function testGeneratedColumnsAnalyzeMissingParams() {
 async function testGeneratedColumnsMappings() {
   logTest('Generated Columns - Static Mappings Endpoint');
 
-  const response = await makeRequest('GET', '/api/schema/generated-columns/mappings');
+  const response = await makeAdminAuthRequest('GET', '/api/schema/generated-columns/mappings');
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.data, 'Should return data');
@@ -11460,7 +11460,7 @@ async function testResponseTimeIsReasonable() {
 async function testQueryPlanTemplatesEndpoint() {
   logTest('Query Plan - List available query templates');
 
-  const response = await makeRequest('GET', '/api/schema/query-plan/templates');
+  const response = await makeAdminAuthRequest('GET', '/api/schema/query-plan/templates');
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.success, 'Response should be successful');
@@ -11485,7 +11485,7 @@ async function testQueryPlanTemplatesEndpoint() {
 async function testQueryPlanTemplateDetails() {
   logTest('Query Plan - Get specific template details');
 
-  const response = await makeRequest('GET', '/api/schema/query-plan/templates/entity_by_type');
+  const response = await makeAdminAuthRequest('GET', '/api/schema/query-plan/templates/entity_by_type');
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(response.data.success, 'Response should be successful');
@@ -11498,7 +11498,7 @@ async function testQueryPlanTemplateDetails() {
 async function testQueryPlanTemplateNotFound() {
   logTest('Query Plan - Template not found returns error');
 
-  const response = await makeRequest(
+  const response = await makeAdminAuthRequest(
     'GET',
     '/api/schema/query-plan/templates/nonexistent_template'
   );
@@ -11511,7 +11511,7 @@ async function testQueryPlanTemplateNotFound() {
 async function testQueryPlanAnalyzeWithTemplate() {
   logTest('Query Plan - Analyze query using template');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     template: 'entity_by_type',
   });
 
@@ -11546,7 +11546,7 @@ async function testQueryPlanAnalyzeWithTemplate() {
 async function testQueryPlanAnalyzeWithCustomSQL() {
   logTest('Query Plan - Analyze query using custom SQL');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     sql: 'SELECT * FROM entities WHERE is_latest = 1 LIMIT 10',
   });
 
@@ -11565,7 +11565,7 @@ async function testQueryPlanAnalyzeWithCustomSQL() {
 async function testQueryPlanRejectsNonSelectSQL() {
   logTest('Query Plan - Rejects non-SELECT SQL statements');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     sql: 'DELETE FROM entities WHERE id = "test"',
   });
 
@@ -11577,7 +11577,7 @@ async function testQueryPlanRejectsNonSelectSQL() {
 async function testQueryPlanRejectsInsertSQL() {
   logTest('Query Plan - Rejects INSERT SQL statements');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     sql: 'INSERT INTO entities (id) VALUES ("test")',
   });
 
@@ -11589,7 +11589,7 @@ async function testQueryPlanRejectsInsertSQL() {
 async function testQueryPlanRejectsDropSQL() {
   logTest('Query Plan - Rejects DROP SQL statements');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     sql: 'SELECT * FROM entities; DROP TABLE entities;',
   });
 
@@ -11601,7 +11601,7 @@ async function testQueryPlanRejectsDropSQL() {
 async function testQueryPlanValidationError() {
   logTest('Query Plan - Validation error for missing template and sql');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {});
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {});
 
   assertEquals(response.status, 400, 'Status code should be 400');
   // Should fail validation since neither template nor sql provided
@@ -11610,7 +11610,7 @@ async function testQueryPlanValidationError() {
 async function testQueryPlanValidationErrorBothProvided() {
   logTest('Query Plan - Validation error when both template and sql provided');
 
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     template: 'entity_by_type',
     sql: 'SELECT * FROM entities',
   });
@@ -11623,7 +11623,7 @@ async function testQueryPlanIndexUsageDetection() {
   logTest('Query Plan - Detects index usage for optimized queries');
 
   // This template should use the idx_links_source_latest_deleted index
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     template: 'links_by_source',
   });
 
@@ -11642,7 +11642,7 @@ async function testQueryPlanRecommendations() {
   logTest('Query Plan - Provides recommendations for query optimization');
 
   // Query without is_deleted filter should trigger recommendation
-  const response = await makeRequest('POST', '/api/schema/query-plan', {
+  const response = await makeAdminAuthRequest('POST', '/api/schema/query-plan', {
     sql: 'SELECT * FROM entities WHERE is_latest = 1',
   });
 

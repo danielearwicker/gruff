@@ -115,16 +115,16 @@ Complete list of all routes exposed by this Cloudflare Worker.
 
 ### Generated Columns
 
-- [ ] `GET /api/schema/generated-columns` - List all generated columns
-- [ ] `GET /api/schema/generated-columns/optimization` - Get query optimization info
-- [ ] `GET /api/schema/generated-columns/analyze` - Analyze a query path
-- [ ] `GET /api/schema/generated-columns/mappings` - Get static column mappings
+- [✅] `GET /api/schema/generated-columns` - List all generated columns
+- [✅] `GET /api/schema/generated-columns/optimization` - Get query optimization info
+- [✅] `GET /api/schema/generated-columns/analyze` - Analyze a query path
+- [✅] `GET /api/schema/generated-columns/mappings` - Get static column mappings
 
 ### Query Plan Analysis
 
-- [ ] `GET /api/schema/query-plan/templates` - List query templates
-- [ ] `GET /api/schema/query-plan/templates/{template}` - Get details about template
-- [ ] `POST /api/schema/query-plan` - Analyze query execution plan
+- [✅] `GET /api/schema/query-plan/templates` - List query templates
+- [✅] `GET /api/schema/query-plan/templates/{template}` - Get details about template
+- [✅] `POST /api/schema/query-plan` - Analyze query execution plan
 
 ## Documentation Routes (`/docs`)
 

@@ -626,7 +626,7 @@ This feature enhances property filtering capabilities beyond basic equality matc
 - Partial indexes on generated columns for efficient filtered queries
 - Composite indexes for common query patterns (type + property with is_latest/is_deleted filters)
 - `generated_columns` metadata table tracks all generated columns with their JSON path mappings
-- API endpoints for schema introspection:
+- API endpoints for schema introspection (admin only):
   - GET `/api/schema/generated-columns` - List all generated columns
   - GET `/api/schema/generated-columns/optimization` - Query optimization information
   - GET `/api/schema/generated-columns/analyze` - Analyze if a JSON path has an optimized column
@@ -1395,13 +1395,15 @@ Note: D1 provides automatic connection management and is single-threaded per dat
 - Composite indexes for common filter combinations
 - Partial indexes for is_latest and is_deleted flags
 
-#### ✅ Query Plan Analysis Endpoint
+#### ✅ Query Plan Analysis Endpoint (Admin Only)
 
 ```
 POST   /api/schema/query-plan          # Analyze query execution plan
 GET    /api/schema/query-plan/templates         # List available query templates
 GET    /api/schema/query-plan/templates/{name}  # Get specific template details
 ```
+
+All query plan endpoints require admin authentication.
 
 - Accept SQL query or predefined template in request body
 - Execute EXPLAIN QUERY PLAN via D1 to analyze query execution

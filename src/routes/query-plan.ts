@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateJson } from '../middleware/validation.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { analyzeQueryPlanSchema, type QueryTemplate } from '../schemas/generated-columns.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -16,6 +17,7 @@ import {
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
+  JWT_SECRET: string;
   ENVIRONMENT: string;
 };
 
@@ -23,11 +25,11 @@ const queryPlanRouter = new Hono<{ Bindings: Bindings }>();
 
 /**
  * GET /api/schema/query-plan/templates
- * List all available query templates
+ * List all available query templates (admin only)
  *
  * Returns the predefined query templates that can be used for analysis.
  */
-queryPlanRouter.get('/templates', c => {
+queryPlanRouter.get('/templates', requireAuth(), requireAdmin(), c => {
   const logger = getLogger(c);
 
   logger.info('Listing query templates');
@@ -51,9 +53,9 @@ queryPlanRouter.get('/templates', c => {
 
 /**
  * GET /api/schema/query-plan/templates/:template
- * Get details about a specific query template
+ * Get details about a specific query template (admin only)
  */
-queryPlanRouter.get('/templates/:template', c => {
+queryPlanRouter.get('/templates/:template', requireAuth(), requireAdmin(), c => {
   const templateName = c.req.param('template') as QueryTemplate;
   const logger = getLogger(c);
 
@@ -75,7 +77,7 @@ queryPlanRouter.get('/templates/:template', c => {
 
 /**
  * POST /api/schema/query-plan
- * Analyze a query execution plan
+ * Analyze a query execution plan (admin only)
  *
  * Request body:
  * - template: Name of a predefined query template (e.g., 'entity_by_type')
@@ -85,7 +87,7 @@ queryPlanRouter.get('/templates/:template', c => {
  *
  * Returns the query execution plan with analysis and recommendations.
  */
-queryPlanRouter.post('/', validateJson(analyzeQueryPlanSchema), async c => {
+queryPlanRouter.post('/', requireAuth(), requireAdmin(), validateJson(analyzeQueryPlanSchema), async c => {
   const body = c.get('validated_json') as {
     template?: QueryTemplate;
     parameters?: Record<string, string | number | boolean>;

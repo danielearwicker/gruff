@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { validateQuery } from '../middleware/validation.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { listGeneratedColumnsQuerySchema } from '../schemas/generated-columns.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -14,6 +15,7 @@ import {
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
+  JWT_SECRET: string;
   ENVIRONMENT: string;
 };
 
@@ -21,13 +23,18 @@ const generatedColumnsRouter = new Hono<{ Bindings: Bindings }>();
 
 /**
  * GET /api/schema/generated-columns
- * List all generated columns with optional filters
+ * List all generated columns with optional filters (admin only)
  *
  * Query parameters:
  * - table_name: Filter by table ('entities' or 'links')
  * - is_indexed: Filter by indexed status ('true' or 'false')
  */
-generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), async c => {
+generatedColumnsRouter.get(
+  '/',
+  requireAuth(),
+  requireAdmin(),
+  validateQuery(listGeneratedColumnsQuerySchema),
+  async c => {
   const query = c.get('validated_query') as { table_name?: string; is_indexed?: number };
   const db = c.env.DB;
   const logger = getLogger(c);
@@ -64,12 +71,12 @@ generatedColumnsRouter.get('/', validateQuery(listGeneratedColumnsQuerySchema), 
 
 /**
  * GET /api/schema/generated-columns/optimization
- * Get query optimization information
+ * Get query optimization information (admin only)
  *
  * Returns information about which JSON paths have optimized generated columns
  * that can be used for efficient querying.
  */
-generatedColumnsRouter.get('/optimization', async c => {
+generatedColumnsRouter.get('/optimization', requireAuth(), requireAdmin(), async c => {
   const db = c.env.DB;
   const logger = getLogger(c);
 
@@ -104,13 +111,13 @@ generatedColumnsRouter.get('/optimization', async c => {
 
 /**
  * GET /api/schema/generated-columns/analyze
- * Analyze a query path for optimization potential
+ * Analyze a query path for optimization potential (admin only)
  *
  * Query parameters:
  * - table: The table name ('entities' or 'links')
  * - path: The JSON property path to analyze
  */
-generatedColumnsRouter.get('/analyze', async c => {
+generatedColumnsRouter.get('/analyze', requireAuth(), requireAdmin(), async c => {
   const table = c.req.query('table');
   const path = c.req.query('path');
   const logger = getLogger(c);
@@ -144,12 +151,12 @@ generatedColumnsRouter.get('/analyze', async c => {
 
 /**
  * GET /api/schema/generated-columns/mappings
- * Get the static mapping of JSON paths to generated columns
+ * Get the static mapping of JSON paths to generated columns (admin only)
  *
  * This returns the compile-time constant mappings without
  * querying the database.
  */
-generatedColumnsRouter.get('/mappings', c => {
+generatedColumnsRouter.get('/mappings', requireAuth(), requireAdmin(), c => {
   const logger = getLogger(c);
 
   logger.info('Getting generated column mappings');
