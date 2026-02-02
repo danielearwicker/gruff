@@ -1238,7 +1238,6 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/types`                          | GET    | Type browser                   |
 | `/ui/types/:id`                      | GET    | Type detail with usage stats   |
 | `/ui/search`                         | GET    | Search interface               |
-| `/ui/auth/login`                     | GET    | Login page                     |
 
 ### ✅ Group Administration Routes
 
@@ -1249,7 +1248,18 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/groups/:id`      | GET    | Group detail with members |
 | `/ui/groups/:id/edit` | GET    | Edit group form           |
 
-Note: Form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success.
+### ✅ UI Authentication Routes
+
+| Route                      | Method | Description                    |
+| -------------------------- | ------ | ------------------------------ |
+| `/ui/auth/login`           | GET    | Login page                     |
+| `/ui/auth/login`           | POST   | Login form submission          |
+| `/ui/auth/register`        | GET    | Registration page              |
+| `/ui/auth/register`        | POST   | Registration form submission   |
+| `/ui/auth/logout`          | POST   | Logout handler (clears session)|
+| `/ui/auth/oauth/callback`  | GET    | OAuth callback handler         |
+
+Note: Entity and link form submissions use standard HTML forms that POST to existing `/api/*` endpoints, then redirect back to UI routes on success. Authentication forms have dedicated UI handlers to manage cookie-based sessions.
 
 ## Technical Architecture
 
