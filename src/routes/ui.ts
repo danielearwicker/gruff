@@ -8176,9 +8176,9 @@ ui.post('/auth/register', async c => {
 
 /**
  * Logout handler
- * GET /ui/auth/logout
+ * POST /ui/auth/logout
  */
-ui.get('/auth/logout', async c => {
+ui.post('/auth/logout', async c => {
   const refreshToken = getCookie(c, REFRESH_TOKEN_COOKIE);
 
   // If we have a refresh token, invalidate the session in KV

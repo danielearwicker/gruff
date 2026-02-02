@@ -149,6 +149,19 @@ export const commonStyles = `
     text-decoration: none;
   }
 
+  .user-menu .logout-btn {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+  }
+
+  .user-menu .logout-btn:hover {
+    text-decoration: underline;
+  }
+
   main {
     min-height: calc(100vh - 200px);
   }
@@ -863,7 +876,9 @@ export function renderHeader(options: PageOptions): string {
     <div class="user-menu">
       ${adminBadge}
       <span>${escapeHtml(user.display_name || user.email)}</span>
-      <a href="/ui/auth/logout">Logout</a>
+      <form action="/ui/auth/logout" method="POST" style="display: inline;">
+        <button type="submit" class="logout-btn">Logout</button>
+      </form>
     </div>
   `
     : `
