@@ -497,6 +497,11 @@ ui.get('/', async c => {
 ui.get('/entities', async c => {
   const user = c.get('user');
 
+  // Require authentication for entities browser
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/entities'));
+  }
+
   // Get filter parameters
   const filterUserId = c.req.query('user_id') || '';
   const filterTypeId = c.req.query('type_id') || '';
@@ -552,6 +557,22 @@ ui.get('/entities', async c => {
   const versionFilter = showAllVersions ? '' : 'AND e.is_latest = 1';
   const cursorFilter = cursor ? `AND e.created_at < ?` : '';
 
+  // Build ACL filter for authenticated user
+  type AclFilterResult = Awaited<ReturnType<typeof buildAclFilterClause>>;
+  const aclFilter: AclFilterResult = await buildAclFilterClause(
+    c.env.DB,
+    c.env.KV,
+    user.user_id,
+    'read',
+    'e.acl_id'
+  );
+  let aclFilterClause = '';
+  const aclFilterParams: unknown[] = [];
+  if (aclFilter.useFilter) {
+    aclFilterClause = `AND ${aclFilter.whereClause}`;
+    aclFilterParams.push(...aclFilter.bindings);
+  }
+
   // Validate sort column to prevent SQL injection
   const allowedSortColumns = ['created_at', 'type_name', 'version'];
   const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
@@ -571,24 +592,25 @@ ui.get('/entities', async c => {
   const entitiesQuery = `
     SELECT
       e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
-      e.is_latest, e.is_deleted, e.previous_version_id,
+      e.is_latest, e.is_deleted, e.previous_version_id, e.acl_id,
       t.name as type_name,
       u.display_name, u.email
     FROM entities e
     JOIN types t ON e.type_id = t.id
     LEFT JOIN users u ON e.created_by = u.id
-    WHERE 1=1 ${timeRangeFilter} ${userFilter} ${typeFilter} ${deletedFilter} ${versionFilter} ${cursorFilter}
+    WHERE 1=1 ${timeRangeFilter} ${userFilter} ${typeFilter} ${deletedFilter} ${versionFilter} ${cursorFilter} ${aclFilterClause}
     ORDER BY ${sortColumn === 'type_name' ? 't.name' : 'e.' + sortColumn} ${sortDirection}
     LIMIT ?
   `;
 
-  const queryParams: (string | number)[] = [];
+  const queryParams: unknown[] = [];
   if (filterUserId) queryParams.push(filterUserId);
   if (filterTypeId) queryParams.push(filterTypeId);
   if (cursor) {
     // Cursor is a timestamp
     queryParams.push(parseInt(cursor, 10));
   }
+  queryParams.push(...aclFilterParams);
   queryParams.push(limit + 1); // Fetch one extra to determine if there are more results
 
   const entitiesResult = await c.env.DB.prepare(entitiesQuery)
@@ -603,14 +625,21 @@ ui.get('/entities', async c => {
       is_latest: number;
       is_deleted: number;
       previous_version_id: string | null;
+      acl_id: number | null;
       type_name: string;
       display_name?: string;
       email: string;
     }>();
 
+  // Apply per-row filtering if ACL filter couldn't be applied in SQL
+  let filteredResults = entitiesResult.results;
+  if (!aclFilter.useFilter) {
+    filteredResults = filterByAclPermission(filteredResults, aclFilter.accessibleAclIds);
+  }
+
   // Determine if there are more results
-  const hasMore = entitiesResult.results.length > limit;
-  const entities = hasMore ? entitiesResult.results.slice(0, limit) : entitiesResult.results;
+  const hasMore = filteredResults.length > limit;
+  const entities = hasMore ? filteredResults.slice(0, limit) : filteredResults;
 
   // Calculate next cursor
   let nextCursor = '';

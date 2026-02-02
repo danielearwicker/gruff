@@ -220,6 +220,30 @@ async function makeRequestWithHeaders(method, path, customHeaders = {}, body = n
   };
 }
 
+/**
+ * Make an authenticated UI request using cookies.
+ * Used for UI pages that require authentication via cookies.
+ */
+async function makeAuthenticatedUIRequest(path) {
+  if (!globalAuthToken) {
+    throw new Error('Global auth token not initialized. Call initGlobalAuthToken first.');
+  }
+
+  const response = await fetch(`${DEV_SERVER_URL}${path}`, {
+    headers: {
+      Cookie: `gruff_access_token=${globalAuthToken}`,
+    },
+  });
+  const text = await response.text();
+
+  return {
+    status: response.status,
+    ok: response.ok,
+    text,
+    headers: response.headers,
+  };
+}
+
 function assert(condition, message) {
   if (condition) {
     logSuccess(message);
@@ -9705,11 +9729,23 @@ async function testUIDashboard() {
   assert(html.includes('Recently Updated Entities'), 'Should show recent updates section');
 }
 
+async function testUIEntityListRequiresAuth() {
+  logTest('UI - Entity List Page - Requires Authentication');
+
+  // Test that unauthenticated requests are redirected to login
+  const response = await fetch(`${DEV_SERVER_URL}/ui/entities`, { redirect: 'manual' });
+
+  assertEquals(response.status, 302, 'Status code should be 302 Redirect');
+  const location = response.headers.get('location');
+  assert(location.includes('/ui/auth/login'), 'Should redirect to login page');
+  assert(location.includes('return_to'), 'Should include return_to parameter');
+}
+
 async function testUIEntityListBasic() {
   logTest('UI - Entity List Page - Basic View');
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/entities');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assertEquals(
@@ -9746,8 +9782,8 @@ async function testUIEntityListWithData() {
   const entityId = entityResponse.data.data.id;
 
   // Fetch the entity list page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/entities');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('<table class="data-table">'), 'Should have data table');
@@ -9784,8 +9820,8 @@ async function testUIEntityListFiltering() {
   });
 
   // Filter by type1
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${type1Id}`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest(`/ui/entities?type_id=${type1Id}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Entity Type 1'), 'Should show filtered entity');
@@ -9796,8 +9832,8 @@ async function testUIEntityListSorting() {
   logTest('UI - Entity List Page - Sorting');
 
   // Test sort by date ascending
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?sort_by=created_at&sort_order=asc`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/entities?sort_by=created_at&sort_order=asc');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('value="created_at" selected'), 'Sort by created_at should be selected');
@@ -9825,8 +9861,8 @@ async function testUIEntityListPagination() {
   }
 
   // Fetch first page
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${typeId}`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest(`/ui/entities?type_id=${typeId}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Showing 20 entities'), 'Should show page size');
@@ -9839,7 +9875,7 @@ async function testUIEntityListShowDeleted() {
 
   // Create and delete an entity
   const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
-    name: 'DeletedEntityType',
+    name: `DeletedEntityType${Date.now()}`,
     category: 'entity',
   });
   const typeId = typeResponse.data.data.id;
@@ -9852,9 +9888,9 @@ async function testUIEntityListShowDeleted() {
 
   await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
-  // Request with show_deleted=true
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?show_deleted=true`);
-  const html = await response.text();
+  // Request with show_deleted=true, filter by type to ensure we see the deleted entity
+  const response = await makeAuthenticatedUIRequest(`/ui/entities?show_deleted=true&type_id=${typeId}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(
@@ -9887,8 +9923,8 @@ async function testUIEntityListShowAllVersions() {
   });
 
   // Request with show_all_versions=true
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?show_all_versions=true`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/entities?show_all_versions=true');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(
@@ -9905,8 +9941,8 @@ async function testUIEntityListTimeRangeFilter() {
   logTest('UI - Entity List Page - Time Range Filter');
 
   // Test with "last day" filter
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?time_range=day`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest('/ui/entities?time_range=day');
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('value="day" selected'), 'Time range filter should be selected');
@@ -9917,10 +9953,10 @@ async function testUIEntityListCustomDateRange() {
 
   const startDate = '2024-01-01';
   const endDate = '2024-12-31';
-  const response = await fetch(
-    `${DEV_SERVER_URL}/ui/entities?time_range=custom&start_date=${startDate}&end_date=${endDate}`
+  const response = await makeAuthenticatedUIRequest(
+    `/ui/entities?time_range=custom&start_date=${startDate}&end_date=${endDate}`
   );
-  const html = await response.text();
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('value="custom" selected'), 'Custom time range should be selected');
@@ -9942,8 +9978,8 @@ async function testUIEntityListEmptyState() {
   });
   const typeId = typeResponse.data.data.id;
 
-  const response = await fetch(`${DEV_SERVER_URL}/ui/entities?type_id=${typeId}`);
-  const html = await response.text();
+  const response = await makeAuthenticatedUIRequest(`/ui/entities?type_id=${typeId}`);
+  const html = response.text;
 
   assertEquals(response.status, 200, 'Status code should be 200');
   assert(html.includes('Showing 0 entities'), 'Should show zero entities');
@@ -14489,6 +14525,7 @@ async function runTests() {
 
     // UI tests
     testUIDashboard,
+    testUIEntityListRequiresAuth,
     testUIEntityListBasic,
     testUIEntityListWithData,
     testUIEntityListFiltering,
