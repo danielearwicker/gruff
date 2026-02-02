@@ -13,7 +13,13 @@ import {
   invalidateSession,
 } from '../utils/session.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
-import { getEntityAclId, getLinkAclId, getEnrichedAclEntries } from '../utils/acl.js';
+import {
+  getEntityAclId,
+  getLinkAclId,
+  getEnrichedAclEntries,
+  buildAclFilterClause,
+  filterByAclPermission,
+} from '../utils/acl.js';
 import type { EnrichedAclEntry } from '../schemas/acl.js';
 
 type Bindings = {
@@ -172,6 +178,24 @@ ui.get('/', async c => {
   const userFilter = filterUserId ? `AND e.created_by = ?` : '';
   const typeFilter = filterTypeId ? `AND e.type_id = ?` : '';
 
+  // Build ACL filter based on authentication status
+  type AclFilterResult = Awaited<ReturnType<typeof buildAclFilterClause>>;
+  let aclFilter: AclFilterResult | null = null;
+  let aclFilterClause = '';
+  const aclFilterParams: unknown[] = [];
+
+  if (user) {
+    // Authenticated user: filter by accessible ACLs
+    aclFilter = await buildAclFilterClause(c.env.DB, c.env.KV, user.user_id, 'read', 'e.acl_id');
+    if (aclFilter.useFilter) {
+      aclFilterClause = `AND ${aclFilter.whereClause}`;
+      aclFilterParams.push(...aclFilter.bindings);
+    }
+  } else {
+    // Unauthenticated: only show public resources (NULL acl_id)
+    aclFilterClause = 'AND e.acl_id IS NULL';
+  }
+
   // Fetch quick stats
   const statsPromises = [
     c.env.DB.prepare(
@@ -203,24 +227,26 @@ ui.get('/', async c => {
   ).all<{ id: string; name: string }>();
 
   // Build query for recently created entities with filters
+  // Fetch more rows if using per-row filtering to account for filtered items
+  const fetchLimit = aclFilter && !aclFilter.useFilter ? 60 : 20;
   const createdQuery = `
     SELECT
-      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.acl_id,
       t.name as type_name,
       u.display_name, u.email
     FROM entities e
     JOIN types t ON e.type_id = t.id
     LEFT JOIN users u ON e.created_by = u.id
-    WHERE e.is_latest = 1 AND e.is_deleted = 0 ${timeRangeFilter} ${userFilter} ${typeFilter}
+    WHERE e.is_latest = 1 AND e.is_deleted = 0 ${aclFilterClause} ${timeRangeFilter} ${userFilter} ${typeFilter}
     ORDER BY e.created_at DESC
-    LIMIT 20
+    LIMIT ${fetchLimit}
   `;
 
-  const createdParams: string[] = [];
+  const createdParams: unknown[] = [...aclFilterParams];
   if (filterUserId) createdParams.push(filterUserId);
   if (filterTypeId) createdParams.push(filterTypeId);
 
-  const recentEntities = await c.env.DB.prepare(createdQuery)
+  const recentEntitiesResult = await c.env.DB.prepare(createdQuery)
     .bind(...createdParams)
     .all<{
       id: string;
@@ -232,27 +258,34 @@ ui.get('/', async c => {
       type_name: string;
       display_name?: string;
       email: string;
+      acl_id?: number | null;
     }>();
+
+  // Apply per-row filtering if needed
+  let recentEntities = recentEntitiesResult.results;
+  if (aclFilter && !aclFilter.useFilter) {
+    recentEntities = filterByAclPermission(recentEntities, aclFilter.accessibleAclIds).slice(0, 20);
+  }
 
   // Build query for recently updated entities (version > 1) with filters
   const updatedQuery = `
     SELECT
-      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by,
+      e.id, e.type_id, e.properties, e.version, e.created_at, e.created_by, e.acl_id,
       t.name as type_name,
       u.display_name, u.email
     FROM entities e
     JOIN types t ON e.type_id = t.id
     LEFT JOIN users u ON e.created_by = u.id
-    WHERE e.is_latest = 1 AND e.is_deleted = 0 AND e.version > 1 ${timeRangeFilter.replace('created_at', 'created_at')} ${userFilter} ${typeFilter}
+    WHERE e.is_latest = 1 AND e.is_deleted = 0 AND e.version > 1 ${aclFilterClause} ${timeRangeFilter.replace('created_at', 'created_at')} ${userFilter} ${typeFilter}
     ORDER BY e.created_at DESC
-    LIMIT 20
+    LIMIT ${fetchLimit}
   `;
 
-  const updatedParams: string[] = [];
+  const updatedParams: unknown[] = [...aclFilterParams];
   if (filterUserId) updatedParams.push(filterUserId);
   if (filterTypeId) updatedParams.push(filterTypeId);
 
-  const recentUpdates = await c.env.DB.prepare(updatedQuery)
+  const recentUpdatesResult = await c.env.DB.prepare(updatedQuery)
     .bind(...updatedParams)
     .all<{
       id: string;
@@ -264,7 +297,14 @@ ui.get('/', async c => {
       type_name: string;
       display_name?: string;
       email: string;
+      acl_id?: number | null;
     }>();
+
+  // Apply per-row filtering if needed
+  let recentUpdates = recentUpdatesResult.results;
+  if (aclFilter && !aclFilter.useFilter) {
+    recentUpdates = filterByAclPermission(recentUpdates, aclFilter.accessibleAclIds).slice(0, 20);
+  }
 
   // Render filter form
   const filterForm = `
@@ -372,10 +412,10 @@ ui.get('/', async c => {
 
     <h3>Recently Created Entities</h3>
     ${
-      recentEntities.results.length > 0
+      recentEntities.length > 0
         ? `
       <ul class="entity-list">
-        ${recentEntities.results
+        ${recentEntities
           .map(entity => {
             const props = JSON.parse(entity.properties);
             const displayName =
@@ -402,10 +442,10 @@ ui.get('/', async c => {
 
     <h3>Recently Updated Entities</h3>
     ${
-      recentUpdates.results.length > 0
+      recentUpdates.length > 0
         ? `
       <ul class="entity-list">
-        ${recentUpdates.results
+        ${recentUpdates
           .map(entity => {
             const props = JSON.parse(entity.properties);
             const displayName =
