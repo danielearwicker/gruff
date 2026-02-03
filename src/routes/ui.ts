@@ -5101,8 +5101,8 @@ ui.get('/links/new', async c => {
 
             if (data.data && data.data.length > 0) {
               resultsDiv.innerHTML = data.data.map(entity => {
-                const displayName = entity.name || entity.title || entity.label || entity.id.substring(0, 8);
-                return '<div class="entity-result" onclick="selectEntity(\\'' + direction + '\\', \\'' + entity.id + '\\', \\'' + escapeForJs(displayName) + '\\', \\'' + escapeForJs(entity.type_name) + '\\')">' +
+                const displayName = entity.properties?.name || entity.properties?.title || entity.properties?.label || entity.matched_value || entity.entity_id.substring(0, 8);
+                return '<div class="entity-result" onclick="selectEntity(\\'' + direction + '\\', \\'' + entity.entity_id + '\\', \\'' + escapeForJs(displayName) + '\\', \\'' + escapeForJs(entity.type_name) + '\\')">' +
                        '<span class="entity-name">' + escapeHtmlJs(displayName) + '</span> ' +
                        '<span class="muted">(' + escapeHtmlJs(entity.type_name) + ')</span>' +
                        '</div>';
