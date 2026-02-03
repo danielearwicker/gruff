@@ -2995,14 +2995,14 @@ ui.get('/entities/:id/graph', async c => {
 
         .graph-node-label {
           font-size: 12px;
-          fill: #333;
+          fill: #e0e0e0;
           text-anchor: middle;
           pointer-events: none;
         }
 
         .graph-node-type {
           font-size: 10px;
-          fill: #666;
+          fill: #b0b0b0;
           text-anchor: middle;
           pointer-events: none;
         }
@@ -3280,9 +3280,23 @@ ui.get('/entities/:id/graph', async c => {
 
           svg.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const delta = e.deltaY > 0 ? 0.9 : 1.1;
-            transform.scale *= delta;
-            transform.scale = Math.max(0.1, Math.min(transform.scale, 3));
+
+            // Get mouse position relative to SVG
+            const rect = svg.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Calculate zoom delta (slower zoom speed)
+            const delta = e.deltaY > 0 ? 0.95 : 1.05;
+            const oldScale = transform.scale;
+            const newScale = Math.max(0.1, Math.min(oldScale * delta, 3));
+
+            // Adjust transform to zoom towards mouse pointer
+            const scaleDiff = newScale - oldScale;
+            transform.x -= (mouseX - transform.x) * (scaleDiff / oldScale);
+            transform.y -= (mouseY - transform.y) * (scaleDiff / oldScale);
+            transform.scale = newScale;
+
             applyTransform();
           });
 
