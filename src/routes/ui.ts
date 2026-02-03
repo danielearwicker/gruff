@@ -5096,7 +5096,7 @@ ui.get('/links/new', async c => {
 
         searchTimeout = setTimeout(async () => {
           try {
-            const response = await fetch('/api/search/suggest?q=' + encodeURIComponent(query) + '&limit=10', { credentials: 'include' });
+            const response = await fetch('/api/search/suggest?query=' + encodeURIComponent(query) + '&limit=10', { credentials: 'include' });
             const data = await response.json();
 
             if (data.data && data.data.length > 0) {
