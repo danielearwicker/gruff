@@ -1045,6 +1045,7 @@ ui.get('/entities/new', async c => {
         try {
           const response = await fetch('/api/entities', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
@@ -1359,6 +1360,7 @@ ui.get('/entities/:id/edit', async c => {
           try {
             const response = await fetch('/api/entities/${escapeHtml(entity.id)}', {
               method: 'PUT',
+              credentials: 'include',
               headers: {
                 'Content-Type': 'application/json',
               },
@@ -2148,6 +2150,7 @@ ui.get('/entities/:id', async c => {
             try {
               const response = await fetch('/api/entities/' + entityId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: newEntries })
               });
@@ -2173,6 +2176,7 @@ ui.get('/entities/:id', async c => {
             try {
               const response = await fetch('/api/entities/' + entityId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: newEntries })
               });
@@ -2194,6 +2198,7 @@ ui.get('/entities/:id', async c => {
             try {
               const response = await fetch('/api/entities/' + entityId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: [] })
               });
@@ -2212,7 +2217,7 @@ ui.get('/entities/:id', async c => {
           async function makePrivate() {
             // Get the current user's ID from the page context or fetch it
             try {
-              const meResponse = await fetch('/api/auth/me');
+              const meResponse = await fetch('/api/auth/me', { credentials: 'include' });
               if (!meResponse.ok) {
                 alert('Please log in to set permissions.');
                 return;
@@ -2229,6 +2234,7 @@ ui.get('/entities/:id', async c => {
 
               const response = await fetch('/api/entities/' + entityId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }]
@@ -2437,7 +2443,7 @@ ui.get('/entities/:id', async c => {
       <script>
         function confirmDelete(entityId) {
           if (confirm('Are you sure you want to delete this entity? This action creates a new deleted version.')) {
-            fetch('/api/entities/' + entityId, { method: 'DELETE' })
+            fetch('/api/entities/' + entityId, { method: 'DELETE', credentials: 'include' })
               .then(res => {
                 if (res.ok) {
                   window.location.reload();
@@ -2455,7 +2461,7 @@ ui.get('/entities/:id', async c => {
 
         function confirmRestore(entityId) {
           if (confirm('Are you sure you want to restore this entity?')) {
-            fetch('/api/entities/' + entityId + '/restore', { method: 'POST' })
+            fetch('/api/entities/' + entityId + '/restore', { method: 'POST', credentials: 'include' })
               .then(res => {
                 if (res.ok) {
                   window.location.reload();
@@ -3856,7 +3862,7 @@ ui.get('/links/new', async c => {
 
         searchTimeout = setTimeout(async () => {
           try {
-            const response = await fetch('/api/search/suggest?q=' + encodeURIComponent(query) + '&limit=10');
+            const response = await fetch('/api/search/suggest?q=' + encodeURIComponent(query) + '&limit=10', { credentials: 'include' });
             const data = await response.json();
 
             if (data.data && data.data.length > 0) {
@@ -3975,6 +3981,7 @@ ui.get('/links/new', async c => {
         try {
           const response = await fetch('/api/links', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
@@ -4435,6 +4442,7 @@ ui.get('/links/:id/edit', async c => {
           try {
             const response = await fetch('/api/links/${escapeHtml(link.id)}', {
               method: 'PUT',
+              credentials: 'include',
               headers: {
                 'Content-Type': 'application/json',
               },
@@ -5198,6 +5206,7 @@ ui.get('/links/:id', async c => {
             try {
               const response = await fetch('/api/links/' + linkId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: newEntries })
               });
@@ -5223,6 +5232,7 @@ ui.get('/links/:id', async c => {
             try {
               const response = await fetch('/api/links/' + linkId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: newEntries })
               });
@@ -5244,6 +5254,7 @@ ui.get('/links/:id', async c => {
             try {
               const response = await fetch('/api/links/' + linkId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries: [] })
               });
@@ -5262,7 +5273,7 @@ ui.get('/links/:id', async c => {
           async function makeLinkPrivate() {
             // Get the current user's ID from the page context or fetch it
             try {
-              const meResponse = await fetch('/api/auth/me');
+              const meResponse = await fetch('/api/auth/me', { credentials: 'include' });
               if (!meResponse.ok) {
                 alert('Please log in to set permissions.');
                 return;
@@ -5279,6 +5290,7 @@ ui.get('/links/:id', async c => {
 
               const response = await fetch('/api/links/' + linkId + '/acl', {
                 method: 'PUT',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   entries: [{ principal_type: 'user', principal_id: userId, permission: 'write' }]
@@ -7352,14 +7364,14 @@ ui.get('/groups/new', async c => {
         try {
           const response = await fetch('/api/groups', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               name: name,
               description: description || undefined
-            }),
-            credentials: 'same-origin'
+            })
           });
 
           const data = await response.json();
@@ -7503,14 +7515,14 @@ ui.get('/groups/:id/edit', async c => {
         try {
           const response = await fetch('/api/groups/${escapeHtml(groupId)}', {
             method: 'PUT',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               name: name,
               description: description || undefined
-            }),
-            credentials: 'same-origin'
+            })
           });
 
           const data = await response.json();
@@ -7823,14 +7835,14 @@ ui.get('/groups/:id', async c => {
         try {
           const response = await fetch('/api/groups/${escapeHtml(groupId)}/members', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               member_type: memberType,
               member_id: memberId
-            }),
-            credentials: 'same-origin'
+            })
           });
 
           const data = await response.json();
@@ -7854,7 +7866,7 @@ ui.get('/groups/:id', async c => {
         try {
           const response = await fetch('/api/groups/${escapeHtml(groupId)}/members/' + memberType + '/' + memberId, {
             method: 'DELETE',
-            credentials: 'same-origin'
+            credentials: 'include'
           });
 
           if (response.ok) {
@@ -7877,7 +7889,7 @@ ui.get('/groups/:id', async c => {
         try {
           const response = await fetch('/api/groups/${escapeHtml(groupId)}', {
             method: 'DELETE',
-            credentials: 'same-origin'
+            credentials: 'include'
           });
 
           if (response.ok) {

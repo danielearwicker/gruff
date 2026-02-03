@@ -5,10 +5,14 @@
  */
 
 import { Context, Next } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { verifyAccessToken } from '../utils/jwt.js';
 import * as response from '../utils/response.js';
 import { getLogger } from './request-context.js';
 import { JwtPayload } from '../schemas/user.js';
+
+// Cookie name for UI session (must match ui.ts)
+const ACCESS_TOKEN_COOKIE = 'gruff_access_token';
 
 type Bindings = {
   DB: D1Database;
@@ -58,7 +62,12 @@ export function requireAuth() {
 
     // Extract token from Authorization header
     const authHeader = c.req.header('Authorization');
-    const token = extractBearerToken(authHeader);
+    let token = extractBearerToken(authHeader);
+
+    // Fallback to cookie-based authentication for UI requests
+    if (!token) {
+      token = getCookie(c, ACCESS_TOKEN_COOKIE) || null;
+    }
 
     if (!token) {
       logger.warn('Missing or invalid Authorization header');
@@ -170,7 +179,12 @@ export function optionalAuth() {
 
     // Extract token from Authorization header
     const authHeader = c.req.header('Authorization');
-    const token = extractBearerToken(authHeader);
+    let token = extractBearerToken(authHeader);
+
+    // Fallback to cookie-based authentication for UI requests
+    if (!token) {
+      token = getCookie(c, ACCESS_TOKEN_COOKIE) || null;
+    }
 
     if (!token) {
       // No token provided, continue without authentication
