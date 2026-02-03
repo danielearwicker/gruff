@@ -60,7 +60,7 @@ describe('ACL Utility Functions', () => {
   });
 
   describe('deduplicateAclEntries', () => {
-    it('should remove duplicate entries', () => {
+    it('should remove duplicate entries and redundant read permissions when write exists', () => {
       const entries: AclEntry[] = [
         { principal_type: 'user', principal_id: 'user-001', permission: 'read' },
         { principal_type: 'user', principal_id: 'user-001', permission: 'read' },
@@ -69,12 +69,8 @@ describe('ACL Utility Functions', () => {
 
       const deduped = deduplicateAclEntries(entries);
 
-      expect(deduped).toHaveLength(2);
-      expect(deduped).toContainEqual({
-        principal_type: 'user',
-        principal_id: 'user-001',
-        permission: 'read',
-      });
+      // Should only keep 'write' since it implies 'read'
+      expect(deduped).toHaveLength(1);
       expect(deduped).toContainEqual({
         principal_type: 'user',
         principal_id: 'user-001',
@@ -96,6 +92,87 @@ describe('ACL Utility Functions', () => {
     it('should return empty array for empty input', () => {
       const deduped = deduplicateAclEntries([]);
       expect(deduped).toHaveLength(0);
+    });
+
+    it('should keep read permission when write does not exist for the same principal', () => {
+      const entries: AclEntry[] = [
+        { principal_type: 'user', principal_id: 'user-001', permission: 'read' },
+        { principal_type: 'user', principal_id: 'user-002', permission: 'write' },
+      ];
+
+      const deduped = deduplicateAclEntries(entries);
+
+      expect(deduped).toHaveLength(2);
+      expect(deduped).toContainEqual({
+        principal_type: 'user',
+        principal_id: 'user-001',
+        permission: 'read',
+      });
+      expect(deduped).toContainEqual({
+        principal_type: 'user',
+        principal_id: 'user-002',
+        permission: 'write',
+      });
+    });
+
+    it('should handle mixed principal types correctly', () => {
+      const entries: AclEntry[] = [
+        { principal_type: 'user', principal_id: 'user-001', permission: 'read' },
+        { principal_type: 'user', principal_id: 'user-001', permission: 'write' },
+        { principal_type: 'group', principal_id: 'user-001', permission: 'read' },
+        { principal_type: 'group', principal_id: 'group-001', permission: 'write' },
+      ];
+
+      const deduped = deduplicateAclEntries(entries);
+
+      // User 'user-001' should only have write (read removed)
+      // Group 'user-001' should have read (different principal type)
+      // Group 'group-001' should have write
+      expect(deduped).toHaveLength(3);
+      expect(deduped).toContainEqual({
+        principal_type: 'user',
+        principal_id: 'user-001',
+        permission: 'write',
+      });
+      expect(deduped).toContainEqual({
+        principal_type: 'group',
+        principal_id: 'user-001',
+        permission: 'read',
+      });
+      expect(deduped).toContainEqual({
+        principal_type: 'group',
+        principal_id: 'group-001',
+        permission: 'write',
+      });
+    });
+
+    it('should handle multiple principals with different permission combinations', () => {
+      const entries: AclEntry[] = [
+        { principal_type: 'user', principal_id: 'user-001', permission: 'read' },
+        { principal_type: 'user', principal_id: 'user-001', permission: 'write' },
+        { principal_type: 'user', principal_id: 'user-002', permission: 'read' },
+        { principal_type: 'group', principal_id: 'group-001', permission: 'read' },
+        { principal_type: 'group', principal_id: 'group-001', permission: 'write' },
+      ];
+
+      const deduped = deduplicateAclEntries(entries);
+
+      expect(deduped).toHaveLength(3);
+      expect(deduped).toContainEqual({
+        principal_type: 'user',
+        principal_id: 'user-001',
+        permission: 'write',
+      });
+      expect(deduped).toContainEqual({
+        principal_type: 'user',
+        principal_id: 'user-002',
+        permission: 'read',
+      });
+      expect(deduped).toContainEqual({
+        principal_type: 'group',
+        principal_id: 'group-001',
+        permission: 'write',
+      });
     });
   });
 

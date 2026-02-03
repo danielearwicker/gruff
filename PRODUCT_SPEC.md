@@ -39,6 +39,8 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Centralized type registry for both entities and links
 - Documents all extant types in the system
 - Enables type-based queries and validation
+- 🟦 Allows creation of a new type (existing types can't be edited, user must use a naming-versioning scheme)
+- 🟦 Allows deletion of a type but only if there are no non-deleted entities of that type
 
 ## Database Schema
 
@@ -946,6 +948,37 @@ Each entity in the list shows:
 - Preserves form data on validation errors
 - Disabled entities cannot be edited until restored
 
+### ✅ Link List View
+
+**Route:** `GET /ui/links`
+
+#### Features
+
+- Paginated list of all links (cursor-based pagination)
+- Filtering controls:
+  - Link type filter (dropdown)
+  - User filter (created_by)
+  - Time range filter (last hour, day, week, month, all time, custom)
+  - Source entity filter
+  - Target entity filter
+  - Show deleted links (checkbox)
+  - Show all versions vs. latest only (checkbox)
+- Sorting options (by created_at, type_name, version)
+- Bulk selection for batch operations (bulk delete, bulk export)
+
+#### Table Columns
+
+- Link ID (truncated, linked to detail page)
+- Link type name (linked to filter by that type)
+- Source entity (ID and name, linked to entity detail)
+- Target entity (ID and name, linked to entity detail)
+- Properties preview (JSON truncated to 100 chars)
+- Version
+- Created by (user display name or email)
+- Created at (formatted timestamp)
+- Status badges (Latest/Old, Deleted if applicable)
+- Actions (View, Edit buttons - Edit only for latest non-deleted)
+
 ### ✅ Link Detail View
 
 **Route:** `GET /ui/links/:id`
@@ -1001,6 +1034,149 @@ Each entity in the list shows:
 
 - **Create:** POST to `/api/links`, redirects to new link detail page
 - **Edit:** PUT to `/api/links/:id`, creates new version, redirects to new link version
+
+### 🟦 Graph Visualization View
+
+**Route:** `GET /ui/entities/:id/graph`
+
+An interactive visual representation of an entity's local graph neighborhood, showing two generations of connected entities with the current entity at the center.
+
+#### Visual Layout
+
+**Center Node:**
+
+- The current entity displayed prominently at the center of the view
+- Shows entity type and distinguishing properties (e.g., name, title, or other unique identifiers)
+- Highlighted or styled differently to indicate it's the focal entity
+
+**First Generation (Direct Connections):**
+
+- Incoming links: Entities that link TO the current entity
+  - Positioned in an arc or semi-circle above/left of center
+  - Arrows pointing toward the center entity
+  - Link type label on each arrow
+- Outgoing links: Entities that the current entity links TO
+  - Positioned in an arc or semi-circle below/right of center
+  - Arrows pointing away from the center entity
+  - Link type label on each arrow
+
+**Second Generation (Connections of Connections):**
+
+- For each first-generation entity, show its direct connections
+- Positioned in outer arcs/rings around their parent first-generation entity
+- Arrows showing direction of relationships
+- More compact or smaller than first-generation nodes
+- May be grouped or collapsed if too numerous (e.g., "3 more connections")
+
+#### Node Display
+
+Each node shows:
+
+- Entity type (as a label or color-coded badge)
+- Selected distinguishing properties:
+  - Automatically choose 1-2 properties that have distinct values across visible nodes
+  - Prefer properties like: `name`, `title`, `label`, `email`, `status`
+  - Fallback to entity ID if no distinguishing properties exist
+- Truncate long values (max 30 characters with ellipsis)
+- Visual indicators:
+  - Node color or icon based on entity type
+  - Border style indicating link direction (incoming vs outgoing)
+  - Deleted entities shown with reduced opacity or strikethrough
+
+#### Link/Edge Display
+
+Each edge (link) shows:
+
+- Directional arrow (solid line with arrowhead)
+- Link type label positioned along the edge
+- Optional: Link properties on hover
+- Color or style variation based on link type
+- Hover state shows full link details in tooltip
+
+#### Interaction Features
+
+**Navigation:**
+
+- Click any node to re-center the view on that entity
+- Clicking updates the URL to `/ui/entities/:newId/graph`
+- Back/forward browser navigation works correctly
+
+**Animation (Bonus):**
+
+- When re-centering on a new node:
+  - Nodes slide smoothly to their new positions
+  - The new center node moves to the center position
+  - Nodes moving out of view (no longer in 2-generation range) fade out
+  - Newly visible nodes (now within 2-generation range) fade in
+  - Animation duration: 500-800ms with easing function
+  - Layout recalculates to maintain visual balance
+
+**Additional Interactions:**
+
+- Hover over node: Highlight node and its direct connections
+- Hover over edge: Show full link details (properties, created by, created at)
+- Zoom controls: +/- buttons or mouse wheel to zoom in/out
+- Pan controls: Click and drag to pan the view
+- Fit-to-view button: Reset zoom/pan to show all visible nodes
+- Toggle controls:
+  - Show/hide deleted entities
+  - Show/hide link labels
+  - Show only incoming, only outgoing, or both
+  - Limit to specific link types (filter dropdown)
+
+#### Layout Algorithm
+
+- Use force-directed layout or radial layout algorithm
+- Ensure nodes don't overlap
+- Minimize edge crossings where possible
+- Maintain consistent spacing between generations
+- Adapt layout based on number of nodes (dense vs sparse graphs)
+
+#### Performance Considerations
+
+- Limit total nodes displayed to prevent performance issues (max 50-100 nodes)
+- If a generation has too many connections, show a subset with "Show N more" expansion
+- Lazy load second-generation data (fetch on demand when first-generation node is expanded)
+- Debounce animations to prevent jank on rapid navigation
+
+#### Implementation Approach
+
+**Backend API:**
+
+- Reuse existing graph traversal endpoints (`/api/entities/:id/neighbors`, `/api/graph/traverse`)
+- New endpoint: `GET /api/entities/:id/graph-view?depth=2` returns:
+  - Current entity
+  - First-generation incoming/outgoing entities with link details
+  - Second-generation entities (connections of first-generation)
+  - Suggested distinguishing properties for visible entity types
+
+**Frontend Rendering:**
+
+- SVG-based rendering for crisp visuals and animations
+- Use CSS transforms for smooth node transitions
+- Vanilla JavaScript or lightweight graph library (e.g., D3.js if acceptable, or custom canvas/SVG)
+- No heavy framework dependencies (keep it lightweight)
+
+**Responsive Design:**
+
+- Adapt layout for mobile (vertical stack or simplified radial layout)
+- Touch-friendly node sizes and spacing
+- Pinch-to-zoom support on mobile devices
+
+#### Actions
+
+- Re-center button: Return focus to the original entity
+- View details button: Navigate to entity detail page
+- Edit entity button: Navigate to edit form
+- Export subgraph button: Export visible nodes and links as JSON
+- Share link: Copy current graph view URL to clipboard
+
+#### Integration with Existing UI
+
+- Add "Graph View" tab or button on entity detail pages
+- Add link in navigation menu: "Graph Explorer"
+- Breadcrumb shows: Home > Entities > [Entity Name] > Graph View
+- Quick toggle between list view, detail view, and graph view
 
 ### ✅ Type Browser
 
@@ -1093,6 +1269,7 @@ The entity and link detail views include an ACL section for managing access cont
   - Add button
 - "Make Public" button (removes ACL, allows all authenticated users)
 - "Make Private" button (restricts to owner only)
+- 🟦 Can change permission level (Read/Write) on an existing entry.
 
 ### ✅ Authentication Integration
 
@@ -1215,6 +1392,7 @@ The entity and link detail views include an ACL section for managing access cont
 - View entity with all details
 - Browse entity version history
 - Navigate via outgoing/incoming links
+- 🟦 Interactive graph visualization (2-generation neighborhood view)
 - Filter and search entities
 
 #### Link Management
@@ -1243,23 +1421,24 @@ The entity and link detail views include an ACL section for managing access cont
 
 ### ✅ UI Routes Summary
 
-| Route                                | Method | Description                    |
-| ------------------------------------ | ------ | ------------------------------ |
-| `/ui`                                | GET    | Dashboard with recent entities |
-| `/ui/entities`                       | GET    | Entity list with filters       |
-| `/ui/entities/new`                   | GET    | Create entity form             |
-| `/ui/entities/:id`                   | GET    | Entity detail view             |
-| `/ui/entities/:id/edit`              | GET    | Edit entity form               |
-| `/ui/entities/:id/versions`          | GET    | Version history list           |
-| `/ui/entities/:id/versions/:version` | GET    | Specific version detail        |
-| `/ui/links`                          | GET    | Link list with filters         |
-| `/ui/links/new`                      | GET    | Create link form               |
-| `/ui/links/:id`                      | GET    | Link detail view               |
-| `/ui/links/:id/edit`                 | GET    | Edit link form                 |
-| `/ui/links/:id/versions`             | GET    | Link version history           |
-| `/ui/types`                          | GET    | Type browser                   |
-| `/ui/types/:id`                      | GET    | Type detail with usage stats   |
-| `/ui/search`                         | GET    | Search interface               |
+| Route                                | Method | Description                        |
+| ------------------------------------ | ------ | ---------------------------------- |
+| `/ui`                                | GET    | Dashboard with recent entities     |
+| `/ui/entities`                       | GET    | Entity list with filters           |
+| `/ui/entities/new`                   | GET    | Create entity form                 |
+| `/ui/entities/:id`                   | GET    | Entity detail view                 |
+| `/ui/entities/:id/edit`              | GET    | Edit entity form                   |
+| `/ui/entities/:id/versions`          | GET    | Version history list               |
+| `/ui/entities/:id/versions/:version` | GET    | Specific version detail            |
+| `/ui/entities/:id/graph`             | GET    | 🟦 Interactive graph visualization |
+| `/ui/links`                          | GET    | Link list with filters             |
+| `/ui/links/new`                      | GET    | Create link form                   |
+| `/ui/links/:id`                      | GET    | Link detail view                   |
+| `/ui/links/:id/edit`                 | GET    | Edit link form                     |
+| `/ui/links/:id/versions`             | GET    | Link version history               |
+| `/ui/types`                          | GET    | Type browser                       |
+| `/ui/types/:id`                      | GET    | Type detail with usage stats       |
+| `/ui/search`                         | GET    | Search interface                   |
 
 ### ✅ Group Administration Routes
 

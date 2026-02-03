@@ -3620,9 +3620,428 @@ function getChangePreview(
 ui.get('/links', async c => {
   const user = c.get('user');
 
+  // Require authentication for links browser
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/links'));
+  }
+
+  // Get filter parameters
+  const filterUserId = c.req.query('user_id') || '';
+  const filterTypeId = c.req.query('type_id') || '';
+  const filterSourceId = c.req.query('source_id') || '';
+  const filterTargetId = c.req.query('target_id') || '';
+  const filterTimeRange = c.req.query('time_range') || 'all';
+  const filterStartDate = c.req.query('start_date') || '';
+  const filterEndDate = c.req.query('end_date') || '';
+  const showDeleted = c.req.query('show_deleted') === 'true';
+  const showAllVersions = c.req.query('show_all_versions') === 'true';
+  const sortBy = c.req.query('sort_by') || 'created_at';
+  const sortOrder = c.req.query('sort_order') || 'desc';
+
+  // Get pagination parameters
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+  const cursor = c.req.query('cursor') || '';
+
+  // Calculate timestamp for time range filters
+  let timeRangeFilter = '';
+  const now = Date.now();
+  if (filterTimeRange !== 'all' && filterTimeRange !== 'custom') {
+    let since = now;
+    switch (filterTimeRange) {
+      case 'hour':
+        since = now - 60 * 60 * 1000;
+        break;
+      case 'day':
+        since = now - 24 * 60 * 60 * 1000;
+        break;
+      case 'week':
+        since = now - 7 * 24 * 60 * 60 * 1000;
+        break;
+      case 'month':
+        since = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+    }
+    timeRangeFilter = `AND l.created_at >= ${since}`;
+  } else if (filterTimeRange === 'custom' && filterStartDate) {
+    const startTimestamp = new Date(filterStartDate).getTime();
+    if (!isNaN(startTimestamp)) {
+      timeRangeFilter = `AND l.created_at >= ${startTimestamp}`;
+    }
+    if (filterEndDate) {
+      const endTimestamp = new Date(filterEndDate).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+      if (!isNaN(endTimestamp)) {
+        timeRangeFilter += ` AND l.created_at <= ${endTimestamp}`;
+      }
+    }
+  }
+
+  // Build WHERE clause for filters
+  const userFilter = filterUserId ? `AND l.created_by = ?` : '';
+  const typeFilter = filterTypeId ? `AND l.type_id = ?` : '';
+  const sourceFilter = filterSourceId ? `AND l.source_entity_id = ?` : '';
+  const targetFilter = filterTargetId ? `AND l.target_entity_id = ?` : '';
+  const deletedFilter = showDeleted ? '' : 'AND l.is_deleted = 0';
+  const versionFilter = showAllVersions ? '' : 'AND l.is_latest = 1';
+  const cursorFilter = cursor ? `AND l.created_at < ?` : '';
+
+  // Build ACL filter for authenticated user
+  type AclFilterResult = Awaited<ReturnType<typeof buildAclFilterClause>>;
+  const aclFilter: AclFilterResult = await buildAclFilterClause(
+    c.env.DB,
+    c.env.KV,
+    user.user_id,
+    'read',
+    'l.acl_id'
+  );
+  let aclFilterClause = '';
+  const aclFilterParams: unknown[] = [];
+  if (aclFilter.useFilter) {
+    aclFilterClause = `AND ${aclFilter.whereClause}`;
+    aclFilterParams.push(...aclFilter.bindings);
+  }
+
+  // Validate sort column to prevent SQL injection
+  const allowedSortColumns = ['created_at', 'type_name', 'version'];
+  const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+  const sortDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+  // Fetch users for filter dropdown
+  const allUsers = await c.env.DB.prepare(
+    'SELECT id, email, display_name FROM users ORDER BY email'
+  ).all<{ id: string; email: string; display_name?: string }>();
+
+  // Fetch types for filter dropdown (link types only)
+  const allTypes = await c.env.DB.prepare(
+    "SELECT id, name FROM types WHERE category = 'link' ORDER BY name"
+  ).all<{ id: string; name: string }>();
+
+  // Build query for links with filters
+  const linksQuery = `
+    SELECT
+      l.id, l.type_id, l.source_entity_id, l.target_entity_id, l.properties, l.version,
+      l.created_at, l.created_by, l.is_latest, l.is_deleted, l.previous_version_id, l.acl_id,
+      t.name as type_name,
+      u.display_name, u.email,
+      se.properties as source_properties, st.name as source_type_name,
+      te.properties as target_properties, tt.name as target_type_name
+    FROM links l
+    JOIN types t ON l.type_id = t.id
+    LEFT JOIN users u ON l.created_by = u.id
+    LEFT JOIN entities se ON l.source_entity_id = se.id AND se.is_latest = 1
+    LEFT JOIN types st ON se.type_id = st.id
+    LEFT JOIN entities te ON l.target_entity_id = te.id AND te.is_latest = 1
+    LEFT JOIN types tt ON te.type_id = tt.id
+    WHERE 1=1 ${timeRangeFilter} ${userFilter} ${typeFilter} ${sourceFilter} ${targetFilter} ${deletedFilter} ${versionFilter} ${cursorFilter} ${aclFilterClause}
+    ORDER BY ${sortColumn === 'type_name' ? 't.name' : 'l.' + sortColumn} ${sortDirection}
+    LIMIT ?
+  `;
+
+  const queryParams: unknown[] = [];
+  if (filterUserId) queryParams.push(filterUserId);
+  if (filterTypeId) queryParams.push(filterTypeId);
+  if (filterSourceId) queryParams.push(filterSourceId);
+  if (filterTargetId) queryParams.push(filterTargetId);
+  if (cursor) {
+    // Cursor is a timestamp
+    queryParams.push(parseInt(cursor, 10));
+  }
+  queryParams.push(...aclFilterParams);
+  queryParams.push(limit + 1); // Fetch one extra to determine if there are more results
+
+  const linksResult = await c.env.DB.prepare(linksQuery)
+    .bind(...queryParams)
+    .all<{
+      id: string;
+      type_id: string;
+      source_entity_id: string;
+      target_entity_id: string;
+      properties: string;
+      version: number;
+      created_at: number;
+      created_by: string;
+      is_latest: number;
+      is_deleted: number;
+      previous_version_id: string | null;
+      acl_id: number | null;
+      type_name: string;
+      display_name?: string;
+      email: string;
+      source_properties: string | null;
+      source_type_name: string | null;
+      target_properties: string | null;
+      target_type_name: string | null;
+    }>();
+
+  // Apply per-row filtering if ACL filter couldn't be applied in SQL
+  let filteredResults = linksResult.results;
+  if (!aclFilter.useFilter) {
+    filteredResults = filterByAclPermission(filteredResults, aclFilter.accessibleAclIds);
+  }
+
+  // Determine if there are more results
+  const hasMore = filteredResults.length > limit;
+  const links = hasMore ? filteredResults.slice(0, limit) : filteredResults;
+
+  // Calculate next cursor
+  let nextCursor = '';
+  if (hasMore && links.length > 0) {
+    nextCursor = links[links.length - 1].created_at.toString();
+  }
+
+  // Build pagination links
+  const buildPaginationUrl = (newCursor: string) => {
+    const params = new URLSearchParams();
+    if (filterUserId) params.set('user_id', filterUserId);
+    if (filterTypeId) params.set('type_id', filterTypeId);
+    if (filterSourceId) params.set('source_id', filterSourceId);
+    if (filterTargetId) params.set('target_id', filterTargetId);
+    if (filterTimeRange !== 'all') params.set('time_range', filterTimeRange);
+    if (filterStartDate) params.set('start_date', filterStartDate);
+    if (filterEndDate) params.set('end_date', filterEndDate);
+    if (showDeleted) params.set('show_deleted', 'true');
+    if (showAllVersions) params.set('show_all_versions', 'true');
+    if (sortBy !== 'created_at') params.set('sort_by', sortBy);
+    if (sortOrder !== 'desc') params.set('sort_order', sortOrder);
+    if (limit !== 20) params.set('limit', limit.toString());
+    if (newCursor) params.set('cursor', newCursor);
+    return `/ui/links?${params.toString()}`;
+  };
+
+  // Helper function to get display name from entity properties
+  const getEntityDisplayName = (properties: string | null, entityId: string) => {
+    if (!properties) return entityId.substring(0, 8) + '...';
+    try {
+      const parsed = JSON.parse(properties);
+      return parsed.name || parsed.title || parsed.label || entityId.substring(0, 8) + '...';
+    } catch {
+      return entityId.substring(0, 8) + '...';
+    }
+  };
+
+  // Render filter form
+  const filterForm = `
+    <div class="card">
+      <form method="GET" action="/ui/links" class="filter-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="user_id">User:</label>
+            <select id="user_id" name="user_id">
+              <option value="">All users</option>
+              ${allUsers.results
+                .map(
+                  u => `
+                <option value="${u.id}" ${filterUserId === u.id ? 'selected' : ''}>
+                  ${escapeHtml(u.display_name || u.email)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="type_id">Link Type:</label>
+            <select id="type_id" name="type_id">
+              <option value="">All types</option>
+              ${allTypes.results
+                .map(
+                  t => `
+                <option value="${t.id}" ${filterTypeId === t.id ? 'selected' : ''}>
+                  ${escapeHtml(t.name)}
+                </option>
+              `
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="source_id">Source Entity:</label>
+            <input type="text" id="source_id" name="source_id" value="${escapeHtml(filterSourceId)}" placeholder="Entity ID">
+          </div>
+
+          <div class="form-group">
+            <label for="target_id">Target Entity:</label>
+            <input type="text" id="target_id" name="target_id" value="${escapeHtml(filterTargetId)}" placeholder="Entity ID">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="time_range">Time Range:</label>
+            <select id="time_range" name="time_range" onchange="toggleCustomDates()">
+              <option value="all" ${filterTimeRange === 'all' ? 'selected' : ''}>All time</option>
+              <option value="hour" ${filterTimeRange === 'hour' ? 'selected' : ''}>Last hour</option>
+              <option value="day" ${filterTimeRange === 'day' ? 'selected' : ''}>Last day</option>
+              <option value="week" ${filterTimeRange === 'week' ? 'selected' : ''}>Last week</option>
+              <option value="month" ${filterTimeRange === 'month' ? 'selected' : ''}>Last month</option>
+              <option value="custom" ${filterTimeRange === 'custom' ? 'selected' : ''}>Custom range</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="sort_by">Sort By:</label>
+            <select id="sort_by" name="sort_by">
+              <option value="created_at" ${sortBy === 'created_at' ? 'selected' : ''}>Date</option>
+              <option value="type_name" ${sortBy === 'type_name' ? 'selected' : ''}>Type</option>
+              <option value="version" ${sortBy === 'version' ? 'selected' : ''}>Version</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="sort_order">Order:</label>
+            <select id="sort_order" name="sort_order">
+              <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+              <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" id="custom-dates" style="display: ${filterTimeRange === 'custom' ? 'flex' : 'none'}">
+          <div class="form-group">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" name="start_date" value="${escapeHtml(filterStartDate)}">
+          </div>
+
+          <div class="form-group">
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" name="end_date" value="${escapeHtml(filterEndDate)}">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" name="show_deleted" value="true" ${showDeleted ? 'checked' : ''}>
+              Show deleted links
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input type="checkbox" name="show_all_versions" value="true" ${showAllVersions ? 'checked' : ''}>
+              Show all versions
+            </label>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Apply Filters</button>
+          <a href="/ui/links" class="button secondary">Clear Filters</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      function toggleCustomDates() {
+        const timeRange = document.getElementById('time_range').value;
+        const customDates = document.getElementById('custom-dates');
+        customDates.style.display = timeRange === 'custom' ? 'flex' : 'none';
+      }
+    </script>
+  `;
+
+  // Render links table
+  const linksTable = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Source Entity</th>
+          <th>Target Entity</th>
+          <th>Properties</th>
+          <th>Version</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${links
+          .map(link => {
+            const props = JSON.parse(link.properties);
+            const propsPreview = JSON.stringify(props, null, 2);
+            const truncatedPreview =
+              propsPreview.length > 100 ? propsPreview.substring(0, 100) + '...' : propsPreview;
+
+            const sourceDisplayName = getEntityDisplayName(
+              link.source_properties,
+              link.source_entity_id
+            );
+            const targetDisplayName = getEntityDisplayName(
+              link.target_properties,
+              link.target_entity_id
+            );
+
+            return `
+          <tr>
+            <td>
+              <a href="/ui/links/${link.id}">${link.id.substring(0, 8)}...</a>
+            </td>
+            <td>
+              <a href="/ui/links?type_id=${link.type_id}" class="badge">${escapeHtml(link.type_name)}</a>
+            </td>
+            <td>
+              <a href="/ui/entities/${link.source_entity_id}">${escapeHtml(sourceDisplayName)}</a>
+              <div class="muted small">${escapeHtml(link.source_type_name || 'Unknown')}</div>
+            </td>
+            <td>
+              <a href="/ui/entities/${link.target_entity_id}">${escapeHtml(targetDisplayName)}</a>
+              <div class="muted small">${escapeHtml(link.target_type_name || 'Unknown')}</div>
+            </td>
+            <td>
+              <code class="small">${escapeHtml(truncatedPreview)}</code>
+            </td>
+            <td>${link.version}</td>
+            <td>
+              ${escapeHtml(link.display_name || link.email)}
+            </td>
+            <td>
+              ${formatTimestamp(link.created_at)}
+            </td>
+            <td>
+              ${link.is_latest ? '<span class="badge success">Latest</span>' : '<span class="badge muted">Old</span>'}
+              ${link.is_deleted ? '<span class="badge danger">Deleted</span>' : ''}
+            </td>
+            <td>
+              <div class="button-group compact">
+                <a href="/ui/links/${link.id}" class="button small">View</a>
+                ${!link.is_deleted && link.is_latest ? `<a href="/ui/links/${link.id}/edit" class="button small secondary">Edit</a>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+          })
+          .join('')}
+      </tbody>
+    </table>
+  `;
+
   const content = `
     <h2>Links</h2>
-    <p>Link list view coming soon.</p>
+    <p>Browse and filter all links in the database.</p>
+
+    <h3>Filters</h3>
+    ${filterForm}
+
+    <h3>Results</h3>
+    <p>Showing ${links.length} ${links.length === 1 ? 'link' : 'links'}${hasMore ? ' (more available)' : ''}.</p>
+
+    ${links.length > 0 ? linksTable : '<p class="muted">No links found matching the filters.</p>'}
+
+    ${
+      hasMore || cursor
+        ? `
+      <div class="pagination">
+        ${cursor ? `<a href="${buildPaginationUrl('')}" class="button secondary">First Page</a>` : ''}
+        ${hasMore ? `<a href="${buildPaginationUrl(nextCursor)}" class="button">Next Page</a>` : ''}
+      </div>
+    `
+        : ''
+    }
+
     <div class="button-group">
       <a href="/ui" class="button secondary">Back to Dashboard</a>
       <a href="/ui/links/new" class="button">Create Link</a>

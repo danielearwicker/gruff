@@ -56,7 +56,8 @@ export async function computeAclHash(entries: AclEntry[]): Promise<string> {
 }
 
 /**
- * Deduplicate ACL entries by removing exact duplicates
+ * Deduplicate ACL entries by removing exact duplicates and redundant permissions.
+ * Since 'write' implies 'read', any 'read' permission is removed when 'write' exists for the same principal.
  *
  * @param entries - ACL entries (may contain duplicates)
  * @returns Deduplicated entries
@@ -65,15 +66,30 @@ export function deduplicateAclEntries(entries: AclEntry[]): AclEntry[] {
   const seen = new Set<string>();
   const result: AclEntry[] = [];
 
+  // First pass: collect all entries and track which principals have write permission
+  const writePrincipals = new Set<string>();
+
   for (const entry of entries) {
     const key = `${entry.principal_type}:${entry.principal_id}:${entry.permission}`;
     if (!seen.has(key)) {
       seen.add(key);
       result.push(entry);
+
+      if (entry.permission === 'write') {
+        const principalKey = `${entry.principal_type}:${entry.principal_id}`;
+        writePrincipals.add(principalKey);
+      }
     }
   }
 
-  return result;
+  // Second pass: filter out redundant 'read' permissions where 'write' exists
+  return result.filter(entry => {
+    if (entry.permission === 'read') {
+      const principalKey = `${entry.principal_type}:${entry.principal_id}`;
+      return !writePrincipals.has(principalKey);
+    }
+    return true;
+  });
 }
 
 /**
