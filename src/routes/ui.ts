@@ -6384,6 +6384,7 @@ ui.get('/types', async c => {
       <a href="/ui" class="button secondary">Back to Dashboard</a>
       <a href="/ui/entities/new" class="button secondary">Create Entity</a>
       <a href="/ui/links/new" class="button secondary">Create Link</a>
+      ${user?.is_admin ? '<a href="/ui/types/new" class="button">Create New Type</a>' : ''}
     </div>
   `;
 
@@ -6697,7 +6698,44 @@ ui.get('/types/:id', async c => {
       <div class="button-group">
         <a href="/ui/types" class="button secondary">Back to Types</a>
         ${type.category === 'entity' ? `<a href="/ui/entities/new?type_id=${type.id}" class="button">Create Entity of This Type</a>` : `<a href="/ui/links/new?type_id=${type.id}" class="button">Create Link of This Type</a>`}
+        ${
+          user.is_admin
+            ? usageCount === 0
+              ? `<button class="button danger" onclick="deleteType('${type.id}', '${escapeHtml(type.name).replace(/'/g, "\\'")}')">Delete Type</button>`
+              : `<button class="button danger" disabled title="Cannot delete: ${usageCount} ${type.category === 'entity' ? 'entities' : 'links'} still use this type">Delete Type</button>`
+            : ''
+        }
       </div>
+
+      ${
+        user.is_admin
+          ? `
+      <script>
+        function deleteType(typeId, typeName) {
+          if (!confirm('Are you sure you want to delete the type "' + typeName + '"? This action cannot be undone.')) {
+            return;
+          }
+
+          fetch('/api/types/' + typeId, {
+            method: 'DELETE',
+          })
+            .then(response => {
+              if (!response.ok) {
+                return response.json().then(data => {
+                  throw new Error(data.message || 'Failed to delete type');
+                });
+              }
+              // Redirect to types list on success
+              window.location.href = '/ui/types';
+            })
+            .catch(error => {
+              alert('Error deleting type: ' + error.message);
+            });
+        }
+      </script>
+      `
+          : ''
+      }
     `;
 
     const html = renderPage(
@@ -6744,6 +6782,161 @@ ui.get('/types/:id', async c => {
       500
     );
   }
+});
+
+/**
+ * Create new type form
+ * GET /ui/types/new
+ */
+ui.get('/types/new', async c => {
+  const user = c.get('user');
+
+  // Require authentication
+  if (!user) {
+    return c.redirect('/ui/auth/login?return_to=' + encodeURIComponent('/ui/types/new'));
+  }
+
+  // Require admin role
+  if (!user.is_admin) {
+    const content = `
+      <div class="error-message">
+        <h2>Access Denied</h2>
+        <p>Only administrators can create new types.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/types" class="button secondary">Back to Types</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Access Denied',
+          user,
+          activePath: '/ui/types',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Types', href: '/ui/types' },
+            { label: 'Access Denied' },
+          ],
+        },
+        content
+      ),
+      403
+    );
+  }
+
+  const content = `
+    <h2>Create New Type</h2>
+    <p>Define a new type for entities or links. Once created, types cannot be edited - use a naming/versioning scheme for type evolution.</p>
+
+    <div class="card">
+      <form id="create-type-form" class="form">
+        <div class="form-group">
+          <label for="category">Category <span class="required">*</span></label>
+          <select id="category" name="category" required>
+            <option value="">Select category...</option>
+            <option value="entity">Entity Type</option>
+            <option value="link">Link Type</option>
+          </select>
+          <p class="help-text">Choose whether this type is for entities or links.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="name">Name <span class="required">*</span></label>
+          <input type="text" id="name" name="name" required placeholder="e.g., Person, Organization, RelatesTo" />
+          <p class="help-text">Unique name for this type. Use a clear, descriptive name.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="3" placeholder="Describe the purpose and usage of this type..."></textarea>
+          <p class="help-text">Optional description to help users understand when to use this type.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="json_schema">JSON Schema (Optional)</label>
+          <textarea id="json_schema" name="json_schema" rows="10" placeholder='{\n  "type": "object",\n  "properties": {\n    "name": { "type": "string" }\n  },\n  "required": ["name"]\n}'></textarea>
+          <p class="help-text">Optional JSON Schema (Draft-07) for validating properties. Leave blank for no validation.</p>
+        </div>
+
+        <div id="form-error" class="error-message" style="display: none;"></div>
+
+        <div class="button-group">
+          <button type="submit" class="button">Create Type</button>
+          <a href="/ui/types" class="button secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      (function() {
+        const form = document.getElementById('create-type-form');
+        const errorDiv = document.getElementById('form-error');
+
+        form.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          errorDiv.style.display = 'none';
+
+          const formData = {
+            category: document.getElementById('category').value,
+            name: document.getElementById('name').value.trim(),
+            description: document.getElementById('description').value.trim() || undefined,
+            json_schema: document.getElementById('json_schema').value.trim() || undefined,
+          };
+
+          // Validate JSON schema if provided
+          if (formData.json_schema) {
+            try {
+              JSON.parse(formData.json_schema);
+            } catch (error) {
+              errorDiv.textContent = 'Invalid JSON schema: ' + error.message;
+              errorDiv.style.display = 'block';
+              return;
+            }
+          }
+
+          try {
+            const response = await fetch('/api/types', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(formData),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+              throw new Error(result.message || 'Failed to create type');
+            }
+
+            // Redirect to the newly created type
+            window.location.href = '/ui/types/' + result.id;
+          } catch (error) {
+            errorDiv.textContent = 'Error: ' + error.message;
+            errorDiv.style.display = 'block';
+          }
+        });
+      })();
+    </script>
+  `;
+
+  const html = renderPage(
+    {
+      title: 'Create New Type',
+      user,
+      activePath: '/ui/types',
+      breadcrumbs: [
+        { label: 'Home', href: '/ui' },
+        { label: 'Types', href: '/ui/types' },
+        { label: 'Create New Type' },
+      ],
+    },
+    content
+  );
+
+  return c.html(html);
 });
 
 /**

@@ -39,8 +39,8 @@ A graph database system built on Cloudflare D1 (SQLite) that supports versioned 
 - Centralized type registry for both entities and links
 - Documents all extant types in the system
 - Enables type-based queries and validation
-- 🟦 Allows creation of a new type (existing types can't be edited, user must use a naming-versioning scheme)
-- 🟦 Allows deletion of a type but only if there are no non-deleted entities of that type
+- ✅ Allows creation of a new type (existing types can't be edited, user must use a naming-versioning scheme)
+- ✅ Allows deletion of a type but only if there are no non-deleted entities of that type
 
 ## Database Schema
 
@@ -1192,7 +1192,19 @@ Each edge (link) shows:
   - Usage count (number of entities/links using this type)
   - Created by, Created at
 - Click to see all entities/links of that type
-- "Create new type" button (admin feature)
+- ✅ "Create new type" button (admin feature)
+- ✅ **GET /ui/types/new** - Create new type form (admin only)
+  - Category selection (entity/link)
+  - Name (required, unique)
+  - Description (optional)
+  - JSON Schema (optional, validated)
+  - Form validation and error handling
+  - Creates type via POST /api/types
+- ✅ **Type deletion** - Delete unused types (admin only)
+  - Delete button on type detail page
+  - Only enabled when usage count is 0
+  - Confirmation dialog before deletion
+  - Deletes via DELETE /api/types/:id
 
 ### ✅ Version Comparison View
 
