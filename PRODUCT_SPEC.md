@@ -1035,7 +1035,7 @@ Each entity in the list shows:
 - **Create:** POST to `/api/links`, redirects to new link detail page
 - **Edit:** PUT to `/api/links/:id`, creates new version, redirects to new link version
 
-### 🟦 Graph Visualization View
+### ✅ Graph Visualization View
 
 **Route:** `GET /ui/entities/:id/graph`
 
@@ -1404,7 +1404,7 @@ The entity and link detail views include an ACL section for managing access cont
 - View entity with all details
 - Browse entity version history
 - Navigate via outgoing/incoming links
-- 🟦 Interactive graph visualization (2-generation neighborhood view)
+- ✅ Interactive graph visualization (2-generation neighborhood view)
 - Filter and search entities
 
 #### Link Management
@@ -1442,7 +1442,7 @@ The entity and link detail views include an ACL section for managing access cont
 | `/ui/entities/:id/edit`              | GET    | Edit entity form                   |
 | `/ui/entities/:id/versions`          | GET    | Version history list               |
 | `/ui/entities/:id/versions/:version` | GET    | Specific version detail            |
-| `/ui/entities/:id/graph`             | GET    | 🟦 Interactive graph visualization |
+| `/ui/entities/:id/graph`             | GET    | ✅ Interactive graph visualization |
 | `/ui/links`                          | GET    | Link list with filters             |
 | `/ui/links/new`                      | GET    | Create link form                   |
 | `/ui/links/:id`                      | GET    | Link detail view                   |

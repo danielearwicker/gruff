@@ -2506,6 +2506,7 @@ ui.get('/entities/:id', async c => {
           ${!entity.is_deleted && entity.is_latest ? `<a href="/ui/entities/${entity.id}/edit" class="button">Edit Entity</a>` : ''}
           ${!entity.is_deleted && entity.is_latest ? `<button class="button danger" onclick="confirmDelete('${entity.id}')">Delete Entity</button>` : ''}
           ${entity.is_deleted && entity.is_latest ? `<button class="button" onclick="confirmRestore('${entity.id}')">Restore Entity</button>` : ''}
+          <a href="/ui/entities/${entity.id}/graph" class="button secondary">Graph View</a>
           <a href="/ui/links/new?source=${entity.id}" class="button secondary">Create Link from This Entity</a>
           <a href="/api/entities/${entity.id}" class="button secondary" target="_blank">Export as JSON</a>
         </div>
@@ -2600,6 +2601,749 @@ ui.get('/entities/:id', async c => {
       </div>
       <div class="button-group">
         <a href="/ui/entities" class="button secondary">Back to Entities</a>
+      </div>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: 'Error',
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: 'Error' },
+          ],
+        },
+        content
+      ),
+      500
+    );
+  }
+});
+
+/**
+ * Graph Visualization View
+ * GET /ui/entities/:id/graph
+ * Interactive visual representation of an entity's local graph neighborhood
+ */
+ui.get('/entities/:id/graph', async c => {
+  const user = c.get('user');
+  const entityId = c.req.param('id');
+
+  try {
+    // Fetch the center entity to get basic info for the page
+    const entity = await c.env.DB.prepare(
+      `
+      SELECT
+        e.id, e.type_id, e.properties, e.acl_id,
+        t.name as type_name
+      FROM entities e
+      JOIN types t ON e.type_id = t.id
+      WHERE e.id = ? AND e.is_latest = 1
+    `
+    )
+      .bind(entityId)
+      .first<{
+        id: string;
+        type_id: string;
+        properties: string;
+        acl_id: number | null;
+        type_name: string;
+      }>();
+
+    if (!entity) {
+      const content = `
+        <div class="error-message">
+          <h2>Entity Not Found</h2>
+          <p>The entity with ID "${escapeHtml(entityId)}" could not be found.</p>
+        </div>
+        <div class="button-group">
+          <a href="/ui/entities" class="button secondary">Back to Entities</a>
+        </div>
+      `;
+
+      return c.html(
+        renderPage(
+          {
+            title: 'Entity Not Found',
+            user,
+            activePath: '/ui/entities',
+            breadcrumbs: [
+              { label: 'Home', href: '/ui' },
+              { label: 'Entities', href: '/ui/entities' },
+              { label: 'Not Found' },
+            ],
+          },
+          content
+        ),
+        404
+      );
+    }
+
+    // Check ACL permission
+    if (user) {
+      const canRead = await hasPermissionByAclId(
+        c.env.DB,
+        c.env.KV,
+        user.user_id,
+        entity.acl_id,
+        'read'
+      );
+      if (!canRead) {
+        const content = `
+          <div class="error-message">
+            <h2>Access Denied</h2>
+            <p>You do not have permission to view this entity.</p>
+          </div>
+          <div class="button-group">
+            <a href="/ui/entities" class="button secondary">Back to Entities</a>
+          </div>
+        `;
+
+        return c.html(
+          renderPage(
+            {
+              title: 'Access Denied',
+              user,
+              activePath: '/ui/entities',
+              breadcrumbs: [
+                { label: 'Home', href: '/ui' },
+                { label: 'Entities', href: '/ui/entities' },
+                { label: 'Access Denied' },
+              ],
+            },
+            content
+          ),
+          403
+        );
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities
+      if (entity.acl_id !== null) {
+        const content = `
+          <div class="error-message">
+            <h2>Authentication Required</h2>
+            <p>Please log in to view this entity.</p>
+          </div>
+          <div class="button-group">
+            <a href="/ui/auth/login?returnUrl=${encodeURIComponent(`/ui/entities/${entityId}/graph`)}" class="button">Log In</a>
+            <a href="/ui/entities" class="button secondary">Back to Entities</a>
+          </div>
+        `;
+
+        return c.html(
+          renderPage(
+            {
+              title: 'Authentication Required',
+              user,
+              activePath: '/ui/entities',
+              breadcrumbs: [
+                { label: 'Home', href: '/ui' },
+                { label: 'Entities', href: '/ui/entities' },
+                { label: 'Authentication Required' },
+              ],
+            },
+            content
+          ),
+          403
+        );
+      }
+    }
+
+    // Parse the properties to get display name
+    const props = JSON.parse(entity.properties);
+    const displayName = props.name || props.title || props.label || entity.id.substring(0, 8);
+
+    // Build the graph visualization HTML
+    const content = `
+      <div class="graph-view-container">
+        <div class="graph-controls">
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="showDeleted" />
+              Show deleted entities
+            </label>
+            <label>
+              <input type="checkbox" id="showLabels" checked />
+              Show link labels
+            </label>
+          </div>
+          <div class="control-group">
+            <button id="fitToView" class="button secondary">Fit to View</button>
+            <button id="zoomIn" class="button secondary">Zoom In</button>
+            <button id="zoomOut" class="button secondary">Zoom Out</button>
+          </div>
+          <div class="control-group">
+            <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">View Details</a>
+            <a href="/ui/entities/${escapeHtml(entityId)}/edit" class="button secondary">Edit Entity</a>
+          </div>
+        </div>
+
+        <div id="graphContainer" class="graph-canvas">
+          <svg id="graphSvg" width="100%" height="600">
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                <polygon points="0 0, 10 3, 0 6" fill="#666" />
+              </marker>
+            </defs>
+            <g id="graphGroup">
+              <!-- Graph elements will be rendered here by JavaScript -->
+            </g>
+          </svg>
+          <div id="loadingIndicator" class="loading-indicator">Loading graph data...</div>
+          <div id="tooltip" class="graph-tooltip" style="display: none;"></div>
+        </div>
+
+        <div class="legend">
+          <h3>Legend</h3>
+          <div class="legend-item">
+            <div class="legend-node center-node"></div>
+            <span>Current Entity</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-node gen1-node"></div>
+            <span>Direct Connection (Gen 1)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-node gen2-node"></div>
+            <span>Indirect Connection (Gen 2)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-arrow"></div>
+            <span>Link Direction</span>
+          </div>
+        </div>
+      </div>
+
+      <style>
+        .graph-view-container {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+
+        .graph-controls {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1rem;
+          padding: 1rem;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+        }
+
+        .control-group {
+          display: flex;
+          gap: 0.5rem;
+          align-items: center;
+        }
+
+        .control-group label {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          cursor: pointer;
+        }
+
+        .graph-canvas {
+          position: relative;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        #graphSvg {
+          display: block;
+          cursor: move;
+        }
+
+        .loading-indicator {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          padding: 1rem 2rem;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .graph-tooltip {
+          position: absolute;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 0.5rem;
+          pointer-events: none;
+          z-index: 1000;
+          max-width: 300px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .legend {
+          padding: 1rem;
+          background: var(--bg-secondary);
+          border-radius: 4px;
+        }
+
+        .legend h3 {
+          margin: 0 0 0.5rem 0;
+          font-size: 1rem;
+        }
+
+        .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin: 0.5rem 0;
+        }
+
+        .legend-node {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          border: 2px solid #333;
+        }
+
+        .legend-node.center-node {
+          background: #4CAF50;
+          border-color: #2E7D32;
+        }
+
+        .legend-node.gen1-node {
+          background: #2196F3;
+          border-color: #1565C0;
+        }
+
+        .legend-node.gen2-node {
+          background: #9C27B0;
+          border-color: #6A1B9A;
+        }
+
+        .legend-arrow {
+          width: 30px;
+          height: 2px;
+          background: #666;
+          position: relative;
+        }
+
+        .legend-arrow::after {
+          content: '';
+          position: absolute;
+          right: 0;
+          top: -3px;
+          width: 0;
+          height: 0;
+          border-left: 8px solid #666;
+          border-top: 4px solid transparent;
+          border-bottom: 4px solid transparent;
+        }
+
+        /* SVG node styles */
+        .graph-node {
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+
+        .graph-node:hover {
+          opacity: 0.8;
+        }
+
+        .graph-node.deleted {
+          opacity: 0.5;
+        }
+
+        .graph-link {
+          fill: none;
+          stroke: #666;
+          stroke-width: 2;
+          marker-end: url(#arrowhead);
+        }
+
+        .graph-link.deleted {
+          stroke-dasharray: 5,5;
+          opacity: 0.5;
+        }
+
+        .graph-link-label {
+          font-size: 11px;
+          fill: #666;
+          text-anchor: middle;
+          pointer-events: none;
+        }
+
+        .graph-node-circle {
+          stroke-width: 3;
+        }
+
+        .graph-node-circle.generation-0 {
+          fill: #4CAF50;
+          stroke: #2E7D32;
+        }
+
+        .graph-node-circle.generation-1 {
+          fill: #2196F3;
+          stroke: #1565C0;
+        }
+
+        .graph-node-circle.generation-2 {
+          fill: #9C27B0;
+          stroke: #6A1B9A;
+        }
+
+        .graph-node-label {
+          font-size: 12px;
+          fill: #333;
+          text-anchor: middle;
+          pointer-events: none;
+        }
+
+        .graph-node-type {
+          font-size: 10px;
+          fill: #666;
+          text-anchor: middle;
+          pointer-events: none;
+        }
+      </style>
+
+      <script>
+        (function() {
+          const entityId = '${escapeHtml(entityId)}';
+          const svg = document.getElementById('graphSvg');
+          const graphGroup = document.getElementById('graphGroup');
+          const loadingIndicator = document.getElementById('loadingIndicator');
+          const tooltip = document.getElementById('tooltip');
+
+          let graphData = null;
+          let transform = { x: 0, y: 0, scale: 1 };
+          let isPanning = false;
+          let panStart = { x: 0, y: 0 };
+          let showDeleted = false;
+          let showLabels = true;
+
+          // Fetch graph data from API
+          async function loadGraphData() {
+            try {
+              const response = await fetch(\`/api/graph/entities/\${entityId}/graph-view?depth=2&include_deleted=false\`);
+              if (!response.ok) {
+                throw new Error('Failed to load graph data');
+              }
+              const result = await response.json();
+              graphData = result.data;
+              loadingIndicator.style.display = 'none';
+              renderGraph();
+            } catch (error) {
+              loadingIndicator.textContent = 'Error loading graph: ' + error.message;
+            }
+          }
+
+          // Simple force-directed layout algorithm
+          function calculateLayout(entities, links) {
+            const centerEntity = entities.find(e => e.id === entityId);
+            if (!centerEntity) return [];
+
+            const svgWidth = svg.clientWidth || 800;
+            const svgHeight = 600;
+            const centerX = svgWidth / 2;
+            const centerY = svgHeight / 2;
+
+            const positions = new Map();
+
+            // Position center entity
+            positions.set(centerEntity.id, { x: centerX, y: centerY });
+
+            // Group entities by generation
+            const gen1Entities = entities.filter(e => e.generation === 1);
+            const gen2Entities = entities.filter(e => e.generation === 2);
+
+            // Position generation 1 entities in a circle around center
+            const gen1Radius = 150;
+            gen1Entities.forEach((entity, index) => {
+              const angle = (index / gen1Entities.length) * 2 * Math.PI;
+              positions.set(entity.id, {
+                x: centerX + gen1Radius * Math.cos(angle),
+                y: centerY + gen1Radius * Math.sin(angle),
+              });
+            });
+
+            // Position generation 2 entities in outer circles around their parents
+            const gen2Radius = 100;
+            gen2Entities.forEach(entity => {
+              // Find parent entity (first-gen entity this is connected to)
+              const parentLink = links.find(
+                l => (l.source_entity_id === entity.id || l.target_entity_id === entity.id) &&
+                     gen1Entities.some(g1 => g1.id === l.source_entity_id || g1.id === l.target_entity_id)
+              );
+
+              if (parentLink) {
+                const parentId = gen1Entities.find(g1 =>
+                  g1.id === parentLink.source_entity_id || g1.id === parentLink.target_entity_id
+                )?.id;
+                const parentPos = positions.get(parentId);
+
+                if (parentPos) {
+                  // Count how many gen2 entities share this parent
+                  const siblingsWithSameParent = gen2Entities.filter(e => {
+                    const link = links.find(
+                      l => (l.source_entity_id === e.id || l.target_entity_id === e.id) &&
+                           (l.source_entity_id === parentId || l.target_entity_id === parentId)
+                    );
+                    return link !== undefined;
+                  });
+
+                  const siblingIndex = siblingsWithSameParent.findIndex(e => e.id === entity.id);
+                  const siblingCount = siblingsWithSameParent.length;
+
+                  const angle = (siblingIndex / Math.max(siblingCount, 1)) * 2 * Math.PI;
+                  const offsetX = gen2Radius * Math.cos(angle);
+                  const offsetY = gen2Radius * Math.sin(angle);
+
+                  positions.set(entity.id, {
+                    x: parentPos.x + offsetX,
+                    y: parentPos.y + offsetY,
+                  });
+                }
+              }
+            });
+
+            return positions;
+          }
+
+          // Render the graph
+          function renderGraph() {
+            if (!graphData) return;
+
+            graphGroup.innerHTML = '';
+
+            const entities = showDeleted ? graphData.entities : graphData.entities.filter(e => !e.is_deleted);
+            const links = showDeleted ? graphData.links : graphData.links.filter(l => !l.is_deleted);
+
+            const positions = calculateLayout(entities, links);
+
+            // Render links first (so they appear behind nodes)
+            links.forEach(link => {
+              const sourcePos = positions.get(link.source_entity_id);
+              const targetPos = positions.get(link.target_entity_id);
+
+              if (!sourcePos || !targetPos) return;
+
+              const linkGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+              linkGroup.classList.add('graph-link-group');
+
+              const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+              line.setAttribute('x1', sourcePos.x);
+              line.setAttribute('y1', sourcePos.y);
+              line.setAttribute('x2', targetPos.x);
+              line.setAttribute('y2', targetPos.y);
+              line.classList.add('graph-link');
+              if (link.is_deleted) line.classList.add('deleted');
+
+              linkGroup.appendChild(line);
+
+              // Add link label
+              if (showLabels) {
+                const midX = (sourcePos.x + targetPos.x) / 2;
+                const midY = (sourcePos.y + targetPos.y) / 2;
+
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', midX);
+                label.setAttribute('y', midY - 5);
+                label.classList.add('graph-link-label');
+                label.textContent = link.type_name;
+
+                linkGroup.appendChild(label);
+              }
+
+              // Add hover effect for links
+              linkGroup.addEventListener('mouseenter', (e) => {
+                tooltip.innerHTML = \`
+                  <strong>\${link.type_name}</strong><br>
+                  <small>From: \${link.source_entity_id.substring(0, 8)}...</small><br>
+                  <small>To: \${link.target_entity_id.substring(0, 8)}...</small>
+                \`;
+                tooltip.style.display = 'block';
+                tooltip.style.left = e.pageX + 10 + 'px';
+                tooltip.style.top = e.pageY + 10 + 'px';
+              });
+              linkGroup.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none';
+              });
+
+              graphGroup.appendChild(linkGroup);
+            });
+
+            // Render nodes
+            entities.forEach(entity => {
+              const pos = positions.get(entity.id);
+              if (!pos) return;
+
+              const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+              nodeGroup.classList.add('graph-node');
+              if (entity.is_deleted) nodeGroup.classList.add('deleted');
+
+              const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+              circle.setAttribute('cx', pos.x);
+              circle.setAttribute('cy', pos.y);
+              circle.setAttribute('r', 30);
+              circle.classList.add('graph-node-circle', \`generation-\${entity.generation}\`);
+
+              nodeGroup.appendChild(circle);
+
+              // Add entity label
+              const distinguishingProps = graphData.distinguishing_properties[entity.type_id] || [];
+              let labelText = entity.id.substring(0, 8);
+
+              if (distinguishingProps.length > 0 && entity.properties[distinguishingProps[0]]) {
+                labelText = String(entity.properties[distinguishingProps[0]]);
+                if (labelText.length > 15) {
+                  labelText = labelText.substring(0, 15) + '...';
+                }
+              }
+
+              const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              label.setAttribute('x', pos.x);
+              label.setAttribute('y', pos.y);
+              label.classList.add('graph-node-label');
+              label.textContent = labelText;
+
+              nodeGroup.appendChild(label);
+
+              // Add type label below
+              const typeLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+              typeLabel.setAttribute('x', pos.x);
+              typeLabel.setAttribute('y', pos.y + 40);
+              typeLabel.classList.add('graph-node-type');
+              typeLabel.textContent = entity.type_name;
+
+              nodeGroup.appendChild(typeLabel);
+
+              // Add click handler to navigate
+              nodeGroup.addEventListener('click', () => {
+                if (entity.id !== entityId) {
+                  window.location.href = \`/ui/entities/\${entity.id}/graph\`;
+                }
+              });
+
+              // Add hover effect
+              nodeGroup.addEventListener('mouseenter', (e) => {
+                tooltip.innerHTML = \`
+                  <strong>\${entity.type_name}</strong><br>
+                  <small>ID: \${entity.id.substring(0, 16)}...</small><br>
+                  <small>Generation: \${entity.generation}</small>
+                  \${entity.is_deleted ? '<br><strong style="color: red;">DELETED</strong>' : ''}
+                \`;
+                tooltip.style.display = 'block';
+                tooltip.style.left = e.pageX + 10 + 'px';
+                tooltip.style.top = e.pageY + 10 + 'px';
+              });
+              nodeGroup.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none';
+              });
+
+              graphGroup.appendChild(nodeGroup);
+            });
+
+            applyTransform();
+          }
+
+          // Apply zoom and pan transformation
+          function applyTransform() {
+            graphGroup.setAttribute(
+              'transform',
+              \`translate(\${transform.x}, \${transform.y}) scale(\${transform.scale})\`
+            );
+          }
+
+          // Pan and zoom controls
+          svg.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+              isPanning = true;
+              panStart = { x: e.clientX - transform.x, y: e.clientY - transform.y };
+              svg.style.cursor = 'grabbing';
+            }
+          });
+
+          svg.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+              transform.x = e.clientX - panStart.x;
+              transform.y = e.clientY - panStart.y;
+              applyTransform();
+            }
+          });
+
+          svg.addEventListener('mouseup', () => {
+            isPanning = false;
+            svg.style.cursor = 'move';
+          });
+
+          svg.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            transform.scale *= delta;
+            transform.scale = Math.max(0.1, Math.min(transform.scale, 3));
+            applyTransform();
+          });
+
+          // Control buttons
+          document.getElementById('showDeleted').addEventListener('change', (e) => {
+            showDeleted = e.target.checked;
+            loadGraphData();
+          });
+
+          document.getElementById('showLabels').addEventListener('change', (e) => {
+            showLabels = e.target.checked;
+            renderGraph();
+          });
+
+          document.getElementById('fitToView').addEventListener('click', () => {
+            transform = { x: 0, y: 0, scale: 1 };
+            applyTransform();
+          });
+
+          document.getElementById('zoomIn').addEventListener('click', () => {
+            transform.scale *= 1.2;
+            applyTransform();
+          });
+
+          document.getElementById('zoomOut').addEventListener('click', () => {
+            transform.scale *= 0.8;
+            applyTransform();
+          });
+
+          // Load initial data
+          loadGraphData();
+        })();
+      </script>
+    `;
+
+    return c.html(
+      renderPage(
+        {
+          title: `Graph View: ${displayName}`,
+          user,
+          activePath: '/ui/entities',
+          breadcrumbs: [
+            { label: 'Home', href: '/ui' },
+            { label: 'Entities', href: '/ui/entities' },
+            { label: displayName, href: `/ui/entities/${entityId}` },
+            { label: 'Graph View' },
+          ],
+        },
+        content
+      )
+    );
+  } catch (error) {
+    console.error('Error rendering graph view:', error);
+
+    const content = `
+      <div class="error-message">
+        <h2>Error</h2>
+        <p>An error occurred while loading the graph visualization.</p>
+      </div>
+      <div class="button-group">
+        <a href="/ui/entities/${escapeHtml(entityId)}" class="button secondary">Back to Entity</a>
       </div>
     `;
 

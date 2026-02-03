@@ -674,4 +674,316 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
   }
 });
 
+// Schema for graph-view query parameters
+const graphViewSchema = z.object({
+  depth: z
+    .string()
+    .regex(/^\d+$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(5))
+    .optional()
+    .default(2),
+  include_deleted: z.enum(['true', 'false']).optional().default('false'),
+});
+
+/**
+ * GET /api/entities/:id/graph-view
+ * Get graph data optimized for visualization showing N generations of connected entities
+ *
+ * This endpoint is specifically designed for the UI graph visualization feature.
+ * It returns:
+ * - The center entity
+ * - First and second generation connections with link details
+ * - Suggested distinguishing properties for each entity type
+ *
+ * ACL filtering is applied:
+ * - Authenticated users can only see entities and links they have read permission on
+ * - Unauthenticated users can only see public entities and links (NULL acl_id)
+ */
+graph.get('/entities/:id/graph-view', optionalAuth(), validateQuery(graphViewSchema), async c => {
+  const entityId = c.req.param('id');
+  const query = c.get('validated_query') as z.infer<typeof graphViewSchema>;
+  const db = c.env.DB;
+  const kv = c.env.KV;
+  const user = c.get('user');
+  const logger = getLogger(c).child({ module: 'graph-view' });
+
+  try {
+    // Validate that starting entity exists
+    const centerEntity = await findLatestVersion(db, entityId);
+    if (!centerEntity) {
+      return c.json(response.notFound('Entity'), 404);
+    }
+
+    // Check permission on center entity
+    const centerAclId = centerEntity.acl_id as number | null;
+    if (user) {
+      const canRead = await hasPermissionByAclId(db, kv, user.user_id, centerAclId, 'read');
+      if (!canRead) {
+        return c.json(response.forbidden('You do not have permission to access this entity'), 403);
+      }
+    } else {
+      // Unauthenticated: only allow access to public entities
+      if (centerAclId !== null) {
+        return c.json(response.forbidden('Authentication required to access this entity'), 403);
+      }
+    }
+
+    // Build ACL filter for entities and links
+    let entityAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+    let linkAclFilter: Awaited<ReturnType<typeof buildAclFilterClause>> | null = null;
+
+    if (user) {
+      entityAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'e.acl_id');
+      linkAclFilter = await buildAclFilterClause(db, kv, user.user_id, 'read', 'l.acl_id');
+    }
+
+    const includeDeleted = query.include_deleted === 'true';
+    const maxDepth = query.depth;
+
+    // Data structures to store results
+    interface GraphEntity {
+      id: string;
+      type_id: string;
+      type_name: string;
+      properties: Record<string, unknown>;
+      version: number;
+      created_at: number;
+      is_deleted: boolean;
+      generation: number; // 0 = center, 1 = first generation, 2 = second generation, etc.
+    }
+
+    interface GraphLink {
+      id: string;
+      type_id: string;
+      type_name: string;
+      source_entity_id: string;
+      target_entity_id: string;
+      properties: Record<string, unknown>;
+      is_deleted: boolean;
+    }
+
+    const entities = new Map<string, GraphEntity>();
+    const links: GraphLink[] = [];
+    const entityTypeIds = new Set<string>();
+
+    // Add center entity (generation 0)
+    const centerType = await db
+      .prepare('SELECT name FROM types WHERE id = ?')
+      .bind(centerEntity.type_id as string)
+      .first<{ name: string }>();
+
+    entities.set(centerEntity.id as string, {
+      id: centerEntity.id as string,
+      type_id: centerEntity.type_id as string,
+      type_name: centerType?.name || 'Unknown',
+      properties: centerEntity.properties ? JSON.parse(centerEntity.properties as string) : {},
+      version: centerEntity.version as number,
+      created_at: centerEntity.created_at as number,
+      is_deleted: centerEntity.is_deleted === 1,
+      generation: 0,
+    });
+    entityTypeIds.add(centerEntity.type_id as string);
+
+    // BFS to fetch entities up to maxDepth
+    interface QueueItem {
+      entityId: string;
+      generation: number;
+    }
+
+    const queue: QueueItem[] = [{ entityId: centerEntity.id as string, generation: 0 }];
+    const processed = new Set<string>();
+    processed.add(centerEntity.id as string);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+
+      // Stop if we've reached the depth limit
+      if (current.generation >= maxDepth) {
+        continue;
+      }
+
+      // Build query for both outbound and inbound links
+      const directions = [
+        { sourceCol: 'source_entity_id', targetCol: 'target_entity_id' },
+        { sourceCol: 'target_entity_id', targetCol: 'source_entity_id' },
+      ];
+
+      for (const { sourceCol, targetCol } of directions) {
+        let sql = `
+          SELECT
+            l.id as link_id,
+            l.type_id as link_type_id,
+            l.source_entity_id,
+            l.target_entity_id,
+            l.properties as link_properties,
+            l.is_deleted as link_is_deleted,
+            l.acl_id as link_acl_id,
+            lt.name as link_type_name,
+            e.id as entity_id,
+            e.type_id as entity_type_id,
+            e.properties as entity_properties,
+            e.version as entity_version,
+            e.created_at as entity_created_at,
+            e.is_deleted as entity_is_deleted,
+            e.acl_id as entity_acl_id,
+            et.name as entity_type_name
+          FROM links l
+          INNER JOIN entities e ON l.${targetCol} = e.id
+          LEFT JOIN types lt ON l.type_id = lt.id
+          LEFT JOIN types et ON e.type_id = et.id
+          WHERE l.${sourceCol} = ?
+          AND l.is_latest = 1
+          AND e.is_latest = 1
+        `;
+        const bindings: (string | number)[] = [current.entityId];
+
+        if (!includeDeleted) {
+          sql += ' AND l.is_deleted = 0 AND e.is_deleted = 0';
+        }
+
+        // Apply ACL filtering
+        if (user) {
+          if (entityAclFilter && entityAclFilter.useFilter) {
+            sql += ` AND ${entityAclFilter.whereClause}`;
+            bindings.push(...(entityAclFilter.bindings as (string | number)[]));
+          }
+          if (linkAclFilter && linkAclFilter.useFilter) {
+            sql += ` AND ${linkAclFilter.whereClause}`;
+            bindings.push(...(linkAclFilter.bindings as (string | number)[]));
+          }
+        } else {
+          // Unauthenticated: only show public entities and links
+          sql += ' AND e.acl_id IS NULL AND l.acl_id IS NULL';
+        }
+
+        const { results } = await db
+          .prepare(sql)
+          .bind(...bindings)
+          .all();
+
+        // Apply per-row ACL filtering if needed
+        let filteredResults = results;
+        if (user && entityAclFilter && !entityAclFilter.useFilter) {
+          filteredResults = filteredResults.filter(r => {
+            const entityAclId = r.entity_acl_id as number | null;
+            if (entityAclId === null) return true;
+            return entityAclFilter.accessibleAclIds.has(entityAclId);
+          });
+        }
+        if (user && linkAclFilter && !linkAclFilter.useFilter) {
+          filteredResults = filteredResults.filter(r => {
+            const linkAclId = r.link_acl_id as number | null;
+            if (linkAclId === null) return true;
+            return linkAclFilter.accessibleAclIds.has(linkAclId);
+          });
+        }
+
+        for (const row of filteredResults) {
+          const neighborId = row.entity_id as string;
+
+          // Add the link
+          links.push({
+            id: row.link_id as string,
+            type_id: row.link_type_id as string,
+            type_name: (row.link_type_name as string) || 'Unknown',
+            source_entity_id: row.source_entity_id as string,
+            target_entity_id: row.target_entity_id as string,
+            properties: row.link_properties ? JSON.parse(row.link_properties as string) : {},
+            is_deleted: row.link_is_deleted === 1,
+          });
+
+          // Add the entity if we haven't seen it yet
+          if (!entities.has(neighborId)) {
+            entities.set(neighborId, {
+              id: neighborId,
+              type_id: row.entity_type_id as string,
+              type_name: (row.entity_type_name as string) || 'Unknown',
+              properties: row.entity_properties ? JSON.parse(row.entity_properties as string) : {},
+              version: row.entity_version as number,
+              created_at: row.entity_created_at as number,
+              is_deleted: row.entity_is_deleted === 1,
+              generation: current.generation + 1,
+            });
+            entityTypeIds.add(row.entity_type_id as string);
+
+            // Add to queue for next iteration if not at max depth
+            if (!processed.has(neighborId) && current.generation + 1 < maxDepth) {
+              processed.add(neighborId);
+              queue.push({ entityId: neighborId, generation: current.generation + 1 });
+            }
+          }
+        }
+      }
+    }
+
+    // Determine distinguishing properties for each entity type
+    // Group entities by type
+    const entitiesByType = new Map<string, GraphEntity[]>();
+    for (const entity of entities.values()) {
+      if (!entitiesByType.has(entity.type_id)) {
+        entitiesByType.set(entity.type_id, []);
+      }
+      entitiesByType.get(entity.type_id)!.push(entity);
+    }
+
+    // For each type, find properties that help distinguish entities
+    const distinguishingProperties = new Map<string, string[]>();
+    const commonPropertyNames = ['name', 'title', 'label', 'email', 'username', 'status', 'code'];
+
+    for (const [typeId, entitiesOfType] of entitiesByType) {
+      const props: string[] = [];
+
+      // Try common property names first
+      for (const propName of commonPropertyNames) {
+        // Check if this property exists in any entity of this type
+        const hasProperty = entitiesOfType.some(e => e.properties[propName] !== undefined);
+        if (hasProperty) {
+          // Check if it has distinct values (helps distinguish entities)
+          const values = new Set(
+            entitiesOfType
+              .map(e => JSON.stringify(e.properties[propName]))
+              .filter(v => v !== 'undefined')
+          );
+          if (values.size > 1 || (values.size === 1 && entitiesOfType.length === 1)) {
+            props.push(propName);
+            if (props.length >= 2) break; // Limit to 2 properties
+          }
+        }
+      }
+
+      // If we didn't find any common properties, use the first property that exists
+      if (props.length === 0 && entitiesOfType.length > 0) {
+        const firstEntity = entitiesOfType[0];
+        const availableProps = Object.keys(firstEntity.properties);
+        if (availableProps.length > 0) {
+          props.push(availableProps[0]);
+        }
+      }
+
+      distinguishingProperties.set(typeId, props);
+    }
+
+    logger.info('Graph view data fetched', {
+      entity_id: entityId,
+      depth: maxDepth,
+      entities_count: entities.size,
+      links_count: links.length,
+    });
+
+    return c.json(
+      response.success({
+        center_entity: entities.get(centerEntity.id as string),
+        entities: Array.from(entities.values()),
+        links,
+        distinguishing_properties: Object.fromEntries(distinguishingProperties),
+        depth: maxDepth,
+      })
+    );
+  } catch (error) {
+    logger.error('Error fetching graph view data', error instanceof Error ? error : undefined);
+    throw error;
+  }
+});
+
 export default graph;
