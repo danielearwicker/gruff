@@ -244,6 +244,13 @@ export const commonStyles = `
     font-size: 0.75rem;
   }
 
+  a.button,
+  a.button:visited,
+  a.button:hover {
+    color: white;
+    text-decoration: none;
+  }
+
   .button-group {
     display: flex;
     gap: 0.5rem;
