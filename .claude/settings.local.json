@@ -20,7 +20,9 @@
       "Bash(wrangler d1 execute:*)",
       "Bash(curl:*)",
       "Bash(find:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(npm install:*)",
+      "Bash(npx husky init)"
     ]
   }
 }
