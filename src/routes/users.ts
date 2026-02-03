@@ -193,7 +193,10 @@ usersRouter.get('/search', requireAuth(), async c => {
   const limit = Math.min(Math.max(parseInt(limitParam || '10', 10) || 10, 1), 50);
 
   if (query.length < 2) {
-    return c.json(response.error('Search query must be at least 2 characters', 'INVALID_QUERY'), 400);
+    return c.json(
+      response.error('Search query must be at least 2 characters', 'INVALID_QUERY'),
+      400
+    );
   }
 
   try {
