@@ -177,6 +177,58 @@ usersRouter.get(
 );
 
 /**
+ * GET /api/users/search
+ *
+ * Search for users by email or display name (authenticated users only)
+ * Returns limited user info for ACL management purposes.
+ *
+ * Query parameters:
+ * - q: Search query (required, min 2 characters)
+ * - limit: Max results to return (default 10, max 50)
+ */
+usersRouter.get('/search', requireAuth(), async c => {
+  const logger = getLogger(c);
+  const query = c.req.query('q') || '';
+  const limitParam = c.req.query('limit');
+  const limit = Math.min(Math.max(parseInt(limitParam || '10', 10) || 10, 1), 50);
+
+  if (query.length < 2) {
+    return c.json(response.error('Search query must be at least 2 characters', 'INVALID_QUERY'), 400);
+  }
+
+  try {
+    const searchPattern = `%${query}%`;
+
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, email, display_name
+       FROM users
+       WHERE is_active = 1
+         AND (email LIKE ? OR display_name LIKE ?)
+       ORDER BY
+         CASE WHEN email LIKE ? THEN 0 ELSE 1 END,
+         CASE WHEN display_name LIKE ? THEN 0 ELSE 1 END,
+         email
+       LIMIT ?`
+    )
+      .bind(searchPattern, searchPattern, query + '%', query + '%', limit)
+      .all();
+
+    const users = results.map(user => ({
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+    }));
+
+    logger.debug('User search completed', { query, resultCount: users.length });
+
+    return c.json(response.success(users));
+  } catch (error) {
+    logger.error('Error searching users', error as Error);
+    return c.json(response.error('Failed to search users', 'USER_SEARCH_FAILED'), 500);
+  }
+});
+
+/**
  * GET /api/users/{id}
  *
  * Get details for a specific user

@@ -2057,8 +2057,10 @@ ui.get('/entities/:id', async c => {
           async function searchPrincipals(query, type) {
             const suggestionsDiv = document.getElementById('principal-suggestions');
             try {
-              const endpoint = type === 'user' ? '/api/users' : '/api/groups';
-              const response = await fetch(endpoint);
+              const endpoint = type === 'user'
+                ? '/api/users/search?q=' + encodeURIComponent(query)
+                : '/api/groups?q=' + encodeURIComponent(query);
+              const response = await fetch(endpoint, { credentials: 'include' });
               const result = await response.json();
 
               if (!result.data) {
@@ -2067,14 +2069,10 @@ ui.get('/entities/:id', async c => {
               }
 
               const items = type === 'user' ? result.data : result.data.groups || result.data;
-              const filtered = items.filter(item => {
+              // For users, the search is already done server-side. For groups, filter client-side.
+              const filtered = type === 'user' ? items.slice(0, 10) : items.filter(item => {
                 const searchLower = query.toLowerCase();
-                if (type === 'user') {
-                  return (item.email && item.email.toLowerCase().includes(searchLower)) ||
-                         (item.display_name && item.display_name.toLowerCase().includes(searchLower));
-                } else {
-                  return item.name && item.name.toLowerCase().includes(searchLower);
-                }
+                return item.name && item.name.toLowerCase().includes(searchLower);
               }).slice(0, 10);
 
               if (filtered.length === 0) {
@@ -5113,8 +5111,10 @@ ui.get('/links/:id', async c => {
           async function searchLinkPrincipals(query, type) {
             const suggestionsDiv = document.getElementById('link-principal-suggestions');
             try {
-              const endpoint = type === 'user' ? '/api/users' : '/api/groups';
-              const response = await fetch(endpoint);
+              const endpoint = type === 'user'
+                ? '/api/users/search?q=' + encodeURIComponent(query)
+                : '/api/groups?q=' + encodeURIComponent(query);
+              const response = await fetch(endpoint, { credentials: 'include' });
               const result = await response.json();
 
               if (!result.data) {
@@ -5123,14 +5123,10 @@ ui.get('/links/:id', async c => {
               }
 
               const items = type === 'user' ? result.data : result.data.groups || result.data;
-              const filtered = items.filter(item => {
+              // For users, the search is already done server-side. For groups, filter client-side.
+              const filtered = type === 'user' ? items.slice(0, 10) : items.filter(item => {
                 const searchLower = query.toLowerCase();
-                if (type === 'user') {
-                  return (item.email && item.email.toLowerCase().includes(searchLower)) ||
-                         (item.display_name && item.display_name.toLowerCase().includes(searchLower));
-                } else {
-                  return item.name && item.name.toLowerCase().includes(searchLower);
-                }
+                return item.name && item.name.toLowerCase().includes(searchLower);
               }).slice(0, 10);
 
               if (filtered.length === 0) {
