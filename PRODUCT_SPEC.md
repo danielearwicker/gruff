@@ -1281,7 +1281,7 @@ The entity and link detail views include an ACL section for managing access cont
   - Add button
 - "Make Public" button (removes ACL, allows all authenticated users)
 - "Make Private" button (restricts to owner only)
-- 🟦 Can change permission level (Read/Write) on an existing entry.
+- ✅ Can change permission level (Read/Write) on an existing entry.
 
 ### ✅ Authentication Integration
 

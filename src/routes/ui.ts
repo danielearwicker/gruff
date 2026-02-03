@@ -1941,7 +1941,12 @@ ui.get('/entities/:id', async c => {
                     ${entry.principal_type === 'user' ? `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span>${entry.principal_email ? ` <span class="muted small">(${escapeHtml(entry.principal_email)})</span>` : ''}` : `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span> <span class="muted small">(group)</span>`}
                   </td>
                   <td><span class="badge ${entry.principal_type === 'user' ? '' : 'muted'}">${escapeHtml(entry.principal_type)}</span></td>
-                  <td><span class="badge ${entry.permission === 'write' ? 'success' : ''}">${escapeHtml(entry.permission)}</span></td>
+                  <td>
+                    <select class="permission-select" onchange="changeAclPermission('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}', this.value)">
+                      <option value="read" ${entry.permission === 'read' ? 'selected' : ''}>Read</option>
+                      <option value="write" ${entry.permission === 'write' ? 'selected' : ''}>Write</option>
+                    </select>
+                  </td>
                   <td>
                     <button class="button small danger" onclick="removeAclEntry('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}')">Remove</button>
                   </td>
@@ -2000,6 +2005,22 @@ ui.get('/entities/:id', async c => {
             border-radius: 0.25rem;
             background-color: var(--color-bg);
             color: var(--color-fg);
+          }
+          .permission-select {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            background-color: var(--color-bg);
+            color: var(--color-fg);
+            font-size: 0.875rem;
+            cursor: pointer;
+          }
+          .permission-select:hover {
+            border-color: var(--color-primary);
+          }
+          .permission-select:focus {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
           }
           .autocomplete-dropdown {
             position: absolute;
@@ -2194,6 +2215,38 @@ ui.get('/entities/:id', async c => {
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to remove permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function changeAclPermission(principalType, principalId, oldPermission, newPermission) {
+            if (oldPermission === newPermission) return;
+
+            // Remove old permission and add new one
+            const newEntries = currentAclEntries
+              .filter(e => !(e.principal_type === principalType && e.principal_id === principalId && e.permission === oldPermission))
+              .concat([{ principal_type: principalType, principal_id: principalId, permission: newPermission }]);
+
+            try {
+              const response = await fetch('/api/entities/' + entityId + '/acl', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/entities/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to change permission'));
               }
             } catch (err) {
               alert('Error: ' + err.message);
@@ -5434,7 +5487,12 @@ ui.get('/links/:id', async c => {
                     ${entry.principal_type === 'user' ? `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span>${entry.principal_email ? ` <span class="muted small">(${escapeHtml(entry.principal_email)})</span>` : ''}` : `<span>${escapeHtml(entry.principal_name || entry.principal_id)}</span> <span class="muted small">(group)</span>`}
                   </td>
                   <td><span class="badge ${entry.principal_type === 'user' ? '' : 'muted'}">${escapeHtml(entry.principal_type)}</span></td>
-                  <td><span class="badge ${entry.permission === 'write' ? 'success' : ''}">${escapeHtml(entry.permission)}</span></td>
+                  <td>
+                    <select class="permission-select" onchange="changeLinkAclPermission('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}', this.value)">
+                      <option value="read" ${entry.permission === 'read' ? 'selected' : ''}>Read</option>
+                      <option value="write" ${entry.permission === 'write' ? 'selected' : ''}>Write</option>
+                    </select>
+                  </td>
                   <td>
                     <button class="button small danger" onclick="removeLinkAclEntry('${escapeHtml(entry.principal_type)}', '${escapeHtml(entry.principal_id)}', '${escapeHtml(entry.permission)}')">Remove</button>
                   </td>
@@ -5493,6 +5551,22 @@ ui.get('/links/:id', async c => {
             border-radius: 0.25rem;
             background-color: var(--color-bg);
             color: var(--color-fg);
+          }
+          .permission-select {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.25rem;
+            background-color: var(--color-bg);
+            color: var(--color-fg);
+            font-size: 0.875rem;
+            cursor: pointer;
+          }
+          .permission-select:hover {
+            border-color: var(--color-primary);
+          }
+          .permission-select:focus {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
           }
           .autocomplete-dropdown {
             position: absolute;
@@ -5687,6 +5761,38 @@ ui.get('/links/:id', async c => {
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to remove permission'));
+              }
+            } catch (err) {
+              alert('Error: ' + err.message);
+            }
+          }
+
+          async function changeLinkAclPermission(principalType, principalId, oldPermission, newPermission) {
+            if (oldPermission === newPermission) return;
+
+            // Remove old permission and add new one
+            const newEntries = currentLinkAclEntries
+              .filter(e => !(e.principal_type === principalType && e.principal_id === principalId && e.permission === oldPermission))
+              .concat([{ principal_type: principalType, principal_id: principalId, permission: newPermission }]);
+
+            try {
+              const response = await fetch('/api/links/' + linkId + '/acl', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries: newEntries })
+              });
+
+              if (response.ok) {
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/links/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
+              } else {
+                const result = await response.json();
+                alert('Error: ' + (result.error || 'Failed to change permission'));
               }
             } catch (err) {
               alert('Error: ' + err.message);
