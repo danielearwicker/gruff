@@ -330,7 +330,7 @@ export async function setEntityAcl(
   entityId: string,
   aclId: number | null,
   userId: string
-): Promise<void> {
+): Promise<string | null> {
   const now = Date.now();
 
   // Get the current latest version
@@ -355,7 +355,7 @@ export async function setEntityAcl(
 
   // Check if ACL is actually changing
   if (current.acl_id === aclId) {
-    return; // No change needed
+    return null; // No change needed
   }
 
   // Generate new version ID (UUID v4)
@@ -383,6 +383,8 @@ export async function setEntityAcl(
         aclId
       ),
   ]);
+
+  return newVersionId;
 }
 
 /**
@@ -401,7 +403,7 @@ export async function setLinkAcl(
   linkId: string,
   aclId: number | null,
   userId: string
-): Promise<void> {
+): Promise<string | null> {
   const now = Date.now();
 
   // Get the current latest version
@@ -428,7 +430,7 @@ export async function setLinkAcl(
 
   // Check if ACL is actually changing
   if (current.acl_id === aclId) {
-    return; // No change needed
+    return null; // No change needed
   }
 
   // Generate new version ID (UUID v4)
@@ -458,6 +460,8 @@ export async function setLinkAcl(
         aclId
       ),
   ]);
+
+  return newVersionId;
 }
 
 /**

@@ -22,7 +22,8 @@
       "Bash(find:*)",
       "Bash(git log:*)",
       "Bash(npm install:*)",
-      "Bash(npx husky init)"
+      "Bash(npx husky init)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -1343,7 +1343,7 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
     const aclId = await getOrCreateAcl(db, data.entries);
 
     // Set the ACL on the link (creates new version)
-    await setLinkAcl(db, link.id as string, aclId, userId);
+    const newVersionId = await setLinkAcl(db, link.id as string, aclId, userId);
 
     // Get the updated ACL for response
     let responseEntries: unknown[] = [];
@@ -1355,6 +1355,9 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
     try {
       await invalidateLinkCache(kv, id);
       await invalidateLinkCache(kv, link.id as string);
+      if (newVersionId) {
+        await invalidateLinkCache(kv, newVersionId);
+      }
     } catch (cacheError) {
       getLogger(c)
         .child({ module: 'links' })
@@ -1366,6 +1369,7 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
         {
           entries: responseEntries,
           acl_id: aclId,
+          new_version_id: newVersionId,
         },
         'ACL updated successfully'
       )

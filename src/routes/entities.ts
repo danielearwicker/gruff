@@ -1901,7 +1901,7 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
     const aclId = await getOrCreateAcl(db, data.entries);
 
     // Set the ACL on the entity (creates new version)
-    await setEntityAcl(db, entity.id as string, aclId, userId);
+    const newVersionId = await setEntityAcl(db, entity.id as string, aclId, userId);
 
     // Get the updated ACL for response
     let responseEntries: unknown[] = [];
@@ -1913,6 +1913,9 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
     try {
       await invalidateEntityCache(kv, id);
       await invalidateEntityCache(kv, entity.id as string);
+      if (newVersionId) {
+        await invalidateEntityCache(kv, newVersionId);
+      }
     } catch (cacheError) {
       getLogger(c)
         .child({ module: 'entities' })
@@ -1924,6 +1927,7 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
         {
           entries: responseEntries,
           acl_id: aclId,
+          new_version_id: newVersionId,
         },
         'ACL updated successfully'
       )

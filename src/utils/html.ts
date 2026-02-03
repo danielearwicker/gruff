@@ -202,7 +202,7 @@ export const commonStyles = `
   h3 {
     font-size: 1.25rem;
     font-weight: 600;
-    margin-top: 2rem;
+    margin-top: 0;
     margin-bottom: 0.75rem;
   }
 

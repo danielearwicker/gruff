@@ -2154,7 +2154,12 @@ ui.get('/entities/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/entities/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to add permission'));
@@ -2180,7 +2185,12 @@ ui.get('/entities/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/entities/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to remove permission'));
@@ -2202,7 +2212,12 @@ ui.get('/entities/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/entities/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to make entity public'));
@@ -2240,7 +2255,12 @@ ui.get('/entities/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/entities/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to make entity private'));
@@ -5208,7 +5228,12 @@ ui.get('/links/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/links/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to add permission'));
@@ -5234,7 +5259,12 @@ ui.get('/links/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/links/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to remove permission'));
@@ -5256,7 +5286,12 @@ ui.get('/links/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/links/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to make link public'));
@@ -5294,7 +5329,12 @@ ui.get('/links/:id', async c => {
               });
 
               if (response.ok) {
-                window.location.reload();
+                const result = await response.json();
+                if (result.data && result.data.new_version_id) {
+                  window.location.href = '/ui/links/' + result.data.new_version_id;
+                } else {
+                  window.location.reload();
+                }
               } else {
                 const result = await response.json();
                 alert('Error: ' + (result.error || 'Failed to make link private'));
