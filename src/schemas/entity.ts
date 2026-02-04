@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import {
   uuidSchema,
   typeIdSchema,
@@ -31,7 +31,7 @@ export const createEntitySchema = z.object({
   // If not provided, creator will get write permission by default
   // If empty array is provided, resource will be public (no ACL)
   acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
-});
+}).openapi('CreateEntity');
 
 // Entity update schema (with sanitization for XSS prevention)
 export const updateEntitySchema = z.object({
@@ -49,7 +49,7 @@ export const entityResponseSchema = z.object({
   created_by: uuidSchema,
   is_deleted: z.boolean(),
   is_latest: z.boolean(),
-});
+}).openapi('Entity');
 
 // Entity query filters (for query parameters - handles string coercion)
 export const entityQuerySchema = paginationQuerySchema.extend({

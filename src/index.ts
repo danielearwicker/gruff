@@ -1,4 +1,4 @@
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { requestContextMiddleware, getLogger, getRequestId } from './middleware/request-context.js';
@@ -227,6 +227,17 @@ app.doc('/docs/openapi.json', {
   servers: [
     { url: 'http://localhost:8787', description: 'Local development server' },
   ],
+  tags: [
+    { name: 'Health', description: 'Health check and system status endpoints' },
+    { name: 'Authentication', description: 'User registration, login, and token management' },
+    { name: 'Types', description: 'Type registry for entities and links' },
+    { name: 'Entities', description: 'Entity CRUD operations and versioning' },
+    { name: 'Links', description: 'Link CRUD operations and versioning' },
+    { name: 'Graph', description: 'Graph traversal and path finding operations' },
+    { name: 'Search', description: 'Search and type-ahead suggestions' },
+    { name: 'Users', description: 'User profile and management endpoints' },
+    { name: 'Groups', description: 'Group management endpoints' },
+  ],
 });
 
 // Global error handler using Hono's onError
@@ -319,8 +330,62 @@ app.onError((err, c) => {
   return c.json(errorResponse, statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503);
 });
 
-// Health check endpoint
-app.get('/health', async c => {
+// Health check endpoint - converted to OpenAPIHono
+const healthRoute = createRoute({
+  method: 'get',
+  path: '/health',
+  tags: ['Health'],
+  summary: 'Health check',
+  description: 'Check the health status of the API, database, and KV store',
+  responses: {
+    200: {
+      description: 'System is healthy',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.string().openapi({ example: 'healthy' }),
+            environment: z.string().openapi({ example: 'development' }),
+            database: z.string().openapi({ example: 'connected' }),
+            kv: z.string().openapi({ example: 'connected' }),
+            analytics: z.string().openapi({ example: 'available' }),
+            runtime: z.object({
+              platform: z.string().openapi({ example: 'cloudflare-workers' }),
+              mode: z.string().openapi({ example: 'local' }),
+              context: z.object({
+                colo: z.string().openapi({ example: 'local' }),
+                country: z.string().openapi({ example: 'unknown' }),
+              }),
+              capabilities: z.object({
+                crypto: z.boolean(),
+                cryptoSubtle: z.boolean(),
+                fetch: z.boolean(),
+                webSocket: z.boolean(),
+              }),
+              memory: z.object({
+                limit: z.string().openapi({ example: '128MB' }),
+                note: z.string(),
+              }),
+            }),
+            timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+          }),
+        },
+      },
+    },
+    500: {
+      description: 'System is unhealthy',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('unhealthy'),
+            error: z.string(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+app.openapi(healthRoute, async c => {
   try {
     // Test D1 connection
     const dbResult = await c.env.DB.prepare('SELECT 1 as test').first();
@@ -395,8 +460,47 @@ app.get('/health', async c => {
   }
 });
 
-// Version information endpoint
-app.get('/api/version', c => {
+// Version information endpoint - converted to OpenAPIHono
+const versionRoute = createRoute({
+  method: 'get',
+  path: '/api/version',
+  tags: ['Health'],
+  summary: 'API version information',
+  description: 'Get version and runtime information about the API',
+  responses: {
+    200: {
+      description: 'Version information',
+      content: {
+        'application/json': {
+          schema: z.object({
+            version: z.string().openapi({ example: '1.0.0' }),
+            name: z.string().openapi({ example: 'gruff' }),
+            description: z.string().openapi({
+              example: 'Entity-Relationship Graph Database with Versioning',
+            }),
+            runtime: z.object({
+              platform: z.string().openapi({ example: 'cloudflare-workers' }),
+              database: z.string().openapi({ example: 'd1' }),
+              environment: z.string().openapi({ example: 'development' }),
+            }),
+            api: z.object({
+              version: z.string().openapi({ example: 'v1' }),
+              documentation: z.string().openapi({ example: '/docs' }),
+              openapi: z.string().openapi({ example: '/docs/openapi.json' }),
+            }),
+            dependencies: z.object({
+              hono: z.string().openapi({ example: '^4.11.5' }),
+              zod: z.string().openapi({ example: '^4.3.6' }),
+            }),
+            timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+          }),
+        },
+      },
+    },
+  },
+});
+
+app.openapi(versionRoute, c => {
   return c.json({
     version: '1.0.0',
     name: 'gruff',

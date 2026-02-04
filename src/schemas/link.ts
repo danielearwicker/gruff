@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import {
   uuidSchema,
   typeIdSchema,
@@ -26,16 +26,18 @@ export const linkSchema = z.object({
 });
 
 // Link creation schema (with sanitization for XSS prevention)
-export const createLinkSchema = z.object({
-  type_id: typeIdSchema,
-  source_entity_id: uuidSchema,
-  target_entity_id: uuidSchema,
-  properties: sanitizedJsonPropertiesSchema.default({}),
-  // Optional ACL to set at creation time
-  // If not provided, creator will get write permission by default
-  // If empty array is provided, resource will be public (no ACL)
-  acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
-});
+export const createLinkSchema = z
+  .object({
+    type_id: typeIdSchema,
+    source_entity_id: uuidSchema,
+    target_entity_id: uuidSchema,
+    properties: sanitizedJsonPropertiesSchema.default({}),
+    // Optional ACL to set at creation time
+    // If not provided, creator will get write permission by default
+    // If empty array is provided, resource will be public (no ACL)
+    acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
+  })
+  .openapi('CreateLink');
 
 // Link update schema (with sanitization for XSS prevention)
 export const updateLinkSchema = z.object({
@@ -43,19 +45,21 @@ export const updateLinkSchema = z.object({
 });
 
 // Link response schema (with parsed JSON properties)
-export const linkResponseSchema = z.object({
-  id: uuidSchema,
-  type_id: typeIdSchema,
-  source_entity_id: uuidSchema,
-  target_entity_id: uuidSchema,
-  properties: jsonPropertiesSchema,
-  version: z.number().int().positive(),
-  previous_version_id: uuidSchema.nullable(),
-  created_at: timestampSchema,
-  created_by: uuidSchema,
-  is_deleted: z.boolean(),
-  is_latest: z.boolean(),
-});
+export const linkResponseSchema = z
+  .object({
+    id: uuidSchema,
+    type_id: typeIdSchema,
+    source_entity_id: uuidSchema,
+    target_entity_id: uuidSchema,
+    properties: jsonPropertiesSchema,
+    version: z.number().int().positive(),
+    previous_version_id: uuidSchema.nullable(),
+    created_at: timestampSchema,
+    created_by: uuidSchema,
+    is_deleted: z.boolean(),
+    is_latest: z.boolean(),
+  })
+  .openapi('Link');
 
 // Link query filters (for query parameters - handles string coercion)
 export const linkQuerySchema = paginationQuerySchema.extend({

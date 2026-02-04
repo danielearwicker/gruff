@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import { sanitizeProperties, validateAndSanitize } from '../utils/sanitize.js';
 
 // Common UUID schema

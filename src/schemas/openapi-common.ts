@@ -9,7 +9,7 @@ export const ErrorResponseSchema = z
     path: z.string().optional(),
     requestId: z.string().optional(),
   })
-  .openapi('ErrorResponse');
+  .openapi('Error');
 
 export const ValidationErrorResponseSchema = z
   .object({
@@ -35,7 +35,7 @@ export const SuccessResponseSchema = z
     message: z.string().optional(),
     timestamp: z.string(),
   })
-  .openapi('SuccessResponse');
+  .openapi('Success');
 
 export const PaginationQuerySchema = z.object({
   limit: z.string().optional().openapi({

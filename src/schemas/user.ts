@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import { uuidSchema, timestampSchema, sqliteBooleanSchema } from './common.js';
 import { escapeHtml } from '../utils/sanitize.js';
 
