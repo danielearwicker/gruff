@@ -17,10 +17,10 @@ Entity-Relationship Graph Database with versioning built on Cloudflare Workers +
 npm install
 ```
 
-2. Run database migrations:
+2. Set up the database:
 
 ```bash
-npm run migrate:local
+npm run db:setup:local  # Runs migrations + loads seed data
 ```
 
 3. Start the development server:
@@ -33,11 +33,20 @@ The server will start at `http://localhost:8787`
 
 ## Available Scripts
 
+**Development:**
 - `npm run dev` - Start local development server with Wrangler
 - `npm test` - Run integration test suite (resets DB, starts server, runs tests)
+
+**Database:**
+- `npm run db:setup:local` - Run migrations + load seed data (first time setup)
+- `npm run db:reset:local` - Nuke database and start fresh
+- `npm run migrate:local` - Run all migrations (auto-discovers from migrations/)
+- `npm run seed:local` - Load seed data only
+
+**Deployment:**
 - `npm run deploy` - Deploy to Cloudflare
-- `npm run migrate:local` - Apply migrations to local D1 database
-- `npm run migrate:remote` - Apply migrations to remote D1 database (after deployment)
+- `npm run migrate:remote` - Apply migrations to remote D1 database
+- `npm run db:setup:remote` - Run migrations + seed on remote database
 
 ## Project Structure
 
@@ -45,8 +54,13 @@ The server will start at `http://localhost:8787`
 gruff/
 ├── src/
 │   └── index.ts          # Main Worker entry point
-├── migrations/
-│   └── 0001_initial_schema.sql  # Database schema
+├── migrations/           # Database migrations (auto-discovered)
+│   ├── 0001_initial_schema.sql
+│   ├── 0002_version_triggers.sql
+│   └── ...               # Just add numbered .sql files here
+├── scripts/
+│   ├── migrate.js        # Migration runner (auto-discovers migrations)
+│   └── seed.js           # Seed data loader
 ├── wrangler.toml         # Cloudflare Workers configuration
 ├── tsconfig.json         # TypeScript configuration
 └── package.json          # Dependencies and scripts

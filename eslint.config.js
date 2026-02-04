@@ -44,6 +44,17 @@ export default [
     },
   },
   {
+    files: ['scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        // Node.js script globals
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
+  {
     ignores: [
       'node_modules/',
       'dist/',

@@ -389,10 +389,18 @@ const batchResults = await db.batch([
 
 ### Migration Patterns
 
-Create migrations in `migrations/` with numbered prefixes:
+Migrations are automatically discovered and run in order from the `migrations/` directory.
+
+**Adding a new migration:**
+
+1. Find the next available number (e.g., if last is 0009, use 0010)
+2. Create `migrations/0010_my_feature.sql` with your schema changes
+3. That's it! The migration runner will automatically pick it up
+
+Example migration file:
 
 ```sql
--- migrations/0007_my_feature.sql
+-- migrations/0010_my_feature.sql
 
 -- Create new table
 CREATE TABLE IF NOT EXISTS my_table (
@@ -407,15 +415,28 @@ CREATE INDEX IF NOT EXISTS idx_my_table_name ON my_table(name);
 CREATE INDEX IF NOT EXISTS idx_my_table_created ON my_table(created_at);
 ```
 
-Apply migrations:
+**Running migrations:**
 
 ```bash
-# Local
-npm run migrate:local
+# Local development
+npm run migrate:local          # Run all migrations
+npm run seed:local             # Load seed data
+npm run db:setup:local         # Migrations + seed in one command
+npm run db:reset:local         # Nuke everything and start fresh
 
-# Remote
-npm run migrate:remote
+# Production/remote
+npm run migrate:remote         # Run all migrations on remote DB
+npm run db:setup:remote        # Migrations + seed on remote DB
 ```
+
+**How it works:**
+
+The migration runner (`scripts/migrate.js`):
+- Auto-discovers all `.sql` files in `migrations/`
+- Sorts them alphabetically (0001, 0002, 0003, ...)
+- Runs them in order
+- Excludes `0004_seed_data.sql` (not a migration, just test data)
+- No need to update package.json when adding migrations!
 
 ### Versioning Pattern
 
