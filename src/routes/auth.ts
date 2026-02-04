@@ -4,7 +4,7 @@
  * Handles user registration, login, token refresh, logout, and OAuth2 flows
  */
 
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
@@ -55,7 +55,7 @@ type Bindings = {
   GITHUB_REDIRECT_URI?: string;
 };
 
-const authRouter = new Hono<{ Bindings: Bindings }>();
+const authRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 /**
  * POST /api/auth/register

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
@@ -43,7 +43,7 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
-const entities = new Hono<{ Bindings: Bindings }>();
+const entities = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Helper function to generate UUID
 function generateUUID(): string {

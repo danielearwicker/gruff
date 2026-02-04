@@ -242,8 +242,10 @@ import { typeSchema, createTypeSchema } from './schemas/type.js';
 });
 
 // OpenAPI spec generation endpoint
-// Must be added after middleware but before route registration
-// This auto-generates OpenAPI 3.1 spec from route definitions
+// TEMPORARILY COMMENTED OUT: Will be enabled once all routes are converted
+// This conflicts with the existing manual OpenAPI spec in routes/docs.ts
+// Once all routes use createRoute(), we'll remove routes/docs.ts and uncomment this
+/*
 app.doc('/docs/openapi.json', {
   openapi: '3.1.0',
   info: {
@@ -266,6 +268,7 @@ app.doc('/docs/openapi.json', {
     { name: 'Groups', description: 'Group management endpoints' },
   ],
 });
+*/
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {
