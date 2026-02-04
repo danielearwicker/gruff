@@ -23,7 +23,14 @@
       "Bash(git log:*)",
       "Bash(npm install:*)",
       "Bash(npx husky init)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(echo:*)",
+      "Bash(git checkout:*)",
+      "Bash(tee:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

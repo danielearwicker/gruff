@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from './middleware/validation.js';
 import { notFoundHandler } from './middleware/error-handler.js';
 import { requestContextMiddleware, getLogger, getRequestId } from './middleware/request-context.js';
@@ -58,7 +58,7 @@ type Bindings = {
   GITHUB_REDIRECT_URI?: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Request context middleware - must be first to add requestId and logger to all requests
 app.use('*', requestContextMiddleware);
@@ -205,6 +205,29 @@ app.use(
     },
   })
 );
+
+// Register security schemes in OpenAPI registry
+app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
+  type: 'http',
+  scheme: 'bearer',
+  bearerFormat: 'JWT',
+  description: 'JWT access token obtained from /api/auth/login or /api/auth/register',
+});
+
+// OpenAPI spec generation endpoint
+// Must be added after middleware but before route registration
+// This auto-generates OpenAPI 3.1 spec from route definitions
+app.doc('/docs/openapi.json', {
+  openapi: '3.1.0',
+  info: {
+    title: 'Gruff API',
+    version: '1.0.0',
+    description: 'Entity-Relationship Graph Database with Versioning',
+  },
+  servers: [
+    { url: 'http://localhost:8787', description: 'Local development server' },
+  ],
+});
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {

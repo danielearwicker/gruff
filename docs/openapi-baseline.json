@@ -1,0 +1,4145 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gruff API",
+    "version": "1.0.0",
+    "description": "\n# Entity-Relationship Graph Database with Versioning\n\nGruff is a graph database system built on Cloudflare D1 (SQLite) that supports versioned entities and relationships, user management, and flexible schema through JSON properties.\n\n## Core Concepts\n\n### Entities\n- Fundamental nodes in the graph\n- Have a type, custom JSON properties, and versioning\n- Support soft deletion\n- Every modification creates a new version\n\n### Links\n- Directed relationships between entities\n- Have a type, custom JSON properties, and versioning\n- Connect a source entity to a target entity\n\n### Versioning\n- Immutable history: updates create new records\n- Each version references its predecessor\n- Track user and timestamp for every change\n\n### Types\n- Centralized type registry for both entities and links\n- Enables type-based queries and validation\n- Optional JSON schema validation for properties\n\n## Authentication\n\nMost endpoints require authentication via JWT tokens. Include the token in the Authorization header:\n\n```\nAuthorization: Bearer <your-access-token>\n```\n\nObtain tokens via the `/api/auth/login` or `/api/auth/register` endpoints.\n\n## Rate Limiting\n\nThe API implements rate limiting per user/IP:\n- **Auth endpoints**: 20 requests/minute\n- **Read operations**: 100 requests/minute\n- **Write operations**: 60 requests/minute\n- **Bulk operations**: 20 requests/minute\n- **Search endpoints**: 60 requests/minute\n- **Graph traversal**: 40 requests/minute\n\nRate limit headers are included in all responses:\n- `X-RateLimit-Limit`: Maximum requests allowed\n- `X-RateLimit-Remaining`: Requests remaining\n- `X-RateLimit-Reset`: Time when the limit resets (Unix timestamp)\n",
+    "contact": {
+      "name": "Gruff API Support"
+    },
+    "license": {
+      "name": "ISC"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8787",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Health check and system status endpoints"
+    },
+    {
+      "name": "Authentication",
+      "description": "User registration, login, and token management"
+    },
+    {
+      "name": "Users",
+      "description": "User profile and management endpoints"
+    },
+    {
+      "name": "Types",
+      "description": "Type registry for entities and links"
+    },
+    {
+      "name": "Entities",
+      "description": "Entity CRUD operations and versioning"
+    },
+    {
+      "name": "Links",
+      "description": "Link CRUD operations and versioning"
+    },
+    {
+      "name": "Graph",
+      "description": "Graph traversal and path finding operations"
+    },
+    {
+      "name": "Search",
+      "description": "Search and type-ahead suggestions"
+    },
+    {
+      "name": "Bulk Operations",
+      "description": "Batch create and update operations"
+    },
+    {
+      "name": "Export/Import",
+      "description": "Data export and import functionality"
+    },
+    {
+      "name": "Audit",
+      "description": "Audit log queries"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "description": "Check the health status of the API, database, and KV store",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "System is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "healthy"
+                    },
+                    "environment": {
+                      "type": "string",
+                      "example": "development"
+                    },
+                    "database": {
+                      "type": "string",
+                      "example": "connected"
+                    },
+                    "kv": {
+                      "type": "string",
+                      "example": "connected"
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "properties": {
+                        "platform": {
+                          "type": "string",
+                          "example": "cloudflare-workers"
+                        },
+                        "mode": {
+                          "type": "string",
+                          "example": "local"
+                        }
+                      }
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "System is unhealthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "unhealthy"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "API version information",
+        "description": "Get version and runtime information about the API",
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string",
+                      "example": "1.0.0"
+                    },
+                    "name": {
+                      "type": "string",
+                      "example": "gruff"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "properties": {
+                        "platform": {
+                          "type": "string"
+                        },
+                        "database": {
+                          "type": "string"
+                        },
+                        "environment": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Register a new user",
+        "description": "Create a new user account with email and password",
+        "operationId": "registerUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login",
+        "description": "Authenticate with email and password to obtain access and refresh tokens",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokensResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Refresh access token",
+        "description": "Use a refresh token to obtain a new access token",
+        "operationId": "refreshToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "access_token": {
+                          "type": "string"
+                        },
+                        "token_type": {
+                          "type": "string",
+                          "example": "Bearer"
+                        },
+                        "expires_in": {
+                          "type": "number",
+                          "example": 3600
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired refresh token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout",
+        "description": "Invalidate the refresh token",
+        "operationId": "logout",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshToken"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get current user",
+        "description": "Get the profile of the currently authenticated user",
+        "operationId": "getCurrentUser",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/providers": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "List authentication providers",
+        "description": "Returns a list of all available authentication providers, including local authentication and configured OAuth2 providers",
+        "operationId": "listAuthProviders",
+        "responses": {
+          "200": {
+            "description": "List of available authentication providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "providers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "Unique identifier for the provider",
+                                "example": "google"
+                              },
+                              "name": {
+                                "type": "string",
+                                "description": "Display name for the provider",
+                                "example": "Google"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "local",
+                                  "oauth2"
+                                ],
+                                "description": "Type of authentication provider",
+                                "example": "oauth2"
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "description": "Whether this provider is currently enabled",
+                                "example": true
+                              },
+                              "authorize_url": {
+                                "type": "string",
+                                "description": "Relative URL to initiate OAuth2 flow (only for enabled OAuth2 providers)",
+                                "example": "/api/auth/google"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "type",
+                              "enabled"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "providers": [
+                      {
+                        "id": "local",
+                        "name": "Email & Password",
+                        "type": "local",
+                        "enabled": true
+                      },
+                      {
+                        "id": "google",
+                        "name": "Google",
+                        "type": "oauth2",
+                        "enabled": true,
+                        "authorize_url": "/api/auth/google"
+                      },
+                      {
+                        "id": "github",
+                        "name": "GitHub",
+                        "type": "oauth2",
+                        "enabled": true,
+                        "authorize_url": "/api/auth/github"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List users",
+        "description": "Get a paginated list of users (admin only)",
+        "operationId": "listUsers",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedUsersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get user by ID",
+        "description": "Get details of a specific user",
+        "operationId": "getUser",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update user",
+        "description": "Update user profile",
+        "operationId": "updateUser",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}/activity": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get user activity",
+        "description": "Get a user's creation and edit history",
+        "operationId": "getUserActivity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User activity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entities": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Entity"
+                          }
+                        },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Link"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/types": {
+      "post": {
+        "tags": [
+          "Types"
+        ],
+        "summary": "Create type",
+        "description": "Create a new entity or link type",
+        "operationId": "createType",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateType"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Type created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Type"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Types"
+        ],
+        "summary": "List types",
+        "description": "Get a paginated list of types",
+        "operationId": "listTypes",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Filter by category (entity or link)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "entity",
+                "link"
+              ]
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Filter by name (partial match)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTypesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/types/{id}": {
+      "get": {
+        "tags": [
+          "Types"
+        ],
+        "summary": "Get type by ID",
+        "description": "Get details of a specific type",
+        "operationId": "getType",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Type details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Type"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Type not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Types"
+        ],
+        "summary": "Update type",
+        "description": "Update type metadata (name, description, schema)",
+        "operationId": "updateType",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateType"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Type updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Type"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Types"
+        ],
+        "summary": "Delete type",
+        "description": "Delete a type (only if unused)",
+        "operationId": "deleteType",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Type deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Type is in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities": {
+      "post": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Create entity",
+        "description": "Create a new entity with the specified type and properties",
+        "operationId": "createEntity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEntity"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Entity created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Entity"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "List entities",
+        "description": "Get a paginated list of entities with optional filters",
+        "operationId": "listEntities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type_id",
+            "in": "query",
+            "description": "Filter by entity type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_by",
+            "in": "query",
+            "description": "Filter by creator user ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "description": "Filter entities created after this timestamp (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "description": "Filter entities created before this timestamp (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          },
+          {
+            "$ref": "#/components/parameters/includeDeleted"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of entities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEntitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get entity by ID",
+        "description": "Get the latest version of an entity",
+        "operationId": "getEntity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Entity"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Update entity",
+        "description": "Update entity properties (creates a new version)",
+        "operationId": "updateEntity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEntity"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entity updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Entity"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Delete entity",
+        "description": "Soft delete an entity",
+        "operationId": "deleteEntity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/restore": {
+      "post": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Restore entity",
+        "description": "Restore a soft-deleted entity",
+        "operationId": "restoreEntity",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Entity"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/versions": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get entity versions",
+        "description": "Get all versions of an entity",
+        "operationId": "getEntityVersions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEntitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get specific entity version",
+        "description": "Get a specific version of an entity",
+        "operationId": "getEntityVersion",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "description": "Version number",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Entity"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/history": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get entity history with diffs",
+        "description": "Get version history with property changes between versions",
+        "operationId": "getEntityHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entity history with diffs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "versions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "version": {
+                                "type": "integer"
+                              },
+                              "created_at": {
+                                "type": "integer"
+                              },
+                              "created_by": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "changes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "added",
+                                        "removed",
+                                        "changed"
+                                      ]
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "oldValue": {},
+                                    "newValue": {}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/outbound": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get outbound links",
+        "description": "Get all links where this entity is the source",
+        "operationId": "getEntityOutboundLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "type_id",
+            "in": "query",
+            "description": "Filter by link type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outbound links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLinksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/inbound": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get inbound links",
+        "description": "Get all links where this entity is the target",
+        "operationId": "getEntityInboundLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "type_id",
+            "in": "query",
+            "description": "Filter by link type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbound links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLinksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/neighbors": {
+      "get": {
+        "tags": [
+          "Entities"
+        ],
+        "summary": "Get neighboring entities",
+        "description": "Get all entities connected to this entity",
+        "operationId": "getEntityNeighbors",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "description": "Direction of links to follow",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "outbound",
+                "inbound",
+                "both"
+              ],
+              "default": "both"
+            }
+          },
+          {
+            "name": "link_type_id",
+            "in": "query",
+            "description": "Filter by link type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "entity_type_id",
+            "in": "query",
+            "description": "Filter neighbors by entity type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Neighboring entities with connecting links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "entity": {
+                                "$ref": "#/components/schemas/Entity"
+                              },
+                              "link": {
+                                "$ref": "#/components/schemas/Link"
+                              },
+                              "direction": {
+                                "type": "string",
+                                "enum": [
+                                  "outbound",
+                                  "inbound"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "next_cursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links": {
+      "post": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Create link",
+        "description": "Create a new link between two entities",
+        "operationId": "createLink",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "List links",
+        "description": "Get a paginated list of links with optional filters",
+        "operationId": "listLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type_id",
+            "in": "query",
+            "description": "Filter by link type ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "source_entity_id",
+            "in": "query",
+            "description": "Filter by source entity ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "target_entity_id",
+            "in": "query",
+            "description": "Filter by target entity ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          },
+          {
+            "$ref": "#/components/parameters/includeDeleted"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLinksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/{id}": {
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Get link by ID",
+        "description": "Get the latest version of a link",
+        "operationId": "getLink",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Update link",
+        "description": "Update link properties (creates a new version)",
+        "operationId": "updateLink",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Link updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Delete link",
+        "description": "Soft delete a link",
+        "operationId": "deleteLink",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/{id}/restore": {
+      "post": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Restore link",
+        "description": "Restore a soft-deleted link",
+        "operationId": "restoreLink",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/{id}/versions": {
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Get link versions",
+        "description": "Get all versions of a link",
+        "operationId": "getLinkVersions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLinksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/{id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Get specific link version",
+        "description": "Get a specific version of a link",
+        "operationId": "getLinkVersion",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "description": "Version number",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Link"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/{id}/history": {
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Get link history with diffs",
+        "description": "Get version history with property changes between versions",
+        "operationId": "getLinkHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link history with diffs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "link_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "versions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/traverse": {
+      "post": {
+        "tags": [
+          "Graph"
+        ],
+        "summary": "Traverse graph",
+        "description": "Perform multi-hop graph traversal from a starting entity",
+        "operationId": "traverseGraph",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraversalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Traversal results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "start_entity_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "entities": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "entity": {
+                                "$ref": "#/components/schemas/Entity"
+                              },
+                              "depth": {
+                                "type": "integer"
+                              },
+                              "path": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "entity_id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "link_id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "direction": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "properties": {
+                            "total_entities": {
+                              "type": "integer"
+                            },
+                            "max_depth_reached": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/path": {
+      "get": {
+        "tags": [
+          "Graph"
+        ],
+        "summary": "Find shortest path",
+        "description": "Find the shortest path between two entities",
+        "operationId": "findShortestPath",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Starting entity ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Target entity ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "link_types",
+            "in": "query",
+            "description": "Comma-separated link type IDs to filter by",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "description": "Maximum path length (default: 10)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shortest path found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "entity": {
+                                "$ref": "#/components/schemas/Entity"
+                              },
+                              "link": {
+                                "$ref": "#/components/schemas/Link"
+                              }
+                            }
+                          }
+                        },
+                        "length": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No path exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/entities": {
+      "post": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Search entities",
+        "description": "Search entities by JSON properties with advanced filtering",
+        "operationId": "searchEntities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchEntities"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEntitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/links": {
+      "post": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Search links",
+        "description": "Search links by JSON properties with advanced filtering",
+        "operationId": "searchLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchLinks"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedLinksResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/suggest": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Type-ahead suggestions",
+        "description": "Get entity suggestions for autocomplete",
+        "operationId": "getSuggestions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Search query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "property_path",
+            "in": "query",
+            "description": "Property path to search (default: \"name\")",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type_id",
+            "in": "query",
+            "description": "Filter by entity type",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum suggestions (default: 10, max: 50)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "suggestions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "type_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "properties": {
+                                "type": "object"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bulk/entities": {
+      "post": {
+        "tags": [
+          "Bulk Operations"
+        ],
+        "summary": "Bulk create entities",
+        "description": "Create multiple entities in a single request (max 100)",
+        "operationId": "bulkCreateEntities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCreateEntities"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk create results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Bulk Operations"
+        ],
+        "summary": "Bulk update entities",
+        "description": "Update multiple entities in a single request (max 100)",
+        "operationId": "bulkUpdateEntities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateEntities"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk update results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bulk/links": {
+      "post": {
+        "tags": [
+          "Bulk Operations"
+        ],
+        "summary": "Bulk create links",
+        "description": "Create multiple links in a single request (max 100)",
+        "operationId": "bulkCreateLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCreateLinks"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk create results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Bulk Operations"
+        ],
+        "summary": "Bulk update links",
+        "description": "Update multiple links in a single request (max 100)",
+        "operationId": "bulkUpdateLinks",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateLinks"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk update results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/export": {
+      "get": {
+        "tags": [
+          "Export/Import"
+        ],
+        "summary": "Export data",
+        "description": "Export graph data as JSON",
+        "operationId": "exportData",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type_ids",
+            "in": "query",
+            "description": "Comma-separated type IDs to filter by",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "description": "Filter by creation date (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "description": "Filter by creation date (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_deleted",
+            "in": "query",
+            "description": "Include soft-deleted items",
+            "schema": {
+              "type": "string",
+              "default": "false"
+            }
+          },
+          {
+            "name": "include_versions",
+            "in": "query",
+            "description": "Include version history",
+            "schema": {
+              "type": "string",
+              "default": "false"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum items to export",
+            "schema": {
+              "type": "string",
+              "default": "1000"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exported data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Export/Import"
+        ],
+        "summary": "Import data",
+        "description": "Import graph data from JSON",
+        "operationId": "importData",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Query audit logs",
+        "description": "Get audit logs with optional filters",
+        "operationId": "getAuditLogs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "description": "Filter by user ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "description": "Filter by resource type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "entity",
+                "link",
+                "type",
+                "user"
+              ]
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "description": "Filter by resource ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "description": "Filter by operation type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "create",
+                "update",
+                "delete",
+                "restore"
+              ]
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Filter logs after this timestamp (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "Filter logs before this timestamp (Unix ms)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAuditLogsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/resource/{resource_type}/{resource_id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Get resource audit history",
+        "description": "Get audit history for a specific resource",
+        "operationId": "getResourceAuditHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_type",
+            "in": "path",
+            "required": true,
+            "description": "Resource type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "entity",
+                "link",
+                "type",
+                "user"
+              ]
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "description": "Resource ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource audit history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAuditLogsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/user/{user_id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Get user audit history",
+        "description": "Get all actions performed by a user",
+        "operationId": "getUserAuditHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "description": "User ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User audit history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAuditLogsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token obtained from /api/auth/login or /api/auth/register"
+      }
+    },
+    "parameters": {
+      "id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Resource ID (UUID)",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Maximum items to return (1-100, default: 20)",
+        "schema": {
+          "type": "string",
+          "default": "20"
+        }
+      },
+      "cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "Pagination cursor from previous response",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "includeDeleted": {
+        "name": "include_deleted",
+        "in": "query",
+        "description": "Include soft-deleted items (default: false)",
+        "schema": {
+          "type": "string",
+          "default": "false"
+        }
+      }
+    },
+    "schemas": {
+      "RegisterUser": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "example": "securePassword123"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "John Doe"
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "example": "securePassword123"
+          }
+        }
+      },
+      "RefreshToken": {
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthTokensResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "access_token": {
+                "type": "string"
+              },
+              "refresh_token": {
+                "type": "string"
+              },
+              "token_type": {
+                "type": "string",
+                "example": "Bearer"
+              },
+              "expires_in": {
+                "type": "number",
+                "example": 3600
+              },
+              "user": {
+                "$ref": "#/components/schemas/User"
+              }
+            }
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "google",
+              "github",
+              "microsoft",
+              "apple"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Unix timestamp in milliseconds"
+          },
+          "updated_at": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "CreateType": {
+        "type": "object",
+        "required": [
+          "name",
+          "category"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "Person"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "entity",
+              "link"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "json_schema": {
+            "type": "object",
+            "description": "JSON Schema for property validation"
+          }
+        }
+      },
+      "UpdateType": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000,
+            "nullable": true
+          },
+          "json_schema": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "Type": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "entity",
+              "link"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "json_schema": {
+            "type": "string",
+            "nullable": true,
+            "description": "JSON Schema stored as string"
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CreateEntity": {
+        "type": "object",
+        "required": [
+          "type_id"
+        ],
+        "properties": {
+          "type_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Entity type ID"
+          },
+          "properties": {
+            "type": "object",
+            "default": {},
+            "description": "Custom JSON properties"
+          }
+        }
+      },
+      "UpdateEntity": {
+        "type": "object",
+        "required": [
+          "properties"
+        ],
+        "properties": {
+          "properties": {
+            "type": "object",
+            "description": "New properties (replaces existing)"
+          }
+        }
+      },
+      "Entity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "properties": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "previous_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "is_latest": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateLink": {
+        "type": "object",
+        "required": [
+          "type_id",
+          "source_entity_id",
+          "target_entity_id"
+        ],
+        "properties": {
+          "type_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Link type ID"
+          },
+          "source_entity_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source entity ID"
+          },
+          "target_entity_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Target entity ID"
+          },
+          "properties": {
+            "type": "object",
+            "default": {}
+          }
+        }
+      },
+      "UpdateLink": {
+        "type": "object",
+        "required": [
+          "properties"
+        ],
+        "properties": {
+          "properties": {
+            "type": "object"
+          }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_entity_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_entity_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "properties": {
+            "type": "object"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "previous_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "is_latest": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SearchEntities": {
+        "type": "object",
+        "properties": {
+          "type_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Simple equality filters (deprecated)"
+          },
+          "property_filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropertyFilter"
+            },
+            "description": "Advanced property filters"
+          },
+          "filter_expression": {
+            "type": "object",
+            "description": "Complex AND/OR filter expression"
+          },
+          "created_after": {
+            "type": "integer"
+          },
+          "created_before": {
+            "type": "integer"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20,
+            "maximum": 100
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "SearchLinks": {
+        "type": "object",
+        "properties": {
+          "type_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_entity_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_entity_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "properties": {
+            "type": "object"
+          },
+          "property_filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropertyFilter"
+            }
+          },
+          "filter_expression": {
+            "type": "object"
+          },
+          "created_after": {
+            "type": "integer"
+          },
+          "created_before": {
+            "type": "integer"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "PropertyFilter": {
+        "type": "object",
+        "required": [
+          "path",
+          "operator"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "JSON path (e.g., \"name\", \"address.city\", \"tags[0]\")"
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "ne",
+              "gt",
+              "lt",
+              "gte",
+              "lte",
+              "like",
+              "ilike",
+              "starts_with",
+              "ends_with",
+              "contains",
+              "in",
+              "not_in",
+              "exists",
+              "not_exists"
+            ]
+          },
+          "value": {
+            "description": "Value to compare (optional for exists/not_exists)"
+          }
+        }
+      },
+      "TraversalRequest": {
+        "type": "object",
+        "required": [
+          "start_entity_id"
+        ],
+        "properties": {
+          "start_entity_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "outbound",
+              "inbound",
+              "both"
+            ],
+            "default": "both"
+          },
+          "max_depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          },
+          "link_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "entity_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "include_paths": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "BulkCreateEntities": {
+        "type": "object",
+        "required": [
+          "entities"
+        ],
+        "properties": {
+          "entities": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "type_id"
+              ],
+              "properties": {
+                "type_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "properties": {
+                  "type": "object",
+                  "default": {}
+                },
+                "client_id": {
+                  "type": "string",
+                  "description": "Optional client ID for correlation"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BulkUpdateEntities": {
+        "type": "object",
+        "required": [
+          "entities"
+        ],
+        "properties": {
+          "entities": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "properties"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "properties": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BulkCreateLinks": {
+        "type": "object",
+        "required": [
+          "links"
+        ],
+        "properties": {
+          "links": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "type_id",
+                "source_entity_id",
+                "target_entity_id"
+              ],
+              "properties": {
+                "type_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "source_entity_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "target_entity_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "properties": {
+                  "type": "object",
+                  "default": {}
+                },
+                "client_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BulkUpdateLinks": {
+        "type": "object",
+        "required": [
+          "links"
+        ],
+        "properties": {
+          "links": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "properties"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "properties": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BulkOperationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "integer"
+                    },
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "client_id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "summary": {
+                "type": "object",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "successful": {
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ExportResponse": {
+        "type": "object",
+        "properties": {
+          "format_version": {
+            "type": "string",
+            "example": "1.0"
+          },
+          "exported_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Type"
+            }
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "entity_count": {
+                "type": "integer"
+              },
+              "link_count": {
+                "type": "integer"
+              },
+              "type_count": {
+                "type": "integer"
+              },
+              "include_deleted": {
+                "type": "boolean"
+              },
+              "include_versions": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "ImportRequest": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "category"
+              ],
+              "properties": {
+                "client_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "entity",
+                    "link"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "json_schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "entities": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "client_id"
+              ],
+              "properties": {
+                "client_id": {
+                  "type": "string"
+                },
+                "type_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type_name": {
+                  "type": "string"
+                },
+                "properties": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "links": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "client_id": {
+                  "type": "string"
+                },
+                "type_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type_name": {
+                  "type": "string"
+                },
+                "source_entity_client_id": {
+                  "type": "string"
+                },
+                "source_entity_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "target_entity_client_id": {
+                  "type": "string"
+                },
+                "target_entity_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "properties": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ImportResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "type_results": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "entity_results": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "link_results": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "id_mapping": {
+                "type": "object",
+                "properties": {
+                  "types": {
+                    "type": "object"
+                  },
+                  "entities": {
+                    "type": "object"
+                  },
+                  "links": {
+                    "type": "object"
+                  }
+                }
+              },
+              "summary": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "AuditLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete",
+              "restore"
+            ]
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "entity",
+              "link",
+              "type",
+              "user"
+            ]
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "details": {
+            "type": "object",
+            "nullable": true
+          },
+          "ip_address": {
+            "type": "string",
+            "nullable": true
+          },
+          "user_agent": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedUsersResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/User"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "total": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "PaginatedTypesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Type"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "total": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "PaginatedEntitiesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Entity"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "total": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "PaginatedLinksResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Link"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "total": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "PaginatedAuditLogsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              },
+              "total": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "Success": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "example": "Validation failed"
+          },
+          "code": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  }
+}
