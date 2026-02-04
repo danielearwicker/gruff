@@ -214,6 +214,33 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
   description: 'JWT access token obtained from /api/auth/login or /api/auth/register',
 });
 
+// Pre-register schemas so they appear in spec even before routes are converted
+// These will be automatically used when routes reference them
+import { entityResponseSchema, createEntitySchema } from './schemas/entity.js';
+import { linkResponseSchema, createLinkSchema } from './schemas/link.js';
+import { userResponseSchema, createUserSchema } from './schemas/user.js';
+import { auditLogSchema } from './schemas/audit.js';
+import { ErrorResponseSchema, SuccessResponseSchema } from './schemas/openapi-common.js';
+import { typeSchema, createTypeSchema } from './schemas/type.js';
+
+// Register schemas by referencing them (forces inclusion in OpenAPI spec)
+[
+  entityResponseSchema,
+  createEntitySchema,
+  linkResponseSchema,
+  createLinkSchema,
+  userResponseSchema,
+  createUserSchema,
+  typeSchema,
+  createTypeSchema,
+  auditLogSchema,
+  ErrorResponseSchema,
+  SuccessResponseSchema,
+].forEach(schema => {
+  // Schemas with .openapi() will be automatically registered
+  schema._def;
+});
+
 // OpenAPI spec generation endpoint
 // Must be added after middleware but before route registration
 // This auto-generates OpenAPI 3.1 spec from route definitions

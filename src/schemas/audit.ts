@@ -14,17 +14,19 @@ export const auditOperationSchema = z.enum([
 export const auditResourceTypeSchema = z.enum(['entity', 'link', 'type', 'user']);
 
 // Audit log database model schema
-export const auditLogSchema = z.object({
-  id: uuidSchema,
-  operation: auditOperationSchema,
-  resource_type: auditResourceTypeSchema,
-  resource_id: uuidSchema,
-  user_id: uuidSchema.nullable(),
-  timestamp: timestampSchema,
-  details: z.string().nullable(), // JSON stored as string
-  ip_address: z.string().nullable(),
-  user_agent: z.string().nullable(),
-});
+export const auditLogSchema = z
+  .object({
+    id: uuidSchema,
+    operation: auditOperationSchema,
+    resource_type: auditResourceTypeSchema,
+    resource_id: uuidSchema,
+    user_id: uuidSchema.nullable(),
+    timestamp: timestampSchema,
+    details: z.string().nullable(), // JSON stored as string
+    ip_address: z.string().nullable(),
+    user_agent: z.string().nullable(),
+  })
+  .openapi('AuditLog');
 
 // Audit log response schema (with parsed details)
 export const auditLogResponseSchema = z.object({

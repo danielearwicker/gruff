@@ -20,22 +20,24 @@ export const userSchema = z.object({
 });
 
 // User creation schema (for registration) - with sanitization for display_name
-export const createUserSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must be at most 128 characters')
-    .optional(),
-  display_name: z
-    .string()
-    .min(1)
-    .max(255)
-    .transform(val => escapeHtml(val))
-    .optional(),
-  provider: providerSchema.optional().default('local'),
-  provider_id: z.string().optional(),
-});
+export const createUserSchema = z
+  .object({
+    email: z.string().email('Invalid email address'),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(128, 'Password must be at most 128 characters')
+      .optional(),
+    display_name: z
+      .string()
+      .min(1)
+      .max(255)
+      .transform(val => escapeHtml(val))
+      .optional(),
+    provider: providerSchema.optional().default('local'),
+    provider_id: z.string().optional(),
+  })
+  .openapi('CreateUser');
 
 // User update schema - with sanitization for display_name
 export const updateUserSchema = z.object({
@@ -62,7 +64,8 @@ export const userResponseSchema = userSchema
   })
   .extend({
     is_admin: z.boolean().optional(),
-  });
+  })
+  .openapi('User');
 
 // Login schema
 export const loginSchema = z.object({

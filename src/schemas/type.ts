@@ -19,27 +19,31 @@ const sanitizedStringSchema = (maxLength: number) =>
     .transform(val => escapeHtml(val));
 
 // Type database model schema
-export const typeSchema = z.object({
-  id: typeIdSchema,
-  name: z.string().min(1).max(255),
-  category: typeCategorySchema,
-  description: z.string().nullable(),
-  json_schema: z.string().nullable(), // JSON stored as string
-  created_at: timestampSchema,
-  created_by: uuidSchema,
-});
+export const typeSchema = z
+  .object({
+    id: typeIdSchema,
+    name: z.string().min(1).max(255),
+    category: typeCategorySchema,
+    description: z.string().nullable(),
+    json_schema: z.string().nullable(), // JSON stored as string
+    created_at: timestampSchema,
+    created_by: uuidSchema,
+  })
+  .openapi('Type');
 
 // Type creation schema (with sanitization for XSS prevention)
-export const createTypeSchema = z.object({
-  name: z
-    .string()
-    .min(1, 'Name is required')
-    .max(255, 'Name must be at most 255 characters')
-    .transform(val => escapeHtml(val)),
-  category: typeCategorySchema,
-  description: sanitizedStringSchema(1000).optional(),
-  json_schema: jsonPropertiesSchema.optional(), // Will be stringified before storing
-});
+export const createTypeSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, 'Name is required')
+      .max(255, 'Name must be at most 255 characters')
+      .transform(val => escapeHtml(val)),
+    category: typeCategorySchema,
+    description: sanitizedStringSchema(1000).optional(),
+    json_schema: jsonPropertiesSchema.optional(), // Will be stringified before storing
+  })
+  .openapi('CreateType');
 
 // Type update schema (with sanitization for XSS prevention)
 export const updateTypeSchema = z.object({
