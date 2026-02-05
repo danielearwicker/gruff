@@ -1938,6 +1938,94 @@ entities.openapi(getEntityVersionRoute, async c => {
   }
 });
 
+// Response schema for entity history with diffs
+const EntityHistoryDiffSchema = z
+  .object({
+    added: z.record(z.string(), z.unknown()).openapi({ description: 'Added properties' }),
+    removed: z.record(z.string(), z.unknown()).openapi({ description: 'Removed properties' }),
+    changed: z
+      .record(z.string(), z.unknown())
+      .openapi({ description: 'Changed properties with old/new values' }),
+  })
+  .openapi('EntityHistoryDiff');
+
+const EntityHistoryVersionSchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    version: z.number().int().positive().openapi({ example: 1 }),
+    type_id: z.string().openapi({ example: 'Person' }),
+    properties: z
+      .record(z.string(), z.unknown())
+      .openapi({ example: { name: 'John Doe', age: 30 } }),
+    created_at: z.number().int().openapi({ example: 1704067200 }),
+    created_by: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+    is_deleted: z.boolean().openapi({ example: false }),
+    is_latest: z.boolean().openapi({ example: true }),
+    diff: EntityHistoryDiffSchema.nullable().openapi({
+      description: 'Diff from previous version. Null for first version.',
+    }),
+  })
+  .openapi('EntityHistoryVersion');
+
+const EntityHistoryListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(EntityHistoryVersionSchema),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityHistoryListResponse');
+
+/**
+ * GET /api/entities/:id/history route definition
+ */
+const getEntityHistoryRoute = createRoute({
+  method: 'get',
+  path: '/{id}/history',
+  tags: ['Entities'],
+  summary: 'Get version history with diffs',
+  description:
+    'Get version history with diffs showing what changed between versions. Permission checking: Authenticated users must have read permission on the entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id (public).',
+  operationId: 'getEntityHistory',
+  request: {
+    params: EntityIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'List of all versions with diffs',
+      content: {
+        'application/json': {
+          schema: EntityHistoryListResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get entity history route
+entities.use('/:id/history', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id/history
  * Get version history with diffs showing what changed between versions
@@ -1947,8 +2035,8 @@ entities.openapi(getEntityVersionRoute, async c => {
  * - Entities with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/history', optionalAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityHistoryRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -1958,7 +2046,15 @@ entities.get('/:id/history', optionalAuth(), async c => {
     const latestVersion = await findLatestVersion(db, id);
 
     if (!latestVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -1967,12 +2063,28 @@ entities.get('/:id/history', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -2023,19 +2135,26 @@ entities.get('/:id/history', optionalAuth(), async c => {
       }
 
       return {
-        id: entity.id,
-        version: entity.version,
-        type_id: entity.type_id,
+        id: entity.id as string,
+        version: entity.version as number,
+        type_id: entity.type_id as string,
         properties: parsedProps,
-        created_at: entity.created_at,
-        created_by: entity.created_by,
+        created_at: entity.created_at as number,
+        created_by: entity.created_by as string,
         is_deleted: entity.is_deleted === 1,
         is_latest: entity.is_latest === 1,
         diff: diff,
       };
     });
 
-    return c.json(response.success(history));
+    return c.json(
+      {
+        success: true as const,
+        data: history,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
