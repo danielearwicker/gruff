@@ -5,7 +5,7 @@ import {
   createEntitySchema,
   updateEntitySchema,
   entityQuerySchema,
-  CreateEntity,
+  entityResponseSchema,
   UpdateEntity,
   EntityQuery,
 } from '../schemas/index.js';
@@ -44,6 +44,30 @@ type Bindings = {
 };
 
 const entities = new OpenAPIHono<{ Bindings: Bindings }>();
+
+// Response schema for entity operations
+const EntityResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: entityResponseSchema,
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityResponse');
+
+// Error response schema for entity operations
+const EntityErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Type not found' }),
+    code: z.string().openapi({ example: 'TYPE_NOT_FOUND' }),
+    data: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .openapi({ description: 'Additional error details' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityErrorResponse');
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -93,18 +117,70 @@ async function findLatestVersion(
 }
 
 /**
+ * POST /api/entities route definition
+ */
+const createEntityRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Entities'],
+  summary: 'Create entity',
+  description:
+    'Create a new entity. Authentication required. The creator is automatically granted write permission. Permission inheritance: If `acl` is not provided, creator gets write permission (private to creator). If `acl` is an empty array, entity is public (no ACL restrictions). If `acl` is provided with entries, uses those entries while ensuring creator has write permission.',
+  operationId: 'createEntity',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: createEntitySchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Entity created',
+      content: {
+        'application/json': {
+          schema: EntityResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or schema validation failed',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Type not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/entities
  * Create a new entity
- *
- * Authentication required. The creator is automatically granted write permission.
- *
- * Permission inheritance:
- * - If `acl` is not provided: creator gets write permission (private to creator)
- * - If `acl` is an empty array: entity is public (no ACL restrictions)
- * - If `acl` is provided with entries: uses those entries, ensuring creator has write permission
  */
-entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
-  const data = c.get('validated_json') as CreateEntity;
+entities.openapi(createEntityRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const user = c.get('user');
 
@@ -120,7 +196,15 @@ entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
       .first();
 
     if (!typeRecord) {
-      return c.json(response.error('Type not found', 'TYPE_NOT_FOUND'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Type not found',
+          code: 'TYPE_NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Validate properties against the type's JSON schema (if defined)
@@ -131,11 +215,13 @@ entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
 
     if (!schemaValidation.valid) {
       return c.json(
-        response.error(
-          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
-          'SCHEMA_VALIDATION_FAILED',
-          { validation_errors: schemaValidation.errors }
-        ),
+        {
+          success: false as const,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+          data: { validation_errors: schemaValidation.errors },
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -145,7 +231,12 @@ entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
       const validation = await validateAclPrincipals(db, data.acl);
       if (!validation.valid) {
         return c.json(
-          response.error(`Invalid ACL entries: ${validation.errors.join(', ')}`, 'INVALID_ACL'),
+          {
+            success: false as const,
+            error: `Invalid ACL entries: ${validation.errors.join(', ')}`,
+            code: 'INVALID_ACL',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -175,9 +266,14 @@ entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
     const created = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first();
 
     // Parse properties back to object
-    const result = {
-      ...created,
+    const entityData = {
+      id: created?.id as string,
+      type_id: created?.type_id as string,
       properties: created?.properties ? JSON.parse(created.properties as string) : {},
+      version: created?.version as number,
+      previous_version_id: (created?.previous_version_id as string) || null,
+      created_at: created?.created_at as number,
+      created_by: created?.created_by as string,
       is_deleted: created?.is_deleted === 1,
       is_latest: created?.is_latest === 1,
     };
@@ -196,7 +292,15 @@ entities.post('/', requireAuth(), validateJson(createEntitySchema), async c => {
         .warn('Failed to create audit log', { error: auditError });
     }
 
-    return c.json(response.created(result), 201);
+    return c.json(
+      {
+        success: true as const,
+        data: entityData,
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
+      201
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })

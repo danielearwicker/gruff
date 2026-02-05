@@ -47,11 +47,11 @@ Convert endpoints:
 Prepare:
 
 - [x] **Annotate entity schemas** - Add `.openapi()` to `createEntitySchema`, `updateEntitySchema`, `entityQuerySchema` in `src/schemas/entity.ts`
-- [ ] **Convert entities router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/entities.ts`
+- [x] **Convert entities router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/entities.ts`
 
 Convert endpoints:
 
-- [ ] **Convert POST /api/entities** - Creates entity with auto ACL. Test: Create entity via curl
+- [x] **Convert POST /api/entities** - Creates entity with auto ACL. Test: Create entity via curl
 - [ ] **Convert GET /api/entities** - Lists entities with ACL filtering. Test: List entities
 - [ ] **Convert GET /api/entities/:id** - Gets entity by ID. Test: Get specific entity
 - [ ] **Convert PUT /api/entities/:id** - Updates entity (creates new version). Test: Update entity
