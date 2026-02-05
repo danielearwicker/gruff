@@ -1,12 +1,12 @@
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
+import { ErrorResponseSchema } from '../schemas/openapi-common.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { buildPropertyFilters, buildFilterExpression } from '../utils/property-filters.js';
 import { buildAclFilterClause, filterByAclPermission } from '../utils/acl.js';
-import { z } from 'zod';
 
 type Bindings = {
   DB: D1Database;
@@ -16,17 +16,83 @@ type Bindings = {
 
 const search = new OpenAPIHono<{ Bindings: Bindings }>();
 
+// Response schema for cursor-paginated entity search results
+const SearchEntitiesResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(z.record(z.string(), z.unknown())).openapi({
+      description: 'Array of matching entities',
+    }),
+    metadata: z.object({
+      hasMore: z.boolean().openapi({ example: false, description: 'Whether more results exist' }),
+      cursor: z.string().optional().openapi({ description: 'Cursor for next page of results' }),
+      total: z
+        .number()
+        .int()
+        .optional()
+        .openapi({ description: 'Total number of matching entities' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('SearchEntitiesResponse');
+
+/**
+ * POST /api/search/entities route definition
+ */
+const searchEntitiesRoute = createRoute({
+  method: 'post',
+  path: '/entities',
+  tags: ['Search'],
+  summary: 'Search entities',
+  description:
+    'Search entities by JSON properties with advanced filtering. ACL filtering is applied: authenticated users see entities they have read permission on, resources with NULL acl_id are visible to all authenticated users, unauthenticated requests only see resources with NULL acl_id (public).',
+  operationId: 'searchEntities',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: searchEntitiesSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Search results',
+      content: {
+        'application/json': {
+          schema: SearchEntitiesResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid filter expression or property filter',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Search failed',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * POST /api/search/entities
  * Search for entities based on criteria
- *
- * ACL filtering is applied when authenticated:
- * - Authenticated users see entities they have read permission on
- * - Resources with NULL acl_id are visible to all authenticated users
- * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), async c => {
-  const criteria = c.get('validated_json') as z.infer<typeof searchEntitiesSchema>;
+search.openapi(searchEntitiesRoute, async c => {
+  const criteria = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -115,10 +181,12 @@ search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), asy
       } catch (error) {
         logger.error('Invalid filter expression', error as Error);
         return c.json(
-          response.error(
-            `Invalid filter expression: ${(error as Error).message}`,
-            'INVALID_FILTER'
-          ),
+          {
+            success: false as const,
+            error: `Invalid filter expression: ${(error as Error).message}`,
+            code: 'INVALID_FILTER',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -135,7 +203,12 @@ search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), asy
       } catch (error) {
         logger.error('Invalid property filter', error as Error);
         return c.json(
-          response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'),
+          {
+            success: false as const,
+            error: `Invalid property filter: ${(error as Error).message}`,
+            code: 'INVALID_FILTER',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -224,10 +297,29 @@ search.post('/entities', optionalAuth(), validateJson(searchEntitiesSchema), asy
       cursor: nextCursor,
     });
 
-    return c.json(response.cursorPaginated(cleanedEntities, nextCursor, hasMore, criteria.limit));
+    return c.json(
+      {
+        success: true as const,
+        data: cleanedEntities,
+        metadata: {
+          hasMore,
+          ...(nextCursor ? { cursor: nextCursor } : {}),
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Entity search failed', error as Error);
-    return c.json(response.error('Entity search failed', 'SEARCH_ERROR'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Entity search failed',
+        code: 'SEARCH_ERROR',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
