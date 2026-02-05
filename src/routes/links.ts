@@ -87,6 +87,30 @@ const LinkListResponseSchema = z
   })
   .openapi('LinkListResponse');
 
+// Path params schema for link by ID
+const LinkIdParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440100',
+      description: 'Link ID (UUID)',
+    }),
+});
+
+// Query schema for field selection on single link
+const LinkFieldSelectionQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,type_id,source_entity_id,target_entity_id',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
 // OpenAPI-specific query schema for link listing (without transforms for proper type inference)
 const listLinksQuerySchema = z.object({
   limit: z
@@ -305,6 +329,57 @@ const listLinksRoute = createRoute({
     },
     400: {
       description: 'Invalid query parameters or field selection',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * GET /api/links/:id route definition
+ */
+const getLinkRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['Links'],
+  summary: 'Get link by ID',
+  description:
+    'Get the latest version of a specific link. Supports field selection via the `fields` query parameter. Permission checking: Authenticated users must have read permission on the link. Links with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access links with NULL acl_id.',
+  operationId: 'getLinkById',
+  request: {
+    params: LinkIdParamsSchema,
+    query: LinkFieldSelectionQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Link found',
+      content: {
+        'application/json': {
+          schema: LinkResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
       content: {
         'application/json': {
           schema: LinkErrorResponseSchema,
@@ -700,6 +775,15 @@ links.openapi(listLinksRoute, async c => {
   }
 });
 
+// Apply optionalAuth middleware for the get link by ID route
+links.use('/:id', async (c, next) => {
+  // Only apply to GET requests (not PUT, DELETE, etc.)
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/links/:id
  * Get the latest version of a specific link
@@ -716,18 +800,26 @@ links.openapi(listLinksRoute, async c => {
  * - Links with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access links with NULL acl_id
  */
-links.get('/:id', optionalAuth(), async c => {
-  const id = c.req.param('id');
+links.openapi(getLinkRoute, async c => {
+  const { id } = c.req.valid('param');
+  const { fields: fieldsParam } = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
-  const fieldsParam = c.req.query('fields');
   const user = c.get('user');
 
   try {
     const link = await findLatestVersion(db, id);
 
     if (!link) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -736,35 +828,64 @@ links.get('/:id', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public links (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
     // Try to get from cache (only for authenticated users with permission or public links)
     const cacheKey = getLinkCacheKey(id);
-    const cached = await getCache<{ data?: Record<string, unknown> }>(kv, cacheKey);
+    const cached = await getCache<Record<string, unknown>>(kv, cacheKey);
     if (cached) {
       // Apply field selection to cached response
       if (fieldsParam && cached.data) {
-        const fieldSelection = applyFieldSelection(cached.data, fieldsParam, LINK_ALLOWED_FIELDS);
+        const fieldSelection = applyFieldSelection(
+          cached.data as Record<string, unknown>,
+          fieldsParam,
+          LINK_ALLOWED_FIELDS
+        );
         if (!fieldSelection.success) {
           return c.json(
-            response.error(
-              `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-              'INVALID_FIELDS',
-              { allowed_fields: Array.from(LINK_ALLOWED_FIELDS) }
-            ),
+            {
+              success: false as const,
+              error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+              code: 'INVALID_FIELDS',
+              data: { allowed_fields: Array.from(LINK_ALLOWED_FIELDS) },
+              timestamp: new Date().toISOString(),
+            },
             400
           );
         }
-        return c.json(response.success(fieldSelection.data));
+        return c.json(
+          {
+            success: true as const,
+            data: fieldSelection.data as z.infer<typeof linkResponseSchema>,
+            timestamp: new Date().toISOString(),
+          },
+          200
+        );
       }
-      return c.json(cached);
+      return c.json(cached as z.infer<typeof LinkResponseSchema>, 200);
     }
 
     // Parse properties back to object
@@ -775,7 +896,11 @@ links.get('/:id', optionalAuth(), async c => {
       is_latest: link.is_latest === 1,
     };
 
-    const responseData = response.success(result);
+    const responseData = {
+      success: true as const,
+      data: result as z.infer<typeof linkResponseSchema>,
+      timestamp: new Date().toISOString(),
+    };
 
     // Cache the successful response (full data, field selection applied on retrieval)
     setCache(kv, cacheKey, responseData, CACHE_TTL.LINK).catch(() => {
@@ -791,18 +916,27 @@ links.get('/:id', optionalAuth(), async c => {
       );
       if (!fieldSelection.success) {
         return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(LINK_ALLOWED_FIELDS) }
-          ),
+          {
+            success: false as const,
+            error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            code: 'INVALID_FIELDS',
+            data: { allowed_fields: Array.from(LINK_ALLOWED_FIELDS) },
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
-      return c.json(response.success(fieldSelection.data));
+      return c.json(
+        {
+          success: true as const,
+          data: fieldSelection.data as z.infer<typeof linkResponseSchema>,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
-    return c.json(responseData);
+    return c.json(responseData, 200);
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })
