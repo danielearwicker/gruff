@@ -984,23 +984,113 @@ authRouter.openapi(meRoute, async c => {
 const OAUTH_STATE_PREFIX = 'oauth_state:';
 const OAUTH_STATE_TTL = 15 * 60; // 15 minutes
 
+// Response schemas for OAuth endpoints
+const OAuthInitSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      authorization_url: z
+        .string()
+        .url()
+        .openapi({ example: 'https://accounts.google.com/o/oauth2/v2/auth?...' }),
+      state: z.string().openapi({ example: 'abc123' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('OAuthInitSuccessResponse');
+
+const OAuthNotConfiguredResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Google OAuth is not configured' }),
+    code: z.string().openapi({ example: 'OAUTH_NOT_CONFIGURED' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('OAuthNotConfiguredResponse');
+
+// Query schema for OAuth initiation (optional ui_state for UI flows)
+const OAuthInitQuerySchema = z.object({
+  ui_state: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'ui_state', in: 'query' },
+      description:
+        'Optional state parameter for UI-initiated OAuth flows. If provided, the endpoint redirects directly to the OAuth provider instead of returning JSON.',
+      example: 'login-page',
+    }),
+});
+
+/**
+ * GET /api/auth/google route definition
+ */
+const googleOAuthInitRoute = createRoute({
+  method: 'get',
+  path: '/google',
+  tags: ['Authentication'],
+  summary: 'Initiate Google OAuth',
+  description:
+    'Initiates Google OAuth2 sign-in flow. Returns authorization URL for redirect. If ui_state query parameter is provided, redirects directly to Google instead of returning JSON.',
+  operationId: 'initiateGoogleOAuth',
+  request: {
+    query: OAuthInitQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Google OAuth authorization URL',
+      content: {
+        'application/json': {
+          schema: OAuthInitSuccessResponseSchema,
+        },
+      },
+    },
+    302: {
+      description: 'Redirect to Google OAuth (when ui_state is provided)',
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    501: {
+      description: 'Google OAuth is not configured',
+      content: {
+        'application/json': {
+          schema: OAuthNotConfiguredResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/auth/google
  *
  * Initiates Google OAuth2 sign-in flow
  * Returns authorization URL for redirect
  */
-authRouter.get('/google', async c => {
+authRouter.openapi(googleOAuthInitRoute, async c => {
   const logger = getLogger(c);
 
   // Check if Google OAuth is configured
   if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_REDIRECT_URI) {
     logger.warn('Google OAuth not configured');
-    return c.json(response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Google OAuth is not configured',
+        code: 'OAUTH_NOT_CONFIGURED',
+        timestamp: new Date().toISOString(),
+      },
+      501
+    );
   }
 
   // Check if this is a UI-initiated OAuth flow
-  const uiState = c.req.query('ui_state');
+  const { ui_state: uiState } = c.req.valid('query');
 
   try {
     const config: GoogleOAuthConfig = {
@@ -1033,10 +1123,15 @@ authRouter.get('/google', async c => {
     }
 
     return c.json(
-      response.success({
-        authorization_url: authUrl,
-        state: state,
-      })
+      {
+        success: true as const,
+        data: {
+          authorization_url: authUrl,
+          state: state,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error generating Google OAuth URL', error as Error);
@@ -1045,7 +1140,15 @@ authRouter.get('/google', async c => {
         `/ui/auth/login?error=${encodeURIComponent('Failed to initiate Google sign-in')}`
       );
     }
-    return c.json(response.error('Failed to initiate Google sign-in', 'OAUTH_INIT_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to initiate Google sign-in',
+        code: 'OAUTH_INIT_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
