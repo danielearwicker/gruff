@@ -1,11 +1,11 @@
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createTypeSchema,
   updateTypeSchema,
   typeQuerySchema,
-  CreateType,
+  typeSchema,
   UpdateType,
   TypeQuery,
 } from '../schemas/index.js';
@@ -43,12 +43,98 @@ function getCurrentTimestamp(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+// Response schema for type operations
+const TypeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: typeSchema,
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('TypeResponse');
+
+// Error response schema for type operations
+const TypeErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Type name already exists' }),
+    code: z.string().openapi({ example: 'DUPLICATE_NAME' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('TypeErrorResponse');
+
+/**
+ * POST /api/types route definition
+ */
+const createTypeRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Types'],
+  summary: 'Create type',
+  description: 'Create a new entity or link type (admin only)',
+  operationId: 'createType',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: createTypeSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Type created',
+      content: {
+        'application/json': {
+          schema: TypeResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - type name already exists',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * POST /api/types
  * Create a new type (admin only)
  */
-types.post('/', requireAuth(), requireAdmin(), validateJson(createTypeSchema), async c => {
-  const data = c.get('validated_json') as CreateType;
+types.openapi(createTypeRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const user = c.get('user');
 
@@ -66,7 +152,15 @@ types.post('/', requireAuth(), requireAdmin(), validateJson(createTypeSchema), a
       .first();
 
     if (existing) {
-      return c.json(response.error('Type name already exists', 'DUPLICATE_NAME'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Type name already exists',
+          code: 'DUPLICATE_NAME',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     // Convert json_schema to string if provided
@@ -95,9 +189,14 @@ types.post('/', requireAuth(), requireAdmin(), validateJson(createTypeSchema), a
     const created = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     // Parse json_schema back to object if it exists
-    const result = {
-      ...created,
+    const typeData = {
+      id: created?.id as string,
+      name: created?.name as string,
+      category: created?.category as 'entity' | 'link',
+      description: (created?.description as string) || null,
       json_schema: created?.json_schema ? JSON.parse(created.json_schema as string) : null,
+      created_at: created?.created_at as number,
+      created_by: created?.created_by as string,
     };
 
     // Invalidate types list cache after creating a new type
@@ -109,7 +208,15 @@ types.post('/', requireAuth(), requireAdmin(), validateJson(createTypeSchema), a
       logger.warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.created(result), 201);
+    return c.json(
+      {
+        success: true as const,
+        data: typeData,
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
+      201
+    );
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error creating type', error instanceof Error ? error : undefined, {
