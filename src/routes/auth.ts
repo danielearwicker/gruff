@@ -106,6 +106,24 @@ const AuthErrorResponseSchema = z
   })
   .openapi('AuthErrorResponse');
 
+// Success response for login
+const LoginSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user: AuthUserSchema,
+      access_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      refresh_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      expires_in: z
+        .number()
+        .int()
+        .openapi({ example: 900, description: 'Token expiration in seconds' }),
+      token_type: z.literal('Bearer'),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LoginSuccessResponse');
+
 // =============================================================================
 // Route Definitions
 // =============================================================================
@@ -149,6 +167,62 @@ const registerRoute = createRoute({
     },
     409: {
       description: 'Conflict - user with this email already exists',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * POST /api/auth/login route definition
+ */
+const loginRoute = createRoute({
+  method: 'post',
+  path: '/login',
+  tags: ['Authentication'],
+  summary: 'Login with email and password',
+  description: 'Authenticate with email and password. Returns user info and JWT tokens on success.',
+  operationId: 'loginUser',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: loginSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Login successful',
+      content: {
+        'application/json': {
+          schema: LoginSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error - missing or invalid email/password',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Invalid credentials, account inactive, or wrong authentication method',
       content: {
         'application/json': {
           schema: AuthErrorResponseSchema,
@@ -298,11 +372,9 @@ authRouter.openapi(registerRoute, async c => {
  *
  * Login with email and password
  */
-authRouter.post('/login', validateJson(loginSchema), async c => {
+authRouter.openapi(loginRoute, async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as { email: string; password: string };
-
-  const { email, password } = validated;
+  const { email, password } = c.req.valid('json');
 
   try {
     // Find user by email
@@ -314,23 +386,41 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
 
     if (!user) {
       logger.warn('Login attempt with non-existent email', { email });
-      return c.json(response.error('Invalid email or password', 'INVALID_CREDENTIALS'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid email or password',
+          code: 'INVALID_CREDENTIALS',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     // Check if account is active
     if (!user.is_active) {
       logger.warn('Login attempt for inactive account', { email, userId: String(user.id) });
-      return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Account is not active',
+          code: 'ACCOUNT_INACTIVE',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     // Verify this is a local account with password
     if (user.provider !== 'local' || typeof user.password_hash !== 'string') {
       logger.warn('Login attempt for non-local account', { email, provider: user.provider });
       return c.json(
-        response.error(
-          'This account uses a different authentication method',
-          'INVALID_AUTH_METHOD'
-        ),
+        {
+          success: false as const,
+          error: 'This account uses a different authentication method',
+          code: 'INVALID_AUTH_METHOD',
+          timestamp: new Date().toISOString(),
+        },
         401
       );
     }
@@ -341,7 +431,15 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
 
     if (!isValidPassword) {
       logger.warn('Login attempt with incorrect password', { email });
-      return c.json(response.error('Invalid email or password', 'INVALID_CREDENTIALS'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid email or password',
+          code: 'INVALID_CREDENTIALS',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     logger.info('User login successful', { userId: String(user.id), email });
@@ -350,7 +448,15 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Server configuration error',
+          code: 'CONFIG_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     // Generate access and refresh tokens with admin flag
@@ -365,26 +471,39 @@ authRouter.post('/login', validateJson(loginSchema), async c => {
 
     // Return success response with tokens
     return c.json(
-      response.success({
-        user: {
-          id: user.id,
-          email: user.email,
-          display_name: user.display_name,
-          provider: user.provider,
-          created_at: user.created_at,
-          updated_at: user.updated_at,
-          is_active: !!user.is_active,
-          is_admin: isAdmin,
+      {
+        success: true as const,
+        data: {
+          user: {
+            id: String(user.id),
+            email: String(user.email),
+            display_name: user.display_name ? String(user.display_name) : null,
+            provider: user.provider as 'local' | 'google' | 'github' | 'microsoft' | 'apple',
+            created_at: user.created_at as number,
+            updated_at: user.updated_at as number,
+            is_active: !!user.is_active,
+            is_admin: isAdmin,
+          },
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.expiresIn,
+          token_type: 'Bearer' as const,
         },
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
-        expires_in: tokens.expiresIn,
-        token_type: 'Bearer',
-      })
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error during login', error as Error, { email });
-    return c.json(response.error('Failed to login', 'LOGIN_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to login',
+        code: 'LOGIN_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
