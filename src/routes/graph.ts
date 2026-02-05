@@ -1,9 +1,8 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
-import { z } from 'zod';
 import { buildAclFilterClause, hasPermissionByAclId } from '../utils/acl.js';
 import { traverseSchema, shortestPathSchema, graphViewSchema } from '../schemas/graph.js';
 
@@ -13,7 +12,7 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
-const graph = new Hono<{ Bindings: Bindings }>();
+const graph = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Helper function to find the latest version of an entity by any ID in its version chain
 async function findLatestVersion(
