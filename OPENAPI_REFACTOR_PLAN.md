@@ -64,7 +64,7 @@ Convert endpoints:
 - [x] **Convert GET /api/entities/:id/inbound** - Gets inbound links. Test: Get inbound links
 - [x] **Convert GET /api/entities/:id/neighbors** - Gets all connected entities. Test: Get neighbors
 - [x] **Convert GET /api/entities/:id/acl** - Gets ACL permissions. Test: Get ACL
-- [ ] **Convert PUT /api/entities/:id/acl** - Sets ACL permissions. Test: Update ACL
+- [x] **Convert PUT /api/entities/:id/acl** - Sets ACL permissions. Test: Update ACL
 
 ### Links API (`src/routes/links.ts`)
 

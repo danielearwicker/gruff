@@ -1,9 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { createEntitySchema, updateEntitySchema, entityResponseSchema } from '../schemas/index.js';
-import { setAclRequestSchema, SetAclRequest, aclResponseSchema } from '../schemas/acl.js';
-import * as response from '../utils/response.js';
+import { setAclRequestSchema, aclResponseSchema } from '../schemas/acl.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { logEntityOperation } from '../utils/audit.js';
@@ -3262,6 +3260,32 @@ const AclGetResponseSchema = z
   })
   .openapi('EntityAclGetResponse');
 
+// Response schema for ACL set operation (includes new_version_id)
+const AclSetResponseDataSchema = z
+  .object({
+    entries: z.array(z.unknown()).openapi({ description: 'List of enriched ACL entries' }),
+    acl_id: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .openapi({ example: 1, description: 'ACL ID, null if public' }),
+    new_version_id: z.string().uuid().nullable().openapi({
+      example: '550e8400-e29b-41d4-a716-446655440001',
+      description: 'New version ID of the entity, null if ACL unchanged',
+    }),
+  })
+  .openapi('AclSetResponseData');
+
+const AclSetResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: AclSetResponseDataSchema,
+    message: z.string().optional().openapi({ example: 'ACL updated successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityAclSetResponse');
+
 /**
  * GET /api/entities/:id/acl route definition
  */
@@ -3400,6 +3424,81 @@ entities.openapi(getEntityAclRoute, async c => {
 });
 
 /**
+ * PUT /api/entities/:id/acl route definition
+ */
+const setEntityAclRoute = createRoute({
+  method: 'put',
+  path: '/{id}/acl',
+  tags: ['Entities'],
+  summary: 'Set entity ACL',
+  description:
+    'Set the ACL (access control list) for an entity. This endpoint allows setting permissions for users and groups on an entity. Empty entries array removes the ACL (makes entity public). Setting entries creates/reuses a deduplicated ACL. Creates a new version of the entity with the updated ACL. Requires authentication and write permission on the entity.',
+  operationId: 'setEntityAcl',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: EntityIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: setAclRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'ACL updated successfully',
+      content: {
+        'application/json': {
+          schema: AclSetResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Bad request - invalid principals in ACL or validation error',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - cannot set ACL on deleted entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * PUT /api/entities/:id/acl
  * Set the ACL (access control list) for an entity
  *
@@ -3409,18 +3508,10 @@ entities.openapi(getEntityAclRoute, async c => {
  * - Creates a new version of the entity with the updated ACL
  *
  * Requires authentication and write permission on the entity.
- *
- * ACL request format:
- * {
- *   "entries": [
- *     { "principal_type": "user", "principal_id": "uuid", "permission": "write" },
- *     { "principal_type": "group", "principal_id": "uuid", "permission": "read" }
- *   ]
- * }
  */
-entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c => {
-  const id = c.req.param('id');
-  const data = c.get('validated_json') as SetAclRequest;
+entities.openapi(setEntityAclRoute, async c => {
+  const { id } = c.req.valid('param');
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -3431,23 +3522,41 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const currentAclId = entity.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, currentAclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to modify this entity'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to modify this entity',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if entity is soft-deleted
     if (entity.is_deleted === 1) {
       return c.json(
-        response.error(
-          'Cannot set ACL on deleted entity. Use restore endpoint first.',
-          'ENTITY_DELETED'
-        ),
+        {
+          success: false as const,
+          error: 'Cannot set ACL on deleted entity. Use restore endpoint first.',
+          code: 'ENTITY_DELETED',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -3457,9 +3566,13 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
       const validation = await validateAclPrincipals(db, data.entries);
       if (!validation.valid) {
         return c.json(
-          response.error('Invalid principals in ACL', 'INVALID_PRINCIPALS', {
-            errors: validation.errors,
-          }),
+          {
+            success: false as const,
+            error: 'Invalid principals in ACL',
+            code: 'INVALID_PRINCIPALS',
+            data: { errors: validation.errors },
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -3491,14 +3604,17 @@ entities.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async
     }
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           entries: responseEntries,
           acl_id: aclId,
           new_version_id: newVersionId,
         },
-        'ACL updated successfully'
-      )
+        message: 'ACL updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     getLogger(c)
