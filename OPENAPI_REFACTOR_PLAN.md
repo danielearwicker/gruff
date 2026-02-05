@@ -11,7 +11,7 @@ Work through these in order. Each item is ONE endpoint conversion.
 
 Before converting types routes, annotate schemas:
 
-- [ ] **Annotate type schemas** - Add `.openapi()` to `createTypeSchema`, `updateTypeSchema`, `typeQuerySchema` in `src/schemas/type.ts`. See `docs/HONO_OPENAPI_REFERENCE.md` for examples.
+- [x] **Annotate type schemas** - Add `.openapi()` to `createTypeSchema`, `updateTypeSchema`, `typeQuerySchema` in `src/schemas/type.ts`. See `docs/HONO_OPENAPI_REFERENCE.md` for examples.
 - [ ] **Convert types router to OpenAPIHono** - Change `new Hono()` to `new OpenAPIHono()` at top of `src/routes/types.ts`
 
 Then convert each endpoint:
