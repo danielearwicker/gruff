@@ -3,58 +3,73 @@ import { uuidSchema, timestampSchema, sqliteBooleanSchema } from './common.js';
 import { escapeHtml } from '../utils/sanitize.js';
 
 // Provider types
-export const providerSchema = z.enum(['google', 'github', 'local', 'microsoft', 'apple']);
+export const providerSchema = z
+  .enum(['google', 'github', 'local', 'microsoft', 'apple'])
+  .openapi({ example: 'local' });
 
 // User database model schema
-export const userSchema = z.object({
-  id: uuidSchema,
-  email: z.string().email(),
-  display_name: z.string().nullable(),
-  provider: providerSchema,
-  provider_id: z.string().nullable(),
-  password_hash: z.string().nullable(),
-  created_at: timestampSchema,
-  updated_at: timestampSchema,
-  is_active: sqliteBooleanSchema,
-  is_admin: sqliteBooleanSchema.optional().default(0),
-});
+export const userSchema = z
+  .object({
+    id: uuidSchema.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    email: z.string().email().openapi({ example: 'user@example.com' }),
+    display_name: z.string().nullable().openapi({ example: 'John Doe' }),
+    provider: providerSchema,
+    provider_id: z.string().nullable().openapi({ example: 'google-oauth-id-123' }),
+    password_hash: z.string().nullable(),
+    created_at: timestampSchema.openapi({ example: 1704067200 }),
+    updated_at: timestampSchema.openapi({ example: 1704067200 }),
+    is_active: sqliteBooleanSchema,
+    is_admin: sqliteBooleanSchema.optional().default(0),
+  })
+  .openapi('UserDb');
 
 // User creation schema (for registration) - with sanitization for display_name
 export const createUserSchema = z
   .object({
-    email: z.string().email('Invalid email address'),
+    email: z.string().email('Invalid email address').openapi({ example: 'user@example.com' }),
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters')
       .max(128, 'Password must be at most 128 characters')
-      .optional(),
+      .optional()
+      .openapi({ example: 'securePassword123' }),
     display_name: z
       .string()
       .min(1)
       .max(255)
       .transform(val => escapeHtml(val))
-      .optional(),
+      .optional()
+      .openapi({ example: 'John Doe' }),
     provider: providerSchema.optional().default('local'),
     provider_id: z.string().optional(),
   })
   .openapi('CreateUser');
 
 // User update schema - with sanitization for display_name
-export const updateUserSchema = z.object({
-  display_name: z
-    .string()
-    .min(1)
-    .max(255)
-    .transform(val => escapeHtml(val))
-    .optional(),
-  email: z.string().email('Invalid email address').optional(),
-  is_active: sqliteBooleanSchema.optional(),
-});
+export const updateUserSchema = z
+  .object({
+    display_name: z
+      .string()
+      .min(1)
+      .max(255)
+      .transform(val => escapeHtml(val))
+      .optional()
+      .openapi({ example: 'Jane Doe' }),
+    email: z
+      .string()
+      .email('Invalid email address')
+      .optional()
+      .openapi({ example: 'jane@example.com' }),
+    is_active: sqliteBooleanSchema.optional(),
+  })
+  .openapi('UpdateUser');
 
 // Admin role change schema
-export const adminRoleChangeSchema = z.object({
-  is_admin: z.boolean(),
-});
+export const adminRoleChangeSchema = z
+  .object({
+    is_admin: z.boolean().openapi({ example: true }),
+  })
+  .openapi('AdminRoleChange');
 
 // User response schema (without sensitive data)
 export const userResponseSchema = userSchema
@@ -63,7 +78,7 @@ export const userResponseSchema = userSchema
     provider_id: true,
   })
   .extend({
-    is_admin: z.boolean().optional(),
+    is_admin: z.boolean().optional().openapi({ example: false }),
   })
   .openapi('User');
 
