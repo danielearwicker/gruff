@@ -1,7 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { buildAclFilterClause, hasPermissionByAclId } from '../utils/acl.js';
 import { traverseSchema, shortestPathSchema, graphViewSchema } from '../schemas/graph.js';
@@ -909,23 +907,123 @@ graph.openapi(shortestPathRoute, async c => {
   }
 });
 
+// Path parameters schema for graph-view entity ID
+const GraphViewParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Entity ID (UUID)',
+    }),
+});
+
+// Response schema for graph entity node
+const GraphEntitySchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    type_id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440100' }),
+    type_name: z.string().openapi({ example: 'Person' }),
+    properties: z.record(z.string(), z.unknown()).openapi({ example: { name: 'Example' } }),
+    version: z.number().int().openapi({ example: 1 }),
+    created_at: z.number().openapi({ example: 1705312200, description: 'Unix timestamp' }),
+    is_deleted: z.boolean().openapi({ example: false }),
+    generation: z
+      .number()
+      .int()
+      .openapi({ example: 0, description: '0 = center, 1 = first generation, etc.' }),
+  })
+  .openapi('GraphViewEntity');
+
+// Response schema for graph link
+const GraphLinkSchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '660e8400-e29b-41d4-a716-446655440000' }),
+    type_id: z.string().uuid().openapi({ example: '660e8400-e29b-41d4-a716-446655440100' }),
+    type_name: z.string().openapi({ example: 'knows' }),
+    source_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    target_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+    properties: z.record(z.string(), z.unknown()).openapi({ example: { weight: 1 } }),
+    is_deleted: z.boolean().openapi({ example: false }),
+  })
+  .openapi('GraphViewLink');
+
+// Response schema for graph-view endpoint
+const GraphViewResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      center_entity: GraphEntitySchema,
+      entities: z.array(GraphEntitySchema).openapi({ description: 'All entities in the graph' }),
+      links: z.array(GraphLinkSchema).openapi({ description: 'All links between entities' }),
+      distinguishing_properties: z
+        .record(z.string(), z.array(z.string()))
+        .openapi({ description: 'Suggested distinguishing properties per entity type' }),
+      depth: z.number().int().openapi({ example: 2, description: 'Depth of traversal' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GraphViewResponse');
+
 /**
- * GET /api/entities/:id/graph-view
- * Get graph data optimized for visualization showing N generations of connected entities
- *
- * This endpoint is specifically designed for the UI graph visualization feature.
- * It returns:
- * - The center entity
- * - First and second generation connections with link details
- * - Suggested distinguishing properties for each entity type
- *
- * ACL filtering is applied:
- * - Authenticated users can only see entities and links they have read permission on
- * - Unauthenticated users can only see public entities and links (NULL acl_id)
+ * GET /api/graph/entities/:id/graph-view route definition
  */
-graph.get('/entities/:id/graph-view', optionalAuth(), validateQuery(graphViewSchema), async c => {
-  const entityId = c.req.param('id');
-  const query = c.get('validated_query') as z.infer<typeof graphViewSchema>;
+const graphViewRoute = createRoute({
+  method: 'get',
+  path: '/entities/{id}/graph-view',
+  tags: ['Graph'],
+  summary: 'Get graph visualization data',
+  description:
+    'Get graph data optimized for visualization showing N generations of connected entities. Returns the center entity, connected entities and links, and suggested distinguishing properties for each entity type. ACL filtering is applied: authenticated users can only see entities and links they have read permission on, unauthenticated users can only see public entities and links.',
+  operationId: 'getGraphView',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    params: GraphViewParamsSchema,
+    query: graphViewSchema,
+  },
+  responses: {
+    200: {
+      description: 'Graph visualization data',
+      content: {
+        'application/json': {
+          schema: GraphViewResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - insufficient permissions',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * GET /api/graph/entities/:id/graph-view
+ * Get graph data optimized for visualization showing N generations of connected entities
+ */
+graph.openapi(graphViewRoute, async c => {
+  const { id: entityId } = c.req.valid('param');
+  const query = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -935,7 +1033,15 @@ graph.get('/entities/:id/graph-view', optionalAuth(), validateQuery(graphViewSch
     // Validate that starting entity exists
     const centerEntity = await findLatestVersion(db, entityId);
     if (!centerEntity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission on center entity
@@ -943,12 +1049,28 @@ graph.get('/entities/:id/graph-view', optionalAuth(), validateQuery(graphViewSch
     if (user) {
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, centerAclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to access this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to access this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities
       if (centerAclId !== null) {
-        return c.json(response.forbidden('Authentication required to access this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to access this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -1195,13 +1317,18 @@ graph.get('/entities/:id/graph-view', optionalAuth(), validateQuery(graphViewSch
     });
 
     return c.json(
-      response.success({
-        center_entity: entities.get(centerEntity.id as string),
-        entities: Array.from(entities.values()),
-        links,
-        distinguishing_properties: Object.fromEntries(distinguishingProperties),
-        depth: maxDepth,
-      })
+      {
+        success: true as const,
+        data: {
+          center_entity: entities.get(centerEntity.id as string)!,
+          entities: Array.from(entities.values()),
+          links,
+          distinguishing_properties: Object.fromEntries(distinguishingProperties),
+          depth: maxDepth,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error fetching graph view data', error instanceof Error ? error : undefined);
