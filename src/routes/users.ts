@@ -887,20 +887,123 @@ usersRouter.openapi(updateUserRoute, async c => {
   }
 });
 
+// Query schema for user activity endpoint
+const activityQuerySchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '50',
+      description: 'Maximum number of activity items to return (1-100, default: 50)',
+    })
+    .transform(val => (val ? Math.min(Math.max(parseInt(val, 10) || 50, 1), 100) : 50)),
+});
+
+// Activity item schemas for response
+const EntityActivitySchema = z.object({
+  type: z.literal('entity').openapi({ example: 'entity' }),
+  id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+  type_id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+  version: z.unknown().openapi({ example: 1 }),
+  created_at: z.unknown().openapi({ example: 1704067200 }),
+  is_deleted: z.boolean().openapi({ example: false }),
+  is_latest: z.boolean().openapi({ example: true }),
+});
+
+const LinkActivitySchema = z.object({
+  type: z.literal('link').openapi({ example: 'link' }),
+  id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+  type_id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440003' }),
+  source_entity_id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+  target_entity_id: z.unknown().openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+  version: z.unknown().openapi({ example: 1 }),
+  created_at: z.unknown().openapi({ example: 1704067200 }),
+  is_deleted: z.boolean().openapi({ example: false }),
+  is_latest: z.boolean().openapi({ example: true }),
+});
+
+const UserActivityResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user_id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+      activity: z.array(z.union([EntityActivitySchema, LinkActivitySchema])).openapi({
+        description: 'Array of entity and link activity items, sorted by creation date descending',
+      }),
+      count: z
+        .number()
+        .int()
+        .openapi({ example: 10, description: 'Number of activity items returned' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserActivityResponse');
+
+/**
+ * GET /api/users/{id}/activity route definition
+ */
+const getUserActivityRoute = createRoute({
+  method: 'get',
+  path: '/{id}/activity',
+  tags: ['Users'],
+  summary: 'Get user activity',
+  description:
+    "Get a user's creation and edit history (entities and links they've created/modified). Only returns items the requesting user has read access to.",
+  operationId: 'getUserActivity',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: UserIdParamsSchema,
+    query: activityQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'User activity',
+      content: {
+        'application/json': {
+          schema: UserActivityResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to retrieve user activity',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/users/{id}/activity
  *
  * Get a user's creation and edit history (entities and links they've created/modified)
  * Only returns entities and links that the requesting user has read access to.
  */
-usersRouter.get('/:id/activity', requireAuth(), async c => {
+usersRouter.openapi(getUserActivityRoute, async c => {
   const logger = getLogger(c);
-  const userId = c.req.param('id');
+  const { id: userId } = c.req.valid('param');
   const currentUser = c.get('user');
-
-  // Get limit from query params (default 50, max 100)
-  const limitParam = c.req.query('limit');
-  const limit = limitParam ? Math.min(parseInt(limitParam, 10), 100) : 50;
+  const { limit } = c.req.valid('query');
 
   try {
     // Check if user exists
@@ -908,7 +1011,15 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
 
     if (!user) {
       logger.warn('User not found for activity query', { userId });
-      return c.json(response.notFound('User'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Build ACL filter for the requesting user (not the target user)
@@ -921,7 +1032,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
     );
 
     let entityActivities: Array<{
-      type: string;
+      type: 'entity';
       id: unknown;
       type_id: unknown;
       version: unknown;
@@ -930,7 +1041,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
       is_latest: boolean;
     }> = [];
     let linkActivities: Array<{
-      type: string;
+      type: 'link';
       id: unknown;
       type_id: unknown;
       source_entity_id: unknown;
@@ -986,7 +1097,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
       entityActivities = (
         (entities.results || []) as unknown as Array<Record<string, unknown>>
       ).map(e => ({
-        type: 'entity',
+        type: 'entity' as const,
         id: e.id,
         type_id: e.type_id,
         version: e.version,
@@ -997,7 +1108,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
 
       linkActivities = ((links.results || []) as unknown as Array<Record<string, unknown>>).map(
         l => ({
-          type: 'link',
+          type: 'link' as const,
           id: l.id,
           type_id: l.type_id,
           source_entity_id: l.source_entity_id,
@@ -1042,7 +1153,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
       );
 
       entityActivities = filteredEntities.map(e => ({
-        type: 'entity',
+        type: 'entity' as const,
         id: e.id,
         type_id: e.type_id,
         version: e.version,
@@ -1052,7 +1163,7 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
       }));
 
       linkActivities = filteredLinks.map(l => ({
-        type: 'link',
+        type: 'link' as const,
         id: l.id,
         type_id: l.type_id,
         source_entity_id: l.source_entity_id,
@@ -1071,15 +1182,28 @@ usersRouter.get('/:id/activity', requireAuth(), async c => {
     logger.info('User activity retrieved', { userId, activityCount: allActivities.length });
 
     return c.json(
-      response.success({
-        user_id: userId,
-        activity: allActivities,
-        count: allActivities.length,
-      })
+      {
+        success: true as const,
+        data: {
+          user_id: userId,
+          activity: allActivities,
+          count: allActivities.length,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error retrieving user activity', error as Error, { userId });
-    return c.json(response.error('Failed to retrieve user activity', 'USER_ACTIVITY_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to retrieve user activity',
+        code: 'USER_ACTIVITY_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
