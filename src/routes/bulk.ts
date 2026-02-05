@@ -7,6 +7,7 @@ import {
   bulkUpdateEntitiesSchema,
   bulkUpdateLinksSchema,
   bulkCreateResultItemSchema,
+  bulkUpdateResultItemSchema,
   bulkSummarySchema,
   type BulkCreateResultItem,
   type BulkUpdateResultItem,
@@ -549,16 +550,68 @@ bulk.openapi(bulkCreateLinksRoute, async c => {
   }
 });
 
-/**
- * PUT /api/bulk/entities
- * Batch update multiple entities in a single request
- * Creates new versions for each updated entity using D1 batch operations
- * Requires authentication and write permission on each entity
- */
-bulk.put('/entities', requireAuth(), validateJson(bulkUpdateEntitiesSchema), async c => {
-  const data = c.get('validated_json') as {
-    entities: Array<{ id: string; properties: Record<string, unknown> }>;
-  };
+// Response schema for bulk update operations
+const BulkUpdateSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      results: z.array(bulkUpdateResultItemSchema),
+      summary: bulkSummarySchema,
+    }),
+    message: z.string().optional().openapi({ example: 'Bulk entity update completed' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('BulkUpdateSuccessResponse');
+
+const bulkUpdateEntitiesRoute = createRoute({
+  method: 'put',
+  path: '/entities',
+  tags: ['Bulk Operations'],
+  summary: 'Bulk update entities',
+  description: 'Update multiple entities in a single request (max 100)',
+  operationId: 'bulkUpdateEntities',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: bulkUpdateEntitiesSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Bulk update results',
+      content: {
+        'application/json': {
+          schema: BulkUpdateSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+bulk.openapi(bulkUpdateEntitiesRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -737,8 +790,9 @@ bulk.put('/entities', requireAuth(), validateJson(bulkUpdateEntitiesSchema), asy
     });
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           results,
           summary: {
             total: data.entities.length,
@@ -746,8 +800,10 @@ bulk.put('/entities', requireAuth(), validateJson(bulkUpdateEntitiesSchema), asy
             failed: failureCount,
           },
         },
-        'Bulk entity update completed'
-      )
+        message: 'Bulk entity update completed',
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error in bulk update entities', error instanceof Error ? error : undefined);
