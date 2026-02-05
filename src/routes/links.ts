@@ -1,12 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
-import {
-  createLinkSchema,
-  updateLinkSchema,
-  linkResponseSchema,
-  UpdateLink,
-} from '../schemas/index.js';
+import { createLinkSchema, updateLinkSchema, linkResponseSchema } from '../schemas/index.js';
 import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -946,14 +941,90 @@ links.openapi(getLinkRoute, async c => {
 });
 
 /**
+ * PUT /api/links/:id route definition
+ */
+const updateLinkRoute = createRoute({
+  method: 'put',
+  path: '/{id}',
+  tags: ['Links'],
+  summary: 'Update link',
+  description:
+    'Update a link by creating a new version with the provided properties. Requires authentication and write permission on the link. The original link ID continues to work for lookups and will return the latest version.',
+  operationId: 'updateLink',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: LinkIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: updateLinkSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Link updated (new version created)',
+      content: {
+        'application/json': {
+          schema: LinkResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or schema validation failed',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - link is deleted (use restore endpoint first)',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * PUT /api/links/:id
  * Update link (creates new version)
  *
  * Requires authentication and write permission on the link.
  */
-links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
-  const id = c.req.param('id');
-  const data = c.get('validated_json') as UpdateLink;
+links.openapi(updateLinkRoute, async c => {
+  const { id } = c.req.valid('param');
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -965,20 +1036,41 @@ links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to update this link'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to update this link',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if link is soft-deleted
     if (currentVersion.is_deleted === 1) {
       return c.json(
-        response.error('Cannot update deleted link. Use restore endpoint first.', 'LINK_DELETED'),
+        {
+          success: false as const,
+          error: 'Cannot update deleted link. Use restore endpoint first.',
+          code: 'LINK_DELETED',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -997,11 +1089,13 @@ links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
 
     if (!schemaValidation.valid) {
       return c.json(
-        response.error(
-          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
-          'SCHEMA_VALIDATION_FAILED',
-          { validation_errors: schemaValidation.errors }
-        ),
+        {
+          success: false as const,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+          data: { validation_errors: schemaValidation.errors },
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -1039,9 +1133,16 @@ links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
     // Fetch the new version
     const updated = await db.prepare('SELECT * FROM links WHERE id = ?').bind(newId).first();
 
-    const result = {
-      ...updated,
+    const linkData = {
+      id: updated?.id as string,
+      type_id: updated?.type_id as string,
+      source_entity_id: updated?.source_entity_id as string,
+      target_entity_id: updated?.target_entity_id as string,
       properties: updated?.properties ? JSON.parse(updated.properties as string) : {},
+      version: updated?.version as number,
+      previous_version_id: (updated?.previous_version_id as string) || null,
+      created_at: updated?.created_at as number,
+      created_by: updated?.created_by as string,
       is_deleted: updated?.is_deleted === 1,
       is_latest: updated?.is_latest === 1,
     };
@@ -1074,7 +1175,15 @@ links.put('/:id', requireAuth(), validateJson(updateLinkSchema), async c => {
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.updated(result));
+    return c.json(
+      {
+        success: true as const,
+        data: linkData as z.infer<typeof linkResponseSchema>,
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })
