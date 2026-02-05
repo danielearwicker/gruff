@@ -46,7 +46,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate entity schemas** - Add `.openapi()` to `createEntitySchema`, `updateEntitySchema`, `entityQuerySchema` in `src/schemas/entity.ts`
+- [x] **Annotate entity schemas** - Add `.openapi()` to `createEntitySchema`, `updateEntitySchema`, `entityQuerySchema` in `src/schemas/entity.ts`
 - [ ] **Convert entities router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/entities.ts`
 
 Convert endpoints:
