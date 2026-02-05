@@ -58,7 +58,7 @@ Convert endpoints:
 - [x] **Convert DELETE /api/entities/:id** - Soft-deletes entity. Test: Delete entity
 - [x] **Convert POST /api/entities/:id/restore** - Restores soft-deleted entity. Test: Restore entity
 - [x] **Convert GET /api/entities/:id/versions** - Lists all versions. Test: Get version list
-- [ ] **Convert GET /api/entities/:id/versions/:version** - Gets specific version. Test: Get version by number
+- [x] **Convert GET /api/entities/:id/versions/:version** - Gets specific version. Test: Get version by number
 - [ ] **Convert GET /api/entities/:id/history** - Gets version history with diffs. Test: Get history
 - [ ] **Convert GET /api/entities/:id/outbound** - Gets outbound links. Test: Get outbound links
 - [ ] **Convert GET /api/entities/:id/inbound** - Gets inbound links. Test: Get inbound links

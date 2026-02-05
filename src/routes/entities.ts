@@ -1712,6 +1712,82 @@ entities.openapi(getEntityVersionsRoute, async c => {
   }
 });
 
+// Path parameters schema for entity ID and version number
+const EntityVersionParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Entity ID (UUID)',
+    }),
+  version: z.string().openapi({
+    param: { name: 'version', in: 'path' },
+    example: '1',
+    description: 'Version number (positive integer)',
+  }),
+});
+
+/**
+ * GET /api/entities/:id/versions/:version route definition
+ */
+const getEntityVersionRoute = createRoute({
+  method: 'get',
+  path: '/{id}/versions/{version}',
+  tags: ['Entities'],
+  summary: 'Get specific version of an entity',
+  description:
+    'Get a specific version of an entity by version number. Permission checking: Authenticated users must have read permission on the entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id (public).',
+  operationId: 'getEntityVersion',
+  request: {
+    params: EntityVersionParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Entity version found',
+      content: {
+        'application/json': {
+          schema: EntityResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid version number',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity or version not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get entity version route
+entities.use('/:id/versions/:version', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id/versions/:version
  * Get a specific version of an entity
@@ -1721,9 +1797,8 @@ entities.openapi(getEntityVersionsRoute, async c => {
  * - Entities with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/versions/:version', optionalAuth(), async c => {
-  const id = c.req.param('id');
-  const versionParam = c.req.param('version');
+entities.openapi(getEntityVersionRoute, async c => {
+  const { id, version: versionParam } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -1732,14 +1807,30 @@ entities.get('/:id/versions/:version', optionalAuth(), async c => {
     // Parse version number
     const versionNumber = parseInt(versionParam, 10);
     if (isNaN(versionNumber) || versionNumber < 1) {
-      return c.json(response.error('Invalid version number', 'INVALID_VERSION'), 400);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid version number',
+          code: 'INVALID_VERSION',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
     }
 
     // First, find the latest version to ensure the entity exists
     const latestVersion = await findLatestVersion(db, id);
 
     if (!latestVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -1748,12 +1839,28 @@ entities.get('/:id/versions/:version', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -1792,17 +1899,37 @@ entities.get('/:id/versions/:version', optionalAuth(), async c => {
       .first();
 
     if (!entity) {
-      return c.json(response.notFound('Version'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Version not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     const result = {
-      ...entity,
+      id: entity.id as string,
+      type_id: entity.type_id as string,
       properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+      version: entity.version as number,
+      previous_version_id: (entity.previous_version_id as string) || null,
+      created_at: entity.created_at as number,
+      created_by: entity.created_by as string,
       is_deleted: entity.is_deleted === 1,
       is_latest: entity.is_latest === 1,
     };
 
-    return c.json(response.success(result));
+    return c.json(
+      {
+        success: true as const,
+        data: result,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
