@@ -37,7 +37,7 @@ Convert endpoints:
 - [x] **Convert POST /api/auth/logout** - Invalidates session. Test: Logout via curl
 - [x] **Convert GET /api/auth/me** - Gets current user (requires auth). Test: Get user with Bearer token
 - [x] **Convert GET /api/auth/google** - Initiates Google OAuth. Test: Check redirect URL
-- [ ] **Convert GET /api/auth/google/callback** - Google OAuth callback. Test: Mock callback flow
+- [x] **Convert GET /api/auth/google/callback** - Google OAuth callback. Test: Mock callback flow
 - [ ] **Convert GET /api/auth/github** - Initiates GitHub OAuth. Test: Check redirect URL
 - [ ] **Convert GET /api/auth/github/callback** - GitHub OAuth callback. Test: Mock callback flow
 - [ ] **Convert GET /api/auth/providers** - Lists OAuth providers. Test: `curl http://localhost:8787/api/auth/providers`

@@ -1021,6 +1021,81 @@ const OAuthInitQuerySchema = z.object({
     }),
 });
 
+// Query schema for OAuth callback
+const OAuthCallbackQuerySchema = z.object({
+  code: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'code', in: 'query' },
+      description: 'Authorization code from OAuth provider',
+      example: '4/0AY0e-g7...',
+    }),
+  state: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'state', in: 'query' },
+      description: 'State parameter for CSRF protection',
+      example: 'abc123xyz',
+    }),
+  error: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'error', in: 'query' },
+      description: 'Error code if OAuth authentication failed',
+      example: 'access_denied',
+    }),
+  error_description: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'error_description', in: 'query' },
+      description: 'Human-readable error description',
+      example: 'The user denied access to your application',
+    }),
+});
+
+// Success response for OAuth callback (existing user login)
+const OAuthCallbackSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user: AuthUserSchema,
+      access_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      refresh_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      expires_in: z
+        .number()
+        .int()
+        .openapi({ example: 900, description: 'Token expiration in seconds' }),
+      token_type: z.literal('Bearer'),
+      is_new_user: z.boolean().openapi({ example: false }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('OAuthCallbackSuccessResponse');
+
+// Success response for OAuth callback (new user created)
+const OAuthCallbackCreatedResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user: AuthUserSchema,
+      access_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      refresh_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      expires_in: z
+        .number()
+        .int()
+        .openapi({ example: 900, description: 'Token expiration in seconds' }),
+      token_type: z.literal('Bearer'),
+      is_new_user: z.literal(true),
+    }),
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('OAuthCallbackCreatedResponse');
+
 /**
  * GET /api/auth/google route definition
  */
@@ -1046,6 +1121,75 @@ const googleOAuthInitRoute = createRoute({
     },
     302: {
       description: 'Redirect to Google OAuth (when ui_state is provided)',
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    501: {
+      description: 'Google OAuth is not configured',
+      content: {
+        'application/json': {
+          schema: OAuthNotConfiguredResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * GET /api/auth/google/callback route definition
+ */
+const googleOAuthCallbackRoute = createRoute({
+  method: 'get',
+  path: '/google/callback',
+  tags: ['Authentication'],
+  summary: 'Google OAuth callback',
+  description:
+    'Handles Google OAuth2 callback with authorization code. Creates or links user account and returns JWT tokens. When ui_state was provided in the initial request, redirects to UI with tokens.',
+  operationId: 'googleOAuthCallback',
+  request: {
+    query: OAuthCallbackQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'OAuth login successful (existing user)',
+      content: {
+        'application/json': {
+          schema: OAuthCallbackSuccessResponseSchema,
+        },
+      },
+    },
+    201: {
+      description: 'OAuth login successful (new user created)',
+      content: {
+        'application/json': {
+          schema: OAuthCallbackCreatedResponseSchema,
+        },
+      },
+    },
+    302: {
+      description: 'Redirect to UI with tokens (when ui_state was provided)',
+    },
+    400: {
+      description: 'Invalid callback - missing code/state, OAuth error, or invalid state',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Account is not active',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
     },
     500: {
       description: 'Server error',
@@ -1158,17 +1302,25 @@ authRouter.openapi(googleOAuthInitRoute, async c => {
  * Handles Google OAuth2 callback with authorization code
  * Creates or links user account and returns tokens
  */
-authRouter.get('/google/callback', async c => {
+authRouter.openapi(googleOAuthCallbackRoute, async c => {
   const logger = getLogger(c);
 
   // Check if Google OAuth is configured
   if (!c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET || !c.env.GOOGLE_REDIRECT_URI) {
     logger.warn('Google OAuth not fully configured');
-    return c.json(response.error('Google OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Google OAuth is not configured',
+        code: 'OAUTH_NOT_CONFIGURED',
+        timestamp: new Date().toISOString(),
+      },
+      501
+    );
   }
 
-  // Parse query parameters
-  const query = c.req.query();
+  // Get validated query parameters
+  const query = c.req.valid('query');
 
   // Check for OAuth error response
   if (query.error) {
@@ -1177,7 +1329,12 @@ authRouter.get('/google/callback', async c => {
       description: query.error_description,
     });
     return c.json(
-      response.error(query.error_description || 'OAuth authentication failed', 'OAUTH_ERROR'),
+      {
+        success: false as const,
+        error: query.error_description || 'OAuth authentication failed',
+        code: 'OAUTH_ERROR',
+        timestamp: new Date().toISOString(),
+      },
       400
     );
   }
@@ -1185,7 +1342,15 @@ authRouter.get('/google/callback', async c => {
   // Validate required parameters
   if (!query.code || !query.state) {
     logger.warn('Missing OAuth callback parameters');
-    return c.json(response.error('Missing authorization code or state', 'INVALID_CALLBACK'), 400);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Missing authorization code or state',
+        code: 'INVALID_CALLBACK',
+        timestamp: new Date().toISOString(),
+      },
+      400
+    );
   }
 
   const { code, state } = query;
@@ -1195,7 +1360,15 @@ authRouter.get('/google/callback', async c => {
     const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${state}`);
     if (!storedStateJson) {
       logger.warn('OAuth state not found or expired', { state });
-      return c.json(response.error('Invalid or expired state parameter', 'INVALID_STATE'), 400);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid or expired state parameter',
+          code: 'INVALID_STATE',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
     }
 
     // Parse stored state
@@ -1204,7 +1377,15 @@ authRouter.get('/google/callback', async c => {
 
     if (!parsedState || !storedState.codeVerifier) {
       logger.warn('Invalid OAuth state data');
-      return c.json(response.error('Invalid state data', 'INVALID_STATE'), 400);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid state data',
+          code: 'INVALID_STATE',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
     }
 
     // Delete state from KV (one-time use)
@@ -1229,7 +1410,12 @@ authRouter.get('/google/callback', async c => {
     if (!profileValidation.valid) {
       logger.warn('Invalid Google profile', { error: profileValidation.error });
       return c.json(
-        response.error(profileValidation.error || 'Invalid profile', 'INVALID_PROFILE'),
+        {
+          success: false as const,
+          error: profileValidation.error || 'Invalid profile',
+          code: 'INVALID_PROFILE',
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -1283,7 +1469,15 @@ authRouter.get('/google/callback', async c => {
       // Check if account is active
       if (!existingUser.is_active) {
         logger.warn('Google login attempt for inactive account', { email: googleProfile.email });
-        return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 401);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Account is not active',
+            code: 'ACCOUNT_INACTIVE',
+            timestamp: new Date().toISOString(),
+          },
+          401
+        );
       }
     } else {
       // Create new user (new users are not admins by default)
@@ -1309,7 +1503,15 @@ authRouter.get('/google/callback', async c => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Server configuration error',
+          code: 'CONFIG_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     // Generate access and refresh tokens with admin status
@@ -1335,49 +1537,85 @@ authRouter.get('/google/callback', async c => {
     }
 
     // Return success response with tokens
-    const statusCode = isNewUser ? 201 : 200;
-    const responseData = {
-      user: {
-        id: userId,
-        email: googleProfile.email,
-        display_name: displayName,
-        provider: 'google' as const,
-        created_at: createdAt,
-        updated_at: updatedAt,
-        is_active: true,
-        is_admin: isAdmin,
-      },
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-      expires_in: tokens.expiresIn,
-      token_type: 'Bearer',
-      is_new_user: isNewUser,
-    };
-
     if (isNewUser) {
-      return c.json(response.created(responseData), statusCode);
+      return c.json(
+        {
+          success: true as const,
+          data: {
+            user: {
+              id: userId,
+              email: googleProfile.email,
+              display_name: displayName,
+              provider: 'google' as const,
+              created_at: createdAt,
+              updated_at: updatedAt,
+              is_active: true,
+              is_admin: isAdmin,
+            },
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            expires_in: tokens.expiresIn,
+            token_type: 'Bearer' as const,
+            is_new_user: true as const,
+          },
+          message: 'Resource created successfully',
+          timestamp: new Date().toISOString(),
+        },
+        201
+      );
     }
-    return c.json(response.success(responseData), statusCode);
+
+    return c.json(
+      {
+        success: true as const,
+        data: {
+          user: {
+            id: userId,
+            email: googleProfile.email,
+            display_name: displayName,
+            provider: 'google' as const,
+            created_at: createdAt,
+            updated_at: updatedAt,
+            is_active: true,
+            is_admin: isAdmin,
+          },
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.expiresIn,
+          token_type: 'Bearer' as const,
+          is_new_user: false,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error during Google OAuth callback', error as Error);
 
     // Check if there's UI state to redirect errors
-    const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${query.state}`);
-    if (storedStateJson) {
-      try {
-        const storedState = JSON.parse(storedStateJson);
-        if (storedState.ui_state) {
-          return c.redirect(
-            `/ui/auth/login?error=${encodeURIComponent('Failed to complete Google sign-in')}`
-          );
+    if (query.state) {
+      const storedStateJson = await c.env.KV.get(`${OAUTH_STATE_PREFIX}${query.state}`);
+      if (storedStateJson) {
+        try {
+          const storedState = JSON.parse(storedStateJson);
+          if (storedState.ui_state) {
+            return c.redirect(
+              `/ui/auth/login?error=${encodeURIComponent('Failed to complete Google sign-in')}`
+            );
+          }
+        } catch {
+          // Ignore parsing errors
         }
-      } catch {
-        // Ignore parsing errors
       }
     }
 
     return c.json(
-      response.error('Failed to complete Google sign-in', 'OAUTH_CALLBACK_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to complete Google sign-in',
+        code: 'OAUTH_CALLBACK_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }
