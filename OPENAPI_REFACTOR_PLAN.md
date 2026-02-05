@@ -26,7 +26,7 @@ Then convert each endpoint:
 
 Prepare schemas and router:
 
-- [ ] **Annotate auth schemas** - Add `.openapi()` to `createUserSchema`, `loginSchema`, `refreshTokenSchema`, `logoutSchema` in `src/schemas/user.ts`
+- [x] **Annotate auth schemas** - Add `.openapi()` to `createUserSchema`, `loginSchema`, `refreshTokenSchema`, `logoutSchema` in `src/schemas/user.ts`
 - [ ] **Convert auth router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/auth.ts`
 
 Convert endpoints:

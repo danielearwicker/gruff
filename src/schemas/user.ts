@@ -68,20 +68,32 @@ export const userResponseSchema = userSchema
   .openapi('User');
 
 // Login schema
-export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
-});
+export const loginSchema = z
+  .object({
+    email: z.string().email('Invalid email address').openapi({ example: 'user@example.com' }),
+    password: z.string().min(1, 'Password is required').openapi({ example: 'securepassword123' }),
+  })
+  .openapi('Login');
 
 // Token refresh schema
-export const refreshTokenSchema = z.object({
-  refresh_token: z.string().min(1, 'Refresh token is required'),
-});
+export const refreshTokenSchema = z
+  .object({
+    refresh_token: z
+      .string()
+      .min(1, 'Refresh token is required')
+      .openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+  })
+  .openapi('RefreshToken');
 
 // Logout schema
-export const logoutSchema = z.object({
-  refresh_token: z.string().min(1, 'Refresh token is required'),
-});
+export const logoutSchema = z
+  .object({
+    refresh_token: z
+      .string()
+      .min(1, 'Refresh token is required')
+      .openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+  })
+  .openapi('Logout');
 
 // JWT payload schema
 export const jwtPayloadSchema = z.object({
