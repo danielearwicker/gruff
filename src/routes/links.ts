@@ -1,11 +1,11 @@
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   createLinkSchema,
   updateLinkSchema,
   linkQuerySchema,
-  CreateLink,
+  linkResponseSchema,
   UpdateLink,
   LinkQuery,
 } from '../schemas/index.js';
@@ -44,6 +44,30 @@ type Bindings = {
 };
 
 const links = new OpenAPIHono<{ Bindings: Bindings }>();
+
+// Response schema for link operations
+const LinkResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: linkResponseSchema,
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkResponse');
+
+// Error response schema for link operations
+const LinkErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Link type not found' }),
+    code: z.string().openapi({ example: 'TYPE_NOT_FOUND' }),
+    data: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .openapi({ description: 'Additional error details' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkErrorResponse');
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -93,18 +117,70 @@ async function findLatestVersion(
 }
 
 /**
- * POST /api/links
- * Create a new link
- *
- * Authentication required. The creator is automatically granted write permission.
- *
- * Permission inheritance:
- * - If `acl` is not provided: creator gets write permission (private to creator)
- * - If `acl` is an empty array: link is public (no ACL restrictions)
- * - If `acl` is provided with entries: uses those entries, ensuring creator has write permission
+ * POST /api/links route definition
  */
-links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
-  const data = c.get('validated_json') as CreateLink;
+const createLinkRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Links'],
+  summary: 'Create link',
+  description:
+    'Create a new link between two entities. Authentication required. The creator is automatically granted write permission. Permission inheritance: If `acl` is not provided, creator gets write permission (private to creator). If `acl` is an empty array, link is public (no ACL restrictions). If `acl` is provided with entries, uses those entries while ensuring creator has write permission.',
+  operationId: 'createLink',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: createLinkSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Link created',
+      content: {
+        'application/json': {
+          schema: LinkResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or schema validation failed',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link type, source entity, or target entity not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * POST /api/links handler
+ * Create a new link
+ */
+links.openapi(createLinkRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const user = c.get('user');
 
@@ -120,7 +196,15 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
       .first();
 
     if (!typeRecord) {
-      return c.json(response.error('Link type not found', 'TYPE_NOT_FOUND'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link type not found',
+          code: 'TYPE_NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Validate properties against the type's JSON schema (if defined)
@@ -131,11 +215,13 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
 
     if (!schemaValidation.valid) {
       return c.json(
-        response.error(
-          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
-          'SCHEMA_VALIDATION_FAILED',
-          { validation_errors: schemaValidation.errors }
-        ),
+        {
+          success: false as const,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+          data: { validation_errors: schemaValidation.errors },
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -148,7 +234,12 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
 
     if (!sourceEntity) {
       return c.json(
-        response.error('Source entity not found or is deleted', 'SOURCE_ENTITY_NOT_FOUND'),
+        {
+          success: false as const,
+          error: 'Source entity not found or is deleted',
+          code: 'SOURCE_ENTITY_NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
         404
       );
     }
@@ -161,7 +252,12 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
 
     if (!targetEntity) {
       return c.json(
-        response.error('Target entity not found or is deleted', 'TARGET_ENTITY_NOT_FOUND'),
+        {
+          success: false as const,
+          error: 'Target entity not found or is deleted',
+          code: 'TARGET_ENTITY_NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
         404
       );
     }
@@ -171,7 +267,12 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
       const validation = await validateAclPrincipals(db, data.acl);
       if (!validation.valid) {
         return c.json(
-          response.error(`Invalid ACL entries: ${validation.errors.join(', ')}`, 'INVALID_ACL'),
+          {
+            success: false as const,
+            error: `Invalid ACL entries: ${validation.errors.join(', ')}`,
+            code: 'INVALID_ACL',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -210,7 +311,7 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
     const created = await db.prepare('SELECT * FROM links WHERE id = ?').bind(id).first();
 
     // Parse properties back to object
-    const result = {
+    const linkData = {
       ...created,
       properties: created?.properties ? JSON.parse(created.properties as string) : {},
       is_deleted: created?.is_deleted === 1,
@@ -232,7 +333,15 @@ links.post('/', requireAuth(), validateJson(createLinkSchema), async c => {
         .warn('Failed to create audit log', { error: auditError });
     }
 
-    return c.json(response.created(result), 201);
+    return c.json(
+      {
+        success: true as const,
+        data: linkData as z.infer<typeof linkResponseSchema>,
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
+      201
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })

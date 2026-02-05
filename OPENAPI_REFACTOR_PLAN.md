@@ -75,7 +75,7 @@ Prepare:
 
 Convert endpoints:
 
-- [ ] **Convert POST /api/links** - Creates link between entities. Test: Create link
+- [x] **Convert POST /api/links** - Creates link between entities. Test: Create link
 - [ ] **Convert GET /api/links** - Lists links with ACL filtering. Test: List links
 - [ ] **Convert GET /api/links/:id** - Gets link by ID. Test: Get specific link
 - [ ] **Convert PUT /api/links/:id** - Updates link (creates new version). Test: Update link
