@@ -96,7 +96,7 @@ Prepare:
 
 Convert endpoints:
 
-- [ ] **Convert POST /api/graph/traverse** - Multi-hop graph traversal. Test: Traverse with depth/direction filters
+- [x] **Convert POST /api/graph/traverse** - Multi-hop graph traversal. Test: Traverse with depth/direction filters
 - [ ] **Convert GET /api/graph/path** - Finds shortest path between entities. Test: Find path between two entities
 - [ ] **Convert GET /api/graph/entities/:id/graph-view** - Gets graph visualization data. Test: Get graph view for entity
 

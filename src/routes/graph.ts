@@ -14,6 +14,39 @@ type Bindings = {
 
 const graph = new OpenAPIHono<{ Bindings: Bindings }>();
 
+// Response schema for graph traversal
+const GraphTraverseResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      entities: z.array(z.record(z.string(), z.unknown())).openapi({
+        description: 'Traversed entities (with optional paths if return_paths is true)',
+      }),
+      count: z.number().int().openapi({ example: 5, description: 'Number of entities found' }),
+      start_entity_id: z.string().uuid().openapi({
+        example: '550e8400-e29b-41d4-a716-446655440000',
+        description: 'Starting entity ID',
+      }),
+      max_depth: z.number().int().openapi({ example: 3, description: 'Maximum traversal depth' }),
+      direction: z.enum(['outbound', 'inbound', 'both']).openapi({
+        example: 'outbound',
+        description: 'Direction of traversal',
+      }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GraphTraverseResponse');
+
+// Error response schema for graph operations
+const GraphErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Starting entity not found' }),
+    code: z.string().openapi({ example: 'NOT_FOUND' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GraphErrorResponse');
+
 // Helper function to find the latest version of an entity by any ID in its version chain
 async function findLatestVersion(
   db: D1Database,
@@ -49,28 +82,89 @@ async function findLatestVersion(
 }
 
 /**
+ * POST /api/graph/traverse route definition
+ */
+const traverseRoute = createRoute({
+  method: 'post',
+  path: '/traverse',
+  tags: ['Graph'],
+  summary: 'Traverse graph',
+  description:
+    'Perform multi-hop graph traversal from a starting entity. ACL filtering is applied: authenticated users can only traverse entities and links they have read permission on, unauthenticated users can only traverse public entities and links.',
+  operationId: 'traverseGraph',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: traverseSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Traversal results',
+      content: {
+        'application/json': {
+          schema: GraphTraverseResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - insufficient permissions',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Starting entity not found',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/graph/traverse
  * Advanced multi-hop graph traversal with configurable depth and filtering
- *
- * ACL filtering is applied:
- * - Authenticated users can only traverse entities and links they have read permission on
- * - Unauthenticated users can only traverse public entities and links (NULL acl_id)
  */
-graph.post('/traverse', optionalAuth(), async c => {
+graph.openapi(traverseRoute, async c => {
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
   const logger = getLogger(c).child({ module: 'graph' });
 
   try {
-    // Parse and validate request body
-    const body = await c.req.json();
-    const params = traverseSchema.parse(body);
+    const params = c.req.valid('json');
 
     // Validate that starting entity exists
     const startEntity = await findLatestVersion(db, params.start_entity_id);
     if (!startEntity) {
-      return c.json(response.notFound('Starting entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Starting entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission on starting entity
@@ -78,12 +172,28 @@ graph.post('/traverse', optionalAuth(), async c => {
     if (user) {
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, startAclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to access this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to access this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities
       if (startAclId !== null) {
-        return c.json(response.forbidden('Authentication required to access this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to access this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -354,18 +464,20 @@ graph.post('/traverse', optionalAuth(), async c => {
     });
 
     return c.json(
-      response.success({
-        entities: result,
-        count: result.length,
-        start_entity_id: params.start_entity_id,
-        max_depth: params.max_depth,
-        direction: params.direction,
-      })
+      {
+        success: true as const,
+        data: {
+          entities: result,
+          count: result.length,
+          start_entity_id: params.start_entity_id,
+          max_depth: params.max_depth,
+          direction: params.direction,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return c.json(response.error('Validation error', 'VALIDATION_ERROR', error.issues), 400);
-    }
     logger.error('Error during graph traversal', error instanceof Error ? error : undefined);
     throw error;
   }
