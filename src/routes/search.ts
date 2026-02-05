@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { ErrorResponseSchema } from '../schemas/openapi-common.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
@@ -35,6 +35,22 @@ const SearchEntitiesResponseSchema = z
     timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
   })
   .openapi('SearchEntitiesResponse');
+
+// Response schema for cursor-paginated link search results
+const SearchLinksResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(z.record(z.string(), z.unknown())).openapi({
+      description: 'Array of matching links',
+    }),
+    metadata: z.object({
+      hasMore: z.boolean().openapi({ example: false, description: 'Whether more results exist' }),
+      cursor: z.string().optional().openapi({ description: 'Cursor for next page of results' }),
+      total: z.number().int().optional().openapi({ description: 'Total number of matching links' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('SearchLinksResponse');
 
 /**
  * POST /api/search/entities route definition
@@ -324,16 +340,62 @@ search.openapi(searchEntitiesRoute, async c => {
 });
 
 /**
+ * POST /api/search/links route definition
+ */
+const searchLinksRoute = createRoute({
+  method: 'post',
+  path: '/links',
+  tags: ['Search'],
+  summary: 'Search links',
+  description:
+    'Search links by JSON properties with advanced filtering. ACL filtering is applied: authenticated users see links they have read permission on, resources with NULL acl_id are visible to all authenticated users, unauthenticated requests only see resources with NULL acl_id (public).',
+  operationId: 'searchLinks',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: searchLinksSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Search results',
+      content: {
+        'application/json': {
+          schema: SearchLinksResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid filter expression or property filter',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Search failed',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/search/links
  * Search for links based on criteria
- *
- * ACL filtering is applied when authenticated:
- * - Authenticated users see links they have read permission on
- * - Resources with NULL acl_id are visible to all authenticated users
- * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c => {
-  const criteria = c.get('validated_json') as z.infer<typeof searchLinksSchema>;
+search.openapi(searchLinksRoute, async c => {
+  const criteria = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -433,10 +495,12 @@ search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c =
       } catch (error) {
         logger.error('Invalid filter expression', error as Error);
         return c.json(
-          response.error(
-            `Invalid filter expression: ${(error as Error).message}`,
-            'INVALID_FILTER'
-          ),
+          {
+            success: false as const,
+            error: `Invalid filter expression: ${(error as Error).message}`,
+            code: 'INVALID_FILTER',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -453,7 +517,12 @@ search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c =
       } catch (error) {
         logger.error('Invalid property filter', error as Error);
         return c.json(
-          response.error(`Invalid property filter: ${(error as Error).message}`, 'INVALID_FILTER'),
+          {
+            success: false as const,
+            error: `Invalid property filter: ${(error as Error).message}`,
+            code: 'INVALID_FILTER',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -569,10 +638,29 @@ search.post('/links', optionalAuth(), validateJson(searchLinksSchema), async c =
       cursor: nextCursor,
     });
 
-    return c.json(response.cursorPaginated(parsedLinks, nextCursor, hasMore, criteria.limit));
+    return c.json(
+      {
+        success: true as const,
+        data: parsedLinks,
+        metadata: {
+          hasMore,
+          ...(nextCursor ? { cursor: nextCursor } : {}),
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Link search failed', error as Error);
-    return c.json(response.error('Link search failed', 'SEARCH_ERROR'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Link search failed',
+        code: 'SEARCH_ERROR',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
