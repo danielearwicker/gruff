@@ -1,13 +1,11 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   createEntitySchema,
   updateEntitySchema,
-  entityQuerySchema,
   entityResponseSchema,
   UpdateEntity,
-  EntityQuery,
 } from '../schemas/index.js';
 import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
@@ -40,6 +38,7 @@ import {
 type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
+  JWT_SECRET: string;
   ENVIRONMENT: string;
 };
 
@@ -166,6 +165,128 @@ const createEntityRoute = createRoute({
     },
     404: {
       description: 'Type not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Paginated entity list response schema
+const EntityListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(entityResponseSchema),
+    metadata: z
+      .object({
+        hasMore: z.boolean().openapi({ example: true }),
+        cursor: z
+          .string()
+          .optional()
+          .openapi({ example: '1704067200:550e8400-e29b-41d4-a716-446655440000' }),
+        total: z.number().int().optional().openapi({ example: 100 }),
+      })
+      .openapi({ description: 'Pagination metadata' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityListResponse');
+
+// OpenAPI-specific query schema for entity listing (without transforms for proper type inference)
+const listEntitiesQuerySchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '20',
+      description: 'Maximum number of items to return (1-100)',
+    }),
+  cursor: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'cursor', in: 'query' },
+      example: '1704067200:550e8400-e29b-41d4-a716-446655440000',
+      description: 'Cursor for pagination',
+    }),
+  include_deleted: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'include_deleted', in: 'query' },
+      example: 'false',
+      description: 'Whether to include deleted entities',
+    }),
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,type_id,properties',
+      description: 'Comma-separated list of fields to return',
+    }),
+  type_id: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'type_id', in: 'query' },
+      example: 'Person',
+      description: 'Filter by entity type',
+    }),
+  created_by: z
+    .string()
+    .uuid()
+    .optional()
+    .openapi({
+      param: { name: 'created_by', in: 'query' },
+      example: '550e8400-e29b-41d4-a716-446655440001',
+      description: 'Filter by creator user ID',
+    }),
+  created_after: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'created_after', in: 'query' },
+      example: '1704067200',
+      description: 'Filter entities created after this Unix timestamp',
+    }),
+  created_before: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'created_before', in: 'query' },
+      example: '1704153600',
+      description: 'Filter entities created before this Unix timestamp',
+    }),
+});
+
+/**
+ * GET /api/entities route definition
+ */
+const listEntitiesRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Entities'],
+  summary: 'List entities',
+  description:
+    'List entities with optional filtering and cursor-based pagination. ACL filtering is applied based on authentication status: authenticated users see entities they have read permission on, unauthenticated requests only see public entities (NULL acl_id).',
+  operationId: 'listEntities',
+  request: {
+    query: listEntitiesQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'List of entities with pagination metadata',
+      content: {
+        'application/json': {
+          schema: EntityListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid query parameters or field selection',
       content: {
         'application/json': {
           schema: EntityErrorResponseSchema,
@@ -309,20 +430,36 @@ entities.openapi(createEntityRoute, async c => {
   }
 });
 
+// Apply optionalAuth middleware for the list entities route
+// Note: Must be registered before the openapi handler
+entities.use('/', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities
  * List entities with optional filtering and cursor-based pagination
- *
- * ACL filtering is applied when authenticated:
- * - Authenticated users see entities they have read permission on
- * - Resources with NULL acl_id are visible to all authenticated users
- * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
-  const query = c.get('validated_query') as EntityQuery;
+entities.openapi(listEntitiesRoute, async c => {
+  const rawQuery = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
+
+  // Parse query parameters with proper type coercion
+  const limitStr = rawQuery.limit ?? '20';
+  const limit = Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100);
+  const includeDeleted = rawQuery.include_deleted === 'true';
+  const cursor = rawQuery.cursor;
+  const fields = rawQuery.fields;
+  const typeId = rawQuery.type_id;
+  const createdBy = rawQuery.created_by;
+  const createdAfter = rawQuery.created_after ? parseInt(rawQuery.created_after, 10) : undefined;
+  const createdBefore = rawQuery.created_before ? parseInt(rawQuery.created_before, 10) : undefined;
 
   try {
     let sql = 'SELECT * FROM entities WHERE is_latest = 1';
@@ -345,28 +482,28 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
     }
 
     // Apply other filters
-    if (!query.include_deleted) {
+    if (!includeDeleted) {
       sql += ' AND is_deleted = 0';
     }
 
-    if (query.type_id) {
+    if (typeId) {
       sql += ' AND type_id = ?';
-      bindings.push(query.type_id);
+      bindings.push(typeId);
     }
 
-    if (query.created_by) {
+    if (createdBy) {
       sql += ' AND created_by = ?';
-      bindings.push(query.created_by);
+      bindings.push(createdBy);
     }
 
-    if (query.created_after) {
+    if (createdAfter !== undefined && !isNaN(createdAfter)) {
       sql += ' AND created_at >= ?';
-      bindings.push(query.created_after);
+      bindings.push(createdAfter);
     }
 
-    if (query.created_before) {
+    if (createdBefore !== undefined && !isNaN(createdBefore)) {
       sql += ' AND created_at <= ?';
-      bindings.push(query.created_before);
+      bindings.push(createdBefore);
     }
 
     // JSON property filters: extract property_<key> query parameters
@@ -396,9 +533,9 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
     }
 
     // Cursor-based pagination: cursor is "created_at:id" for stable ordering
-    if (query.cursor) {
+    if (cursor) {
       try {
-        const [cursorTimestamp, cursorId] = query.cursor.split(':');
+        const [cursorTimestamp, cursorId] = cursor.split(':');
         const timestamp = parseInt(cursorTimestamp, 10);
         if (!isNaN(timestamp) && cursorId) {
           // Get records where created_at < cursor OR (created_at = cursor AND id < cursorId)
@@ -407,9 +544,7 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
         }
       } catch {
         // Invalid cursor format, ignore and continue without cursor
-        getLogger(c)
-          .child({ module: 'entities' })
-          .warn('Invalid cursor format', { cursor: query.cursor });
+        getLogger(c).child({ module: 'entities' }).warn('Invalid cursor format', { cursor });
       }
     }
 
@@ -417,7 +552,6 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
 
     // Fetch limit + 1 to check if there are more results
     // If using per-row ACL filtering, fetch more to account for filtered items
-    const limit = query.limit || 20;
     const fetchLimit = aclFilter && !aclFilter.useFilter ? (limit + 1) * 3 : limit + 1;
     sql += ' LIMIT ?';
     bindings.push(fetchLimit);
@@ -451,29 +585,42 @@ entities.get('/', optionalAuth(), validateQuery(entityQuerySchema), async c => {
     // Apply field selection if requested
     const fieldSelection = applyFieldSelectionToArray(
       entitiesData as Record<string, unknown>[],
-      query.fields,
+      fields,
       ENTITY_ALLOWED_FIELDS
     );
 
     if (!fieldSelection.success) {
       return c.json(
-        response.error(
-          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-          'INVALID_FIELDS',
-          { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) }
-        ),
+        {
+          success: false as const,
+          error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          code: 'INVALID_FIELDS',
+          data: { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) },
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
 
     // Generate next cursor from the last item
-    let nextCursor: string | null = null;
+    let nextCursor: string | undefined = undefined;
     if (hasMore && items.length > 0) {
       const lastItem = items[items.length - 1];
       nextCursor = `${lastItem.created_at}:${lastItem.id}`;
     }
 
-    return c.json(response.cursorPaginated(fieldSelection.data, nextCursor, hasMore));
+    return c.json(
+      {
+        success: true as const,
+        data: fieldSelection.data as z.infer<typeof entityResponseSchema>[],
+        metadata: {
+          hasMore,
+          ...(nextCursor && { cursor: nextCursor }),
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
