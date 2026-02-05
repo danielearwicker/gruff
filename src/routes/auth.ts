@@ -1625,23 +1625,101 @@ authRouter.openapi(googleOAuthCallbackRoute, async c => {
 // GitHub OAuth2 Routes
 // =============================================================================
 
+// Response schema for GitHub OAuth not configured
+const GitHubOAuthNotConfiguredResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'GitHub OAuth is not configured' }),
+    code: z.string().openapi({ example: 'OAUTH_NOT_CONFIGURED' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GitHubOAuthNotConfiguredResponse');
+
+// Response schema for GitHub OAuth init success
+const GitHubOAuthInitSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      authorization_url: z
+        .string()
+        .url()
+        .openapi({ example: 'https://github.com/login/oauth/authorize?...' }),
+      state: z.string().openapi({ example: 'abc123' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GitHubOAuthInitSuccessResponse');
+
+/**
+ * GET /api/auth/github route definition
+ */
+const githubOAuthInitRoute = createRoute({
+  method: 'get',
+  path: '/github',
+  tags: ['Authentication'],
+  summary: 'Initiate GitHub OAuth',
+  description:
+    'Initiates GitHub OAuth2 sign-in flow. Returns authorization URL for redirect. If ui_state query parameter is provided, redirects directly to GitHub instead of returning JSON.',
+  operationId: 'initiateGitHubOAuth',
+  request: {
+    query: OAuthInitQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'GitHub OAuth authorization URL',
+      content: {
+        'application/json': {
+          schema: GitHubOAuthInitSuccessResponseSchema,
+        },
+      },
+    },
+    302: {
+      description: 'Redirect to GitHub OAuth (when ui_state is provided)',
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    501: {
+      description: 'GitHub OAuth is not configured',
+      content: {
+        'application/json': {
+          schema: GitHubOAuthNotConfiguredResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/auth/github
  *
  * Initiates GitHub OAuth2 sign-in flow
  * Returns authorization URL for redirect
  */
-authRouter.get('/github', async c => {
+authRouter.openapi(githubOAuthInitRoute, async c => {
   const logger = getLogger(c);
 
   // Check if GitHub OAuth is configured
   if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_REDIRECT_URI) {
     logger.warn('GitHub OAuth not configured');
-    return c.json(response.error('GitHub OAuth is not configured', 'OAUTH_NOT_CONFIGURED'), 501);
+    return c.json(
+      {
+        success: false as const,
+        error: 'GitHub OAuth is not configured',
+        code: 'OAUTH_NOT_CONFIGURED',
+        timestamp: new Date().toISOString(),
+      },
+      501
+    );
   }
 
   // Check if this is a UI-initiated OAuth flow
-  const uiState = c.req.query('ui_state');
+  const { ui_state: uiState } = c.req.valid('query');
 
   try {
     const config: GitHubOAuthConfig = {
@@ -1674,10 +1752,15 @@ authRouter.get('/github', async c => {
     }
 
     return c.json(
-      response.success({
-        authorization_url: authUrl,
-        state: state,
-      })
+      {
+        success: true as const,
+        data: {
+          authorization_url: authUrl,
+          state: state,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error generating GitHub OAuth URL', error as Error);
@@ -1686,7 +1769,15 @@ authRouter.get('/github', async c => {
         `/ui/auth/login?error=${encodeURIComponent('Failed to initiate GitHub sign-in')}`
       );
     }
-    return c.json(response.error('Failed to initiate GitHub sign-in', 'OAUTH_INIT_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to initiate GitHub sign-in',
+        code: 'OAUTH_INIT_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
