@@ -19,7 +19,6 @@ import {
   validateRefreshToken as validateStoredRefreshToken,
   invalidateSession,
 } from '../utils/session.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
   GoogleOAuthConfig,
@@ -2185,16 +2184,58 @@ authRouter.openapi(githubOAuthCallbackRoute, async c => {
 // Auth Providers Discovery Endpoint
 // =============================================================================
 
+// Schema for a single auth provider
+const AuthProviderSchema = z
+  .object({
+    id: z.string().openapi({ example: 'google' }),
+    name: z.string().openapi({ example: 'Google' }),
+    type: z.enum(['local', 'oauth2']).openapi({ example: 'oauth2' }),
+    enabled: z.boolean().openapi({ example: true }),
+    authorize_url: z.string().optional().openapi({ example: '/api/auth/google' }),
+  })
+  .openapi('AuthProvider');
+
+// Success response for providers endpoint
+const ProvidersSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      providers: z.array(AuthProviderSchema),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('ProvidersSuccessResponse');
+
 /**
- * Provider information returned by the providers endpoint
+ * GET /api/auth/providers route definition
  */
-interface AuthProvider {
-  id: string;
-  name: string;
-  type: 'local' | 'oauth2';
-  enabled: boolean;
-  authorize_url?: string;
-}
+const providersRoute = createRoute({
+  method: 'get',
+  path: '/providers',
+  tags: ['Authentication'],
+  summary: 'List available auth providers',
+  description:
+    'Returns a list of available authentication providers. This allows clients to discover which auth methods are configured and available.',
+  operationId: 'listAuthProviders',
+  responses: {
+    200: {
+      description: 'List of authentication providers',
+      content: {
+        'application/json': {
+          schema: ProvidersSuccessResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
 
 /**
  * GET /api/auth/providers
@@ -2202,11 +2243,17 @@ interface AuthProvider {
  * Returns a list of available authentication providers.
  * This allows clients to discover which auth methods are configured and available.
  */
-authRouter.get('/providers', async c => {
+authRouter.openapi(providersRoute, async c => {
   const logger = getLogger(c);
 
   try {
-    const providers: AuthProvider[] = [];
+    const providers: Array<{
+      id: string;
+      name: string;
+      type: 'local' | 'oauth2';
+      enabled: boolean;
+      authorize_url?: string;
+    }> = [];
 
     // Local authentication is always available
     providers.push({
@@ -2242,14 +2289,24 @@ authRouter.get('/providers', async c => {
     });
 
     return c.json(
-      response.success({
-        providers,
-      })
+      {
+        success: true as const,
+        data: {
+          providers,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error retrieving auth providers', error as Error);
     return c.json(
-      response.error('Failed to retrieve auth providers', 'PROVIDERS_RETRIEVAL_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to retrieve auth providers',
+        code: 'PROVIDERS_RETRIEVAL_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }
