@@ -80,7 +80,7 @@ Convert endpoints:
 - [x] **Convert GET /api/links/:id** - Gets link by ID. Test: Get specific link
 - [x] **Convert PUT /api/links/:id** - Updates link (creates new version). Test: Update link
 - [x] **Convert DELETE /api/links/:id** - Soft-deletes link. Test: Delete link
-- [ ] **Convert POST /api/links/:id/restore** - Restores soft-deleted link. Test: Restore link
+- [x] **Convert POST /api/links/:id/restore** - Restores soft-deleted link. Test: Restore link
 - [ ] **Convert GET /api/links/:id/versions** - Lists all versions. Test: Get version list
 - [ ] **Convert GET /api/links/:id/versions/:version** - Gets specific version. Test: Get version by number
 - [ ] **Convert GET /api/links/:id/history** - Gets version history with diffs. Test: Get history

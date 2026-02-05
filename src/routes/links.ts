@@ -1391,13 +1391,73 @@ links.openapi(deleteLinkRoute, async c => {
 });
 
 /**
+ * POST /api/links/:id/restore route definition
+ */
+const restoreLinkRoute = createRoute({
+  method: 'post',
+  path: '/{id}/restore',
+  tags: ['Links'],
+  summary: 'Restore deleted link',
+  description:
+    'Restore a soft-deleted link by creating a new version with is_deleted = false. Requires authentication and write permission on the link.',
+  operationId: 'restoreLink',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: LinkIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Link restored successfully',
+      content: {
+        'application/json': {
+          schema: LinkResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - link is not deleted',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/links/:id/restore
  * Restore a soft-deleted link (creates new version with is_deleted = false)
  *
  * Requires authentication and write permission on the link.
  */
-links.post('/:id/restore', requireAuth(), async c => {
-  const id = c.req.param('id');
+links.openapi(restoreLinkRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -1409,19 +1469,43 @@ links.post('/:id/restore', requireAuth(), async c => {
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to restore this link'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to restore this link',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if link is not deleted
     if (currentVersion.is_deleted === 0) {
-      return c.json(response.error('Link is not deleted', 'NOT_DELETED'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link is not deleted',
+          code: 'NOT_DELETED',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     const newVersion = (currentVersion.version as number) + 1;
@@ -1455,9 +1539,16 @@ links.post('/:id/restore', requireAuth(), async c => {
     // Fetch the restored version
     const restored = await db.prepare('SELECT * FROM links WHERE id = ?').bind(newId).first();
 
-    const result = {
-      ...restored,
+    const linkData = {
+      id: restored?.id as string,
+      type_id: restored?.type_id as string,
+      source_entity_id: restored?.source_entity_id as string,
+      target_entity_id: restored?.target_entity_id as string,
       properties: restored?.properties ? JSON.parse(restored.properties as string) : {},
+      version: restored?.version as number,
+      previous_version_id: (restored?.previous_version_id as string) || null,
+      created_at: restored?.created_at as number,
+      created_by: restored?.created_by as string,
       is_deleted: restored?.is_deleted === 1,
       is_latest: restored?.is_latest === 1,
     };
@@ -1489,7 +1580,15 @@ links.post('/:id/restore', requireAuth(), async c => {
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.success(result, 'Link restored successfully'));
+    return c.json(
+      {
+        success: true as const,
+        data: linkData as z.infer<typeof linkResponseSchema>,
+        message: 'Link restored successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })
