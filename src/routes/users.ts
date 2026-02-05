@@ -5,11 +5,9 @@
  */
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
 import { updateUserSchema, adminRoleChangeSchema } from '../schemas/index.js';
 import { ErrorResponseSchema } from '../schemas/openapi-common.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
   applyFieldSelection,
@@ -1681,6 +1679,103 @@ usersRouter.openapi(getUserEffectiveGroupsRoute, async c => {
   }
 });
 
+// Response schema for admin role change
+const AdminRoleChangeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z
+      .object({
+        id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+        email: z.string().openapi({ example: 'jane@example.com' }),
+        display_name: z.unknown().openapi({ example: 'Jane Doe' }),
+        provider: z.string().openapi({ example: 'local' }),
+        created_at: z.unknown().openapi({ example: 1704067200 }),
+        updated_at: z.unknown().openapi({ example: 1704067200 }),
+        is_active: z.boolean().openapi({ example: true }),
+        is_admin: z.boolean().openapi({ example: true }),
+      })
+      .openapi({ description: 'Updated user object with new admin status' }),
+    message: z.string().optional().openapi({ example: 'Resource updated successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('AdminRoleChangeResponse');
+
+/**
+ * PUT /api/users/{id}/admin route definition
+ */
+const updateAdminRoleRoute = createRoute({
+  method: 'put',
+  path: '/{id}/admin',
+  tags: ['Users'],
+  summary: 'Grant or revoke admin role',
+  description:
+    'Grant or revoke admin role for a user. Only admins can perform this action. Admins cannot revoke their own admin status, and at least one admin must remain in the system.',
+  operationId: 'updateAdminRole',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: UserIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: adminRoleChangeSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Admin role updated',
+      content: {
+        'application/json': {
+          schema: AdminRoleChangeResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Cannot revoke own admin status or last admin',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Admin access required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to change admin status',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * PUT /api/users/{id}/admin
  *
@@ -1690,87 +1785,94 @@ usersRouter.openapi(getUserEffectiveGroupsRoute, async c => {
  * - Only existing admins can grant or revoke admin status
  * - Admins cannot revoke their own admin status (prevents lockout)
  * - At least one admin must remain in the system
- *
- * Request body: { is_admin: boolean }
  */
-usersRouter.put(
-  '/:id/admin',
-  requireAuth(),
-  requireAdmin(),
-  validateJson(adminRoleChangeSchema),
-  async c => {
-    const logger = getLogger(c);
-    const targetUserId = c.req.param('id');
-    const currentUser = c.get('user');
-    const validated = c.get('validated_json') as { is_admin: boolean };
+usersRouter.openapi(updateAdminRoleRoute, async c => {
+  const logger = getLogger(c);
+  const { id: targetUserId } = c.req.valid('param');
+  const currentUser = c.get('user');
+  const validated = c.req.valid('json');
 
-    try {
-      // Constraint: Admins cannot revoke their own admin status
-      if (currentUser.user_id === targetUserId && !validated.is_admin) {
-        logger.warn('Admin attempted to revoke own admin status', {
-          userId: currentUser.user_id,
+  try {
+    // Constraint: Admins cannot revoke their own admin status
+    if (currentUser.user_id === targetUserId && !validated.is_admin) {
+      logger.warn('Admin attempted to revoke own admin status', {
+        userId: currentUser.user_id,
+      });
+      return c.json(
+        {
+          success: false as const,
+          error: 'Cannot revoke your own admin status. Another admin must do this.',
+          code: 'SELF_ADMIN_REVOKE',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
+    }
+
+    // Check if target user exists
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first<{
+        id: string;
+        email: string;
+        display_name: string | null;
+        provider: string;
+        created_at: number;
+        updated_at: number;
+        is_active: number;
+        is_admin: number;
+      }>();
+
+    if (!targetUser) {
+      logger.warn('User not found for admin role change', { targetUserId });
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
+    }
+
+    // If revoking admin status, ensure at least one admin remains
+    if (!validated.is_admin && targetUser.is_admin) {
+      const adminCountResult = await c.env.DB.prepare(
+        'SELECT COUNT(*) as count FROM users WHERE is_admin = 1'
+      ).first<{ count: number }>();
+
+      if (adminCountResult && adminCountResult.count <= 1) {
+        logger.warn('Attempted to revoke last admin', {
+          targetUserId,
+          adminCount: adminCountResult.count,
         });
         return c.json(
-          response.error(
-            'Cannot revoke your own admin status. Another admin must do this.',
-            'SELF_ADMIN_REVOKE'
-          ),
+          {
+            success: false as const,
+            error: 'Cannot revoke admin status. At least one admin must remain in the system.',
+            code: 'LAST_ADMIN',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
+    }
 
-      // Check if target user exists
-      const targetUser = await c.env.DB.prepare(
-        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
-      )
-        .bind(targetUserId)
-        .first<{
-          id: string;
-          email: string;
-          display_name: string | null;
-          provider: string;
-          created_at: number;
-          updated_at: number;
-          is_active: number;
-          is_admin: number;
-        }>();
-
-      if (!targetUser) {
-        logger.warn('User not found for admin role change', { targetUserId });
-        return c.json(response.notFound('User'), 404);
-      }
-
-      // If revoking admin status, ensure at least one admin remains
-      if (!validated.is_admin && targetUser.is_admin) {
-        const adminCountResult = await c.env.DB.prepare(
-          'SELECT COUNT(*) as count FROM users WHERE is_admin = 1'
-        ).first<{ count: number }>();
-
-        if (adminCountResult && adminCountResult.count <= 1) {
-          logger.warn('Attempted to revoke last admin', {
-            targetUserId,
-            adminCount: adminCountResult.count,
-          });
-          return c.json(
-            response.error(
-              'Cannot revoke admin status. At least one admin must remain in the system.',
-              'LAST_ADMIN'
-            ),
-            400
-          );
-        }
-      }
-
-      // Check if status is actually changing
-      const currentIsAdmin = !!targetUser.is_admin;
-      if (currentIsAdmin === validated.is_admin) {
-        logger.info('Admin status unchanged', {
-          targetUserId,
-          is_admin: validated.is_admin,
-        });
-        // Return success but with the current unchanged user data
-        return c.json(
-          response.updated({
+    // Check if status is actually changing
+    const currentIsAdmin = !!targetUser.is_admin;
+    if (currentIsAdmin === validated.is_admin) {
+      logger.info('Admin status unchanged', {
+        targetUserId,
+        is_admin: validated.is_admin,
+      });
+      // Return success but with the current unchanged user data
+      return c.json(
+        {
+          success: true as const,
+          data: {
             id: targetUser.id,
             email: targetUser.email,
             display_name: targetUser.display_name,
@@ -1779,54 +1881,71 @@ usersRouter.put(
             updated_at: targetUser.updated_at,
             is_active: !!targetUser.is_active,
             is_admin: currentIsAdmin,
-          })
-        );
-      }
+          },
+          message: 'Resource updated successfully',
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
+    }
 
-      // Update admin status
-      const now = Math.floor(Date.now() / 1000);
-      await c.env.DB.prepare('UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?')
-        .bind(validated.is_admin ? 1 : 0, now, targetUserId)
-        .run();
+    // Update admin status
+    const now = Math.floor(Date.now() / 1000);
+    await c.env.DB.prepare('UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?')
+      .bind(validated.is_admin ? 1 : 0, now, targetUserId)
+      .run();
 
-      // Log the admin role change to audit log
-      await logUserOperation(c.env.DB, c, 'admin_role_change', targetUserId, currentUser.user_id, {
-        previous_is_admin: currentIsAdmin,
-        new_is_admin: validated.is_admin,
-        changed_by: currentUser.user_id,
-      });
+    // Log the admin role change to audit log
+    await logUserOperation(c.env.DB, c, 'admin_role_change', targetUserId, currentUser.user_id, {
+      previous_is_admin: currentIsAdmin,
+      new_is_admin: validated.is_admin,
+      changed_by: currentUser.user_id,
+    });
 
-      logger.info('Admin status changed', {
-        targetUserId,
-        changedBy: currentUser.user_id,
-        previous_is_admin: currentIsAdmin,
-        new_is_admin: validated.is_admin,
-      });
+    logger.info('Admin status changed', {
+      targetUserId,
+      changedBy: currentUser.user_id,
+      previous_is_admin: currentIsAdmin,
+      new_is_admin: validated.is_admin,
+    });
 
-      // Fetch and return updated user
-      const updatedUser = await c.env.DB.prepare(
-        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
-      )
-        .bind(targetUserId)
-        .first();
+    // Fetch and return updated user
+    const updatedUser = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first();
 
-      return c.json(
-        response.updated({
-          id: updatedUser!.id,
-          email: updatedUser!.email,
+    return c.json(
+      {
+        success: true as const,
+        data: {
+          id: updatedUser!.id as string,
+          email: updatedUser!.email as string,
           display_name: updatedUser!.display_name,
-          provider: updatedUser!.provider,
+          provider: updatedUser!.provider as string,
           created_at: updatedUser!.created_at,
           updated_at: updatedUser!.updated_at,
           is_active: !!updatedUser!.is_active,
           is_admin: !!updatedUser!.is_admin,
-        })
-      );
-    } catch (error) {
-      logger.error('Error changing admin status', error as Error, { targetUserId });
-      return c.json(response.error('Failed to change admin status', 'ADMIN_CHANGE_FAILED'), 500);
-    }
+        },
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error changing admin status', error as Error, { targetUserId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to change admin status',
+        code: 'ADMIN_CHANGE_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 export default usersRouter;

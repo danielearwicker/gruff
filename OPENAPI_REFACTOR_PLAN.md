@@ -129,7 +129,7 @@ Convert endpoints:
 - [x] **Convert GET /api/users/:id/activity** - Gets user activity log. Test: Get activity
 - [x] **Convert GET /api/users/:id/groups** - Gets direct group memberships. Test: Get groups
 - [x] **Convert GET /api/users/:id/effective-groups** - Gets all groups (nested). Test: Get effective groups
-- [ ] **Convert PUT /api/users/:id/admin** - Grants/revokes admin role. Test: Toggle admin
+- [x] **Convert PUT /api/users/:id/admin** - Grants/revokes admin role. Test: Toggle admin
 
 ### Groups API (`src/routes/groups.ts`)
 
