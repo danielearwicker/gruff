@@ -1527,6 +1527,66 @@ entities.openapi(restoreEntityRoute, async c => {
   }
 });
 
+// Response schema for entity version list
+const EntityVersionListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(entityResponseSchema),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityVersionListResponse');
+
+/**
+ * GET /api/entities/:id/versions route definition
+ */
+const getEntityVersionsRoute = createRoute({
+  method: 'get',
+  path: '/{id}/versions',
+  tags: ['Entities'],
+  summary: 'Get all versions of an entity',
+  description:
+    'Get all versions of an entity, ordered by version number ascending. Permission checking: Authenticated users must have read permission on the entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id (public).',
+  operationId: 'getEntityVersions',
+  request: {
+    params: EntityIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'List of all versions of the entity',
+      content: {
+        'application/json': {
+          schema: EntityVersionListResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get entity versions route
+entities.use('/:id/versions', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id/versions
  * Get all versions of an entity
@@ -1536,8 +1596,8 @@ entities.openapi(restoreEntityRoute, async c => {
  * - Entities with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access entities with NULL acl_id (public)
  */
-entities.get('/:id/versions', optionalAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityVersionsRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -1547,7 +1607,15 @@ entities.get('/:id/versions', optionalAuth(), async c => {
     const latestVersion = await findLatestVersion(db, id);
 
     if (!latestVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -1556,12 +1624,28 @@ entities.get('/:id/versions', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -1601,13 +1685,25 @@ entities.get('/:id/versions', optionalAuth(), async c => {
 
     // Parse properties for each version
     const versions = results.map(entity => ({
-      ...entity,
+      id: entity.id as string,
+      type_id: entity.type_id as string,
       properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+      version: entity.version as number,
+      previous_version_id: (entity.previous_version_id as string) || null,
+      created_at: entity.created_at as number,
+      created_by: entity.created_by as string,
       is_deleted: entity.is_deleted === 1,
       is_latest: entity.is_latest === 1,
     }));
 
-    return c.json(response.success(versions));
+    return c.json(
+      {
+        success: true as const,
+        data: versions,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
