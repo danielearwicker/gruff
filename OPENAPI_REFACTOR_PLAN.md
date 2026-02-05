@@ -84,7 +84,7 @@ Convert endpoints:
 - [x] **Convert GET /api/links/:id/versions** - Lists all versions. Test: Get version list
 - [x] **Convert GET /api/links/:id/versions/:version** - Gets specific version. Test: Get version by number
 - [x] **Convert GET /api/links/:id/history** - Gets version history with diffs. Test: Get history
-- [ ] **Convert GET /api/links/:id/acl** - Gets ACL permissions. Test: Get ACL
+- [x] **Convert GET /api/links/:id/acl** - Gets ACL permissions. Test: Get ACL
 - [ ] **Convert PUT /api/links/:id/acl** - Sets ACL permissions. Test: Update ACL
 
 ### Graph API (`src/routes/graph.ts`)

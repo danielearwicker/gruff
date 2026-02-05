@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { createLinkSchema, updateLinkSchema, linkResponseSchema } from '../schemas/index.js';
-import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
+import { setAclRequestSchema, SetAclRequest, aclResponseSchema } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -2276,6 +2276,67 @@ function calculateDiff(
   return diff;
 }
 
+// Response schema for ACL get operation
+const LinkAclGetResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: aclResponseSchema,
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkAclGetResponse');
+
+/**
+ * GET /api/links/:id/acl route definition
+ */
+const getLinkAclRoute = createRoute({
+  method: 'get',
+  path: '/{id}/acl',
+  tags: ['Links'],
+  summary: 'Get link ACL',
+  description:
+    'Get the current ACL (access control list) for a link. Returns the list of principals (users and groups) that have read or write permission on this link. If the link has no ACL (null acl_id), it means the link is public and accessible to all authenticated users. Requires authentication and read permission on the link.',
+  operationId: 'getLinkAcl',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: LinkIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'ACL retrieved successfully',
+      content: {
+        'application/json': {
+          schema: LinkAclGetResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no read permission on this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/links/:id/acl
  * Get the current ACL (access control list) for a link
@@ -2286,8 +2347,8 @@ function calculateDiff(
  *
  * Requires authentication and read permission on the link.
  */
-links.get('/:id/acl', requireAuth(), async c => {
-  const id = c.req.param('id');
+links.openapi(getLinkAclRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -2298,23 +2359,44 @@ links.get('/:id/acl', requireAuth(), async c => {
     const link = await findLatestVersion(db, id);
 
     if (!link) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check read permission
     const aclId = link.acl_id as number | null;
     const canRead = await hasPermissionByAclId(db, kv, userId, aclId, 'read');
     if (!canRead) {
-      return c.json(response.forbidden('You do not have permission to view this link'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to view this link',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // If no ACL, return empty entries (public)
     if (aclId === null) {
       return c.json(
-        response.success({
-          entries: [],
-          acl_id: null,
-        })
+        {
+          success: true as const,
+          data: {
+            entries: [],
+            acl_id: null,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        200
       );
     }
 
@@ -2322,10 +2404,15 @@ links.get('/:id/acl', requireAuth(), async c => {
     const entries = await getEnrichedAclEntries(db, aclId);
 
     return c.json(
-      response.success({
-        entries,
-        acl_id: aclId,
-      })
+      {
+        success: true as const,
+        data: {
+          entries,
+          acl_id: aclId,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     getLogger(c)
