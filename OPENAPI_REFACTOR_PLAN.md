@@ -141,7 +141,7 @@ Prepare:
 Convert endpoints:
 
 - [x] **Convert POST /api/groups** - Creates group (admin only). Test: Create group
-- [ ] **Convert GET /api/groups** - Lists groups with pagination. Test: List groups
+- [x] **Convert GET /api/groups** - Lists groups with pagination. Test: List groups
 - [ ] **Convert GET /api/groups/:id** - Gets group details. Test: Get group by ID
 - [ ] **Convert PUT /api/groups/:id** - Updates group (admin only). Test: Update group
 - [ ] **Convert DELETE /api/groups/:id** - Deletes group (admin only). Test: Delete group

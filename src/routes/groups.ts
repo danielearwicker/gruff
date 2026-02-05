@@ -70,6 +70,33 @@ const GroupErrorResponseSchema = z
   })
   .openapi('GroupErrorResponse');
 
+// Paginated list response schema for group operations
+const GroupListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(z.record(z.string(), z.unknown())).openapi({
+      description: 'Array of group objects (fields vary based on field selection)',
+    }),
+    metadata: z
+      .object({
+        page: z.number().int().openapi({ example: 1, description: 'Current page number' }),
+        pageSize: z
+          .number()
+          .int()
+          .openapi({ example: 20, description: 'Number of items per page' }),
+        total: z
+          .number()
+          .int()
+          .openapi({ example: 100, description: 'Total number of matching groups' }),
+        hasMore: z
+          .boolean()
+          .openapi({ example: true, description: 'Whether more results are available' }),
+      })
+      .optional(),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupListResponse');
+
 const groupsRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 /**
@@ -201,18 +228,63 @@ groupsRouter.openapi(createGroupRoute, async c => {
 });
 
 /**
+ * GET /api/groups route definition
+ */
+const listGroupsRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Groups'],
+  summary: 'List groups',
+  description: 'List all groups with optional filtering and pagination',
+  operationId: 'listGroups',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    query: listGroupsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Paginated list of groups',
+      content: {
+        'application/json': {
+          schema: GroupListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to list groups',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * GET /api/groups
- *
  * List all groups (paginated)
  */
-groupsRouter.get('/', requireAuth(), validateQuery(listGroupsQuerySchema), async c => {
+groupsRouter.openapi(listGroupsRoute, async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_query') as {
-    limit: number;
-    offset: number;
-    name?: string;
-    fields?: string;
-  };
+  const validated = c.req.valid('query');
 
   const { limit, offset, name, fields } = validated;
 
@@ -275,11 +347,12 @@ groupsRouter.get('/', requireAuth(), validateQuery(listGroupsQuerySchema), async
 
     if (!fieldSelection.success) {
       return c.json(
-        response.error(
-          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-          'INVALID_FIELDS',
-          { allowed_fields: Array.from(GROUP_ALLOWED_FIELDS) }
-        ),
+        {
+          success: false as const,
+          error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          code: 'INVALID_FIELDS',
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -288,10 +361,31 @@ groupsRouter.get('/', requireAuth(), validateQuery(listGroupsQuerySchema), async
     const page = Math.floor(offset / limit) + 1;
     const hasMore = offset + limit < total;
 
-    return c.json(response.paginated(fieldSelection.data, total, page, limit, hasMore));
+    return c.json(
+      {
+        success: true as const,
+        data: fieldSelection.data,
+        metadata: {
+          page,
+          pageSize: limit,
+          total,
+          hasMore,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error listing groups', error as Error);
-    return c.json(response.error('Failed to list groups', 'GROUP_LIST_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to list groups',
+        code: 'GROUP_LIST_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
