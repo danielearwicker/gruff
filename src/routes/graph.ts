@@ -5,6 +5,7 @@ import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { z } from 'zod';
 import { buildAclFilterClause, hasPermissionByAclId } from '../utils/acl.js';
+import { traverseSchema, shortestPathSchema, graphViewSchema } from '../schemas/graph.js';
 
 type Bindings = {
   DB: D1Database;
@@ -13,32 +14,6 @@ type Bindings = {
 };
 
 const graph = new Hono<{ Bindings: Bindings }>();
-
-// Schema for shortest path query parameters
-const shortestPathSchema = z.object({
-  from: z.string().uuid('Source entity ID must be a valid UUID'),
-  to: z.string().uuid('Target entity ID must be a valid UUID'),
-  type_id: z.string().uuid('Link type ID must be a valid UUID').optional(),
-  include_deleted: z.enum(['true', 'false']).optional().default('false'),
-  max_depth: z
-    .string()
-    .regex(/^\d+$/)
-    .transform(Number)
-    .pipe(z.number().int().min(1).max(10))
-    .optional()
-    .default(10),
-});
-
-// Schema for multi-hop traversal request body
-const traverseSchema = z.object({
-  start_entity_id: z.string().uuid('Starting entity ID must be a valid UUID'),
-  max_depth: z.number().int().min(1).max(10).default(3),
-  direction: z.enum(['outbound', 'inbound', 'both']).default('outbound'),
-  link_type_ids: z.array(z.string().uuid('Link type ID must be a valid UUID')).optional(),
-  entity_type_ids: z.array(z.string().uuid('Entity type ID must be a valid UUID')).optional(),
-  include_deleted: z.boolean().default(false),
-  return_paths: z.boolean().default(false), // Whether to return the paths that led to each entity
-});
 
 // Helper function to find the latest version of an entity by any ID in its version chain
 async function findLatestVersion(
@@ -672,18 +647,6 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
     logger.error('Error finding shortest path', error instanceof Error ? error : undefined);
     throw error;
   }
-});
-
-// Schema for graph-view query parameters
-const graphViewSchema = z.object({
-  depth: z
-    .string()
-    .regex(/^\d+$/)
-    .transform(Number)
-    .pipe(z.number().int().min(1).max(5))
-    .optional()
-    .default(2),
-  include_deleted: z.enum(['true', 'false']).optional().default('false'),
 });
 
 /**

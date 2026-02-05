@@ -10,3 +10,4 @@ export * from './export.js';
 export * from './audit.js';
 export * from './generated-columns.js';
 export * from './group.js';
+export * from './graph.js';

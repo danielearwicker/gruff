@@ -91,7 +91,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate graph schemas** - Add `.openapi()` to traversal/path schemas in `src/schemas/` (create `src/schemas/graph.ts` if needed)
+- [x] **Annotate graph schemas** - Add `.openapi()` to traversal/path schemas in `src/schemas/` (create `src/schemas/graph.ts` if needed)
 - [ ] **Convert graph router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/graph.ts`
 
 Convert endpoints:
