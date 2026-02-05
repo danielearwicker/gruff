@@ -389,15 +389,100 @@ groupsRouter.openapi(listGroupsRoute, async c => {
   }
 });
 
+// Path parameters schema for group ID
+const GroupIdParamsSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Group ID',
+    }),
+});
+
+// Query schema for field selection
+const GroupFieldSelectionQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,name,description',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
+/**
+ * GET /api/groups/:id route definition
+ */
+const getGroupRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['Groups'],
+  summary: 'Get group by ID',
+  description:
+    'Retrieve a specific group by its ID. Supports field selection via the `fields` query parameter.',
+  operationId: 'getGroupById',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+    query: GroupFieldSelectionQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Group found',
+      content: {
+        'application/json': {
+          schema: GroupResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to retrieve group details',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/groups/:id
  *
  * Get group details with members
  */
-groupsRouter.get('/:id', requireAuth(), async c => {
+groupsRouter.openapi(getGroupRoute, async c => {
   const logger = getLogger(c);
-  const groupId = c.req.param('id');
-  const fieldsParam = c.req.query('fields');
+  const { id: groupId } = c.req.valid('param');
+  const { fields: fieldsParam } = c.req.valid('query');
 
   try {
     // Fetch the group from the database
@@ -411,7 +496,15 @@ groupsRouter.get('/:id', requireAuth(), async c => {
 
     if (!group) {
       logger.warn('Group not found', { groupId });
-      return c.json(response.notFound('Group'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     logger.info('Group details retrieved', { groupId });
@@ -435,22 +528,42 @@ groupsRouter.get('/:id', requireAuth(), async c => {
       );
       if (!fieldSelection.success) {
         return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(GROUP_ALLOWED_FIELDS) }
-          ),
+          {
+            success: false as const,
+            error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            code: 'INVALID_FIELDS',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
-      return c.json(response.success(fieldSelection.data));
+      return c.json(
+        {
+          success: true as const,
+          data: fieldSelection.data as z.infer<typeof groupSchema>,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
-    return c.json(response.success(groupData));
+    return c.json(
+      {
+        success: true as const,
+        data: groupData,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error retrieving group details', error as Error, { groupId });
     return c.json(
-      response.error('Failed to retrieve group details', 'GROUP_RETRIEVAL_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to retrieve group details',
+        code: 'GROUP_RETRIEVAL_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }
