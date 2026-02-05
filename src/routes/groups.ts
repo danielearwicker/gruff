@@ -1323,74 +1323,171 @@ groupsRouter.openapi(addGroupMemberRoute, async c => {
   }
 });
 
+// Path parameters schema for removing a member from a group
+const RemoveMemberParamsSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Group ID',
+    }),
+  memberType: z.enum(['user', 'group']).openapi({
+    param: { name: 'memberType', in: 'path' },
+    example: 'user',
+    description: 'Type of member to remove (user or group)',
+  }),
+  memberId: z
+    .string()
+    .min(1)
+    .openapi({
+      param: { name: 'memberId', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440002',
+      description: 'Member ID to remove',
+    }),
+});
+
+/**
+ * DELETE /api/groups/:id/members/:memberType/:memberId route definition
+ */
+const removeGroupMemberRoute = createRoute({
+  method: 'delete',
+  path: '/{id}/members/{memberType}/{memberId}',
+  tags: ['Groups'],
+  summary: 'Remove member from group',
+  description: 'Remove a user or group member from a group (admin only)',
+  operationId: 'removeGroupMember',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: RemoveMemberParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Member removed from group',
+      content: {
+        'application/json': {
+          schema: GroupDeleteResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group or member not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to remove member from group',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * DELETE /api/groups/:id/members/:memberType/:memberId
  *
  * Remove member from group (admin only)
  */
-groupsRouter.delete(
-  '/:id/members/:memberType/:memberId',
-  requireAuth(),
-  requireAdmin(),
-  async c => {
-    const logger = getLogger(c);
-    const groupId = c.req.param('id');
-    const memberType = c.req.param('memberType');
-    const memberId = c.req.param('memberId');
+groupsRouter.openapi(removeGroupMemberRoute, async c => {
+  const logger = getLogger(c);
+  const { id: groupId, memberType, memberId } = c.req.valid('param');
 
-    // Validate member type
-    if (memberType !== 'user' && memberType !== 'group') {
+  try {
+    // Check if group exists
+    const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+      .bind(groupId)
+      .first();
+
+    if (!existingGroup) {
+      logger.warn('Group not found for removing member', { groupId });
       return c.json(
-        response.error('Invalid member type. Must be "user" or "group"', 'INVALID_MEMBER_TYPE'),
-        400
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
       );
     }
 
-    try {
-      // Check if group exists
-      const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-        .bind(groupId)
-        .first();
+    // Check if member exists in group
+    const existingMember = await c.env.DB.prepare(
+      'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+    )
+      .bind(groupId, memberType, memberId)
+      .first();
 
-      if (!existingGroup) {
-        logger.warn('Group not found for removing member', { groupId });
-        return c.json(response.notFound('Group'), 404);
-      }
-
-      // Check if member exists in group
-      const existingMember = await c.env.DB.prepare(
-        'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-      )
-        .bind(groupId, memberType, memberId)
-        .first();
-
-      if (!existingMember) {
-        logger.warn('Member not found in group', { groupId, memberType, memberId });
-        return c.json(response.notFound('Member in group'), 404);
-      }
-
-      // Remove the member
-      await c.env.DB.prepare(
-        'DELETE FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-      )
-        .bind(groupId, memberType, memberId)
-        .run();
-
-      // Invalidate effective groups cache since membership changed
-      await invalidateAllEffectiveGroupsCache(c.env.KV);
-
-      logger.info('Member removed from group', { groupId, memberType, memberId });
-
-      return c.json(response.deleted());
-    } catch (error) {
-      logger.error('Error removing member from group', error as Error, { groupId });
+    if (!existingMember) {
+      logger.warn('Member not found in group', { groupId, memberType, memberId });
       return c.json(
-        response.error('Failed to remove member from group', 'REMOVE_MEMBER_FAILED'),
-        500
+        {
+          success: false as const,
+          error: 'Member in group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
       );
     }
+
+    // Remove the member
+    await c.env.DB.prepare(
+      'DELETE FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+    )
+      .bind(groupId, memberType, memberId)
+      .run();
+
+    // Invalidate effective groups cache since membership changed
+    await invalidateAllEffectiveGroupsCache(c.env.KV);
+
+    logger.info('Member removed from group', { groupId, memberType, memberId });
+
+    return c.json(
+      {
+        success: true as const,
+        message: 'Resource deleted successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error removing member from group', error as Error, { groupId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to remove member from group',
+        code: 'REMOVE_MEMBER_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * GET /api/groups/:id/members
