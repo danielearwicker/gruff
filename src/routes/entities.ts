@@ -2802,6 +2802,130 @@ entities.openapi(getEntityInboundRoute, async c => {
   }
 });
 
+// Schema for a connection to a neighbor entity
+const NeighborConnectionSchema = z
+  .object({
+    link_id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440003' }),
+    link_type_id: z.string().openapi({ example: 'knows' }),
+    link_properties: z
+      .record(z.string(), z.unknown())
+      .openapi({ example: { since: '2020-01-01' } }),
+    direction: z.enum(['inbound', 'outbound']).openapi({ example: 'outbound' }),
+  })
+  .openapi('NeighborConnection');
+
+// Schema for a neighbor entity with its connections
+const NeighborEntitySchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+    type_id: z.string().openapi({ example: 'Person' }),
+    properties: z.record(z.string(), z.unknown()).openapi({ example: { name: 'Jane Doe' } }),
+    version: z.number().int().positive().openapi({ example: 1 }),
+    created_at: z.number().int().positive().openapi({ example: 1704067200 }),
+    created_by: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+    is_deleted: z.boolean().openapi({ example: false }),
+    is_latest: z.boolean().openapi({ example: true }),
+    connections: z.array(NeighborConnectionSchema),
+  })
+  .openapi('NeighborEntity');
+
+// Response schema for neighbors list
+const NeighborsResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(NeighborEntitySchema),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('NeighborsResponse');
+
+// Query schema for neighbors
+const NeighborsQuerySchema = z.object({
+  type_id: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'type_id', in: 'query' },
+      example: 'knows',
+      description: 'Filter by link type ID',
+    }),
+  entity_type_id: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'entity_type_id', in: 'query' },
+      example: 'Person',
+      description: 'Filter by neighbor entity type ID',
+    }),
+  include_deleted: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'include_deleted', in: 'query' },
+      example: 'false',
+      description: 'Include soft-deleted links and entities',
+    }),
+  direction: z
+    .enum(['inbound', 'outbound'])
+    .optional()
+    .openapi({
+      param: { name: 'direction', in: 'query' },
+      example: 'outbound',
+      description: 'Filter by direction (inbound, outbound, or both if not specified)',
+    }),
+});
+
+/**
+ * GET /api/entities/:id/neighbors route definition
+ */
+const getEntityNeighborsRoute = createRoute({
+  method: 'get',
+  path: '/{id}/neighbors',
+  tags: ['Entities'],
+  summary: 'Get all connected entities',
+  description:
+    'Get all connected entities (both inbound and outbound). Permission checking: Authenticated users must have read permission on the center entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id (public). Returned links and neighbor entities are filtered by ACL permissions.',
+  operationId: 'getEntityNeighbors',
+  request: {
+    params: EntityIdParamsSchema,
+    query: NeighborsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Connected entities',
+      content: {
+        'application/json': {
+          schema: NeighborsResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get entity neighbors route
+entities.use('/:id/neighbors', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id/neighbors
  * Get all connected entities (both inbound and outbound)
@@ -2812,24 +2936,33 @@ entities.openapi(getEntityInboundRoute, async c => {
  * - Unauthenticated requests can only access entities with NULL acl_id (public)
  * - Returned links and neighbor entities are filtered by ACL permissions
  */
-entities.get('/:id/neighbors', optionalAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityNeighborsRoute, async c => {
+  const { id } = c.req.valid('param');
+  const {
+    type_id: typeId,
+    entity_type_id: entityTypeId,
+    include_deleted,
+    direction,
+  } = c.req.valid('query');
+  const includeDeleted = include_deleted === 'true';
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
-
-  // Optional query parameters for filtering
-  const typeId = c.req.query('type_id'); // Filter by link type
-  const entityTypeId = c.req.query('entity_type_id'); // Filter by entity type
-  const includeDeleted = c.req.query('include_deleted') === 'true';
-  const direction = c.req.query('direction'); // 'inbound', 'outbound', or both (default)
 
   try {
     // First, verify the entity exists
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission on the center entity
@@ -2838,12 +2971,28 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission on the center entity
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, entityAclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (entityAclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -3088,7 +3237,14 @@ entities.get('/:id/neighbors', optionalAuth(), async c => {
 
     const neighborsData = Array.from(uniqueNeighborsMap.values());
 
-    return c.json(response.success(neighborsData));
+    return c.json(
+      {
+        success: true as const,
+        data: neighborsData,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })

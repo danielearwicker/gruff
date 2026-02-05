@@ -62,7 +62,7 @@ Convert endpoints:
 - [x] **Convert GET /api/entities/:id/history** - Gets version history with diffs. Test: Get history
 - [x] **Convert GET /api/entities/:id/outbound** - Gets outbound links. Test: Get outbound links
 - [x] **Convert GET /api/entities/:id/inbound** - Gets inbound links. Test: Get inbound links
-- [ ] **Convert GET /api/entities/:id/neighbors** - Gets all connected entities. Test: Get neighbors
+- [x] **Convert GET /api/entities/:id/neighbors** - Gets all connected entities. Test: Get neighbors
 - [ ] **Convert GET /api/entities/:id/acl** - Gets ACL permissions. Test: Get ACL
 - [ ] **Convert PUT /api/entities/:id/acl** - Sets ACL permissions. Test: Update ACL
 
