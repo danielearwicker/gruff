@@ -1324,13 +1324,73 @@ entities.openapi(deleteEntityRoute, async c => {
 });
 
 /**
+ * POST /api/entities/:id/restore route definition
+ */
+const restoreEntityRoute = createRoute({
+  method: 'post',
+  path: '/{id}/restore',
+  tags: ['Entities'],
+  summary: 'Restore deleted entity',
+  description:
+    'Restore a soft-deleted entity by creating a new version with is_deleted = false. Requires authentication and write permission on the entity.',
+  operationId: 'restoreEntity',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: EntityIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Entity restored successfully',
+      content: {
+        'application/json': {
+          schema: EntityResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - entity is not deleted',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/entities/:id/restore
  * Restore a soft-deleted entity (creates new version with is_deleted = false)
  *
  * Requires authentication and write permission on the entity.
  */
-entities.post('/:id/restore', requireAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(restoreEntityRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -1342,19 +1402,43 @@ entities.post('/:id/restore', requireAuth(), async c => {
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to restore this entity'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to restore this entity',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if entity is not deleted
     if (currentVersion.is_deleted === 0) {
-      return c.json(response.error('Entity is not deleted', 'NOT_DELETED'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity is not deleted',
+          code: 'NOT_DELETED',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     const newVersion = (currentVersion.version as number) + 1;
@@ -1389,9 +1473,14 @@ entities.post('/:id/restore', requireAuth(), async c => {
     // Fetch the restored version
     const restored = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(newId).first();
 
-    const result = {
-      ...restored,
+    const entityData = {
+      id: restored?.id as string,
+      type_id: restored?.type_id as string,
       properties: restored?.properties ? JSON.parse(restored.properties as string) : {},
+      version: restored?.version as number,
+      previous_version_id: (restored?.previous_version_id as string) || null,
+      created_at: restored?.created_at as number,
+      created_by: restored?.created_by as string,
       is_deleted: restored?.is_deleted === 1,
       is_latest: restored?.is_latest === 1,
     };
@@ -1421,7 +1510,15 @@ entities.post('/:id/restore', requireAuth(), async c => {
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.success(result, 'Entity restored successfully'));
+    return c.json(
+      {
+        success: true as const,
+        data: entityData,
+        message: 'Entity restored successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
