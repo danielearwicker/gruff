@@ -31,7 +31,7 @@ Prepare schemas and router:
 
 Convert endpoints:
 
-- [ ] **Convert POST /api/auth/register** - Registers new user. Test: Register via curl
+- [x] **Convert POST /api/auth/register** - Registers new user. Test: Register via curl
 - [ ] **Convert POST /api/auth/login** - Login with email/password. Test: Login via curl, verify tokens returned
 - [ ] **Convert POST /api/auth/refresh** - Refreshes access token. Test: Refresh with valid refresh token
 - [ ] **Convert POST /api/auth/logout** - Invalidates session. Test: Logout via curl

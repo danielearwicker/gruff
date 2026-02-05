@@ -57,20 +57,127 @@ type Bindings = {
 
 const authRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
+// =============================================================================
+// Response Schemas for Auth Endpoints
+// =============================================================================
+
+// User object returned in auth responses
+const AuthUserSchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    email: z.string().email().openapi({ example: 'user@example.com' }),
+    display_name: z.string().nullable().openapi({ example: 'John Doe' }),
+    provider: z
+      .enum(['google', 'github', 'local', 'microsoft', 'apple'])
+      .openapi({ example: 'local' }),
+    created_at: z.number().int().openapi({ example: 1704067200 }),
+    updated_at: z.number().int().openapi({ example: 1704067200 }),
+    is_active: z.boolean().openapi({ example: true }),
+    is_admin: z.boolean().openapi({ example: false }),
+  })
+  .openapi('AuthUser');
+
+// Success response for registration
+const RegisterSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user: AuthUserSchema,
+      access_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      refresh_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      expires_in: z
+        .number()
+        .int()
+        .openapi({ example: 900, description: 'Token expiration in seconds' }),
+      token_type: z.literal('Bearer'),
+    }),
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('RegisterSuccessResponse');
+
+// Error response for auth operations
+const AuthErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'User with this email already exists' }),
+    code: z.string().openapi({ example: 'USER_EXISTS' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('AuthErrorResponse');
+
+// =============================================================================
+// Route Definitions
+// =============================================================================
+
+/**
+ * POST /api/auth/register route definition
+ */
+const registerRoute = createRoute({
+  method: 'post',
+  path: '/register',
+  tags: ['Authentication'],
+  summary: 'Register a new user',
+  description: 'Register a new user with email and password. Returns user info and JWT tokens.',
+  operationId: 'registerUser',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: createUserSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'User registered successfully',
+      content: {
+        'application/json': {
+          schema: RegisterSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error - missing password, invalid email, or password too short',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - user with this email already exists',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// =============================================================================
+// Route Handlers
+// =============================================================================
+
 /**
  * POST /api/auth/register
  *
  * Register a new user with email and password
  */
-authRouter.post('/register', validateJson(createUserSchema), async c => {
+authRouter.openapi(registerRoute, async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as {
-    email: string;
-    password?: string;
-    display_name?: string;
-    provider?: string;
-    provider_id?: string;
-  };
+  const validated = c.req.valid('json');
 
   // Extract and validate required fields for local auth
   const { email, password, display_name } = validated;
@@ -78,7 +185,12 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
   if (!password) {
     logger.warn('Registration attempt without password', { email });
     return c.json(
-      response.error('Password is required for local registration', 'PASSWORD_REQUIRED'),
+      {
+        success: false as const,
+        error: 'Password is required for local registration',
+        code: 'PASSWORD_REQUIRED',
+        timestamp: new Date().toISOString(),
+      },
       400
     );
   }
@@ -91,7 +203,15 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
 
     if (existingUser) {
       logger.warn('Registration attempt with existing email', { email });
-      return c.json(response.error('User with this email already exists', 'USER_EXISTS'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User with this email already exists',
+          code: 'USER_EXISTS',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     // Hash the password
@@ -115,7 +235,15 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Server configuration error',
+          code: 'CONFIG_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     // Generate access and refresh tokens (new users are not admins by default)
@@ -128,27 +256,40 @@ authRouter.post('/register', validateJson(createUserSchema), async c => {
 
     // Return success response with tokens
     return c.json(
-      response.created({
-        user: {
-          id: userId,
-          email,
-          display_name: display_name || null,
-          provider: 'local',
-          created_at: now,
-          updated_at: now,
-          is_active: true,
-          is_admin: false,
+      {
+        success: true as const,
+        data: {
+          user: {
+            id: userId,
+            email,
+            display_name: display_name || null,
+            provider: 'local' as const,
+            created_at: now,
+            updated_at: now,
+            is_active: true,
+            is_admin: false,
+          },
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.expiresIn,
+          token_type: 'Bearer' as const,
         },
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
-        expires_in: tokens.expiresIn,
-        token_type: 'Bearer',
-      }),
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
       201
     );
   } catch (error) {
     logger.error('Error during user registration', error as Error, { email });
-    return c.json(response.error('Failed to register user', 'REGISTRATION_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to register user',
+        code: 'REGISTRATION_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
