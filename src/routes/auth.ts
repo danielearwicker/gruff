@@ -151,6 +151,17 @@ const LogoutSuccessResponseSchema = z
   })
   .openapi('LogoutSuccessResponse');
 
+// Success response for GET /me
+const MeSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user: AuthUserSchema,
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('MeSuccessResponse');
+
 // =============================================================================
 // Route Definitions
 // =============================================================================
@@ -362,6 +373,62 @@ const logoutRoute = createRoute({
     },
     401: {
       description: 'Invalid or expired refresh token',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * GET /api/auth/me route definition
+ */
+const meRoute = createRoute({
+  method: 'get',
+  path: '/me',
+  tags: ['Authentication'],
+  summary: 'Get current user',
+  description: 'Get the profile of the currently authenticated user.',
+  operationId: 'getCurrentUser',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  responses: {
+    200: {
+      description: 'Current user profile',
+      content: {
+        'application/json': {
+          schema: MeSuccessResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Not authenticated - missing or invalid token',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - account is not active',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found in database',
       content: {
         'application/json': {
           schema: AuthErrorResponseSchema,
@@ -832,7 +899,7 @@ authRouter.openapi(logoutRoute, async c => {
  * Get the authenticated user's profile information
  * Requires valid JWT in Authorization header
  */
-authRouter.get('/me', requireAuth(), async c => {
+authRouter.openapi(meRoute, async c => {
   const logger = getLogger(c);
 
   // Get the authenticated user from context (set by requireAuth middleware)
@@ -848,36 +915,62 @@ authRouter.get('/me', requireAuth(), async c => {
 
     if (!userRecord) {
       logger.warn('User not found in database', { userId: user.user_id });
-      return c.json(response.error('User not found', 'USER_NOT_FOUND'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check if account is active
     if (!userRecord.is_active) {
       logger.warn('Inactive user attempted to access profile', { userId: user.user_id });
-      return c.json(response.error('Account is not active', 'ACCOUNT_INACTIVE'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Account is not active',
+          code: 'ACCOUNT_INACTIVE',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     logger.info('User profile retrieved', { userId: user.user_id });
 
     // Return user profile
     return c.json(
-      response.success({
-        user: {
-          id: userRecord.id,
-          email: userRecord.email,
-          display_name: userRecord.display_name,
-          provider: userRecord.provider,
-          created_at: userRecord.created_at,
-          updated_at: userRecord.updated_at,
-          is_active: !!userRecord.is_active,
-          is_admin: !!userRecord.is_admin,
+      {
+        success: true as const,
+        data: {
+          user: {
+            id: String(userRecord.id),
+            email: String(userRecord.email),
+            display_name: userRecord.display_name ? String(userRecord.display_name) : null,
+            provider: userRecord.provider as 'local' | 'google' | 'github' | 'microsoft' | 'apple',
+            created_at: userRecord.created_at as number,
+            updated_at: userRecord.updated_at as number,
+            is_active: !!userRecord.is_active,
+            is_admin: !!userRecord.is_admin,
+          },
         },
-      })
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error retrieving user profile', error as Error, { userId: user.user_id });
     return c.json(
-      response.error('Failed to retrieve user profile', 'PROFILE_RETRIEVAL_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to retrieve user profile',
+        code: 'PROFILE_RETRIEVAL_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }
