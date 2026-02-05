@@ -6,7 +6,7 @@
  * Maximum nesting depth of 10 levels to prevent performance issues.
  */
 
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
@@ -49,7 +49,7 @@ interface GroupRow {
   created_by: string | null;
 }
 
-const groupsRouter = new Hono<{ Bindings: Bindings }>();
+const groupsRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 /**
  * POST /api/groups
