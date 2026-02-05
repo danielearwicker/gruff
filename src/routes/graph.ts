@@ -14,6 +14,56 @@ type Bindings = {
 
 const graph = new OpenAPIHono<{ Bindings: Bindings }>();
 
+// Response schema for shortest path
+const ShortestPathResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      path: z.array(
+        z.object({
+          entity: z.object({
+            id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+            type_id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440100' }),
+            properties: z.record(z.string(), z.unknown()).openapi({ example: { name: 'Example' } }),
+          }),
+          link: z
+            .object({
+              id: z.string().uuid().openapi({ example: '660e8400-e29b-41d4-a716-446655440000' }),
+              type_id: z
+                .string()
+                .uuid()
+                .openapi({ example: '660e8400-e29b-41d4-a716-446655440100' }),
+              source_entity_id: z
+                .string()
+                .uuid()
+                .openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+              target_entity_id: z
+                .string()
+                .uuid()
+                .openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+              properties: z.record(z.string(), z.unknown()).openapi({ example: { weight: 1 } }),
+            })
+            .nullable()
+            .openapi({ description: 'Link used to reach this entity (null for starting entity)' }),
+        })
+      ),
+      length: z
+        .number()
+        .int()
+        .openapi({ example: 2, description: 'Number of hops (edges) in the path' }),
+      from: z.string().uuid().openapi({
+        example: '550e8400-e29b-41d4-a716-446655440000',
+        description: 'Source entity ID',
+      }),
+      to: z.string().uuid().openapi({
+        example: '550e8400-e29b-41d4-a716-446655440001',
+        description: 'Target entity ID',
+      }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('ShortestPathResponse');
+
 // Response schema for graph traversal
 const GraphTraverseResponseSchema = z
   .object({
@@ -484,15 +534,55 @@ graph.openapi(traverseRoute, async c => {
 });
 
 /**
+ * GET /api/graph/path route definition
+ */
+const shortestPathRoute = createRoute({
+  method: 'get',
+  path: '/path',
+  tags: ['Graph'],
+  summary: 'Find shortest path',
+  description:
+    'Find the shortest path between two entities using BFS. ACL filtering is applied: authenticated users can only traverse entities and links they have read permission on, unauthenticated users can only traverse public entities and links.',
+  operationId: 'findShortestPath',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    query: shortestPathSchema,
+  },
+  responses: {
+    200: {
+      description: 'Shortest path found',
+      content: {
+        'application/json': {
+          schema: ShortestPathResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - insufficient permissions',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found or no path exists',
+      content: {
+        'application/json': {
+          schema: GraphErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * GET /api/graph/path
  * Find the shortest path between two entities using BFS
- *
- * ACL filtering is applied:
- * - Authenticated users can only traverse entities and links they have read permission on
- * - Unauthenticated users can only traverse public entities and links (NULL acl_id)
  */
-graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c => {
-  const query = c.get('validated_query') as z.infer<typeof shortestPathSchema>;
+graph.openapi(shortestPathRoute, async c => {
+  const query = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -504,11 +594,27 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
     const toEntity = await findLatestVersion(db, query.to);
 
     if (!fromEntity) {
-      return c.json(response.notFound('Source entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Source entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     if (!toEntity) {
-      return c.json(response.notFound('Target entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Target entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission on source and target entities
@@ -519,14 +625,24 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
       const canReadFrom = await hasPermissionByAclId(db, kv, user.user_id, fromAclId, 'read');
       if (!canReadFrom) {
         return c.json(
-          response.forbidden('You do not have permission to access the source entity'),
+          {
+            success: false as const,
+            error: 'You do not have permission to access the source entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
           403
         );
       }
       const canReadTo = await hasPermissionByAclId(db, kv, user.user_id, toAclId, 'read');
       if (!canReadTo) {
         return c.json(
-          response.forbidden('You do not have permission to access the target entity'),
+          {
+            success: false as const,
+            error: 'You do not have permission to access the target entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
           403
         );
       }
@@ -534,13 +650,23 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
       // Unauthenticated: only allow access to public entities
       if (fromAclId !== null) {
         return c.json(
-          response.forbidden('Authentication required to access the source entity'),
+          {
+            success: false as const,
+            error: 'Authentication required to access the source entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
           403
         );
       }
       if (toAclId !== null) {
         return c.json(
-          response.forbidden('Authentication required to access the target entity'),
+          {
+            success: false as const,
+            error: 'Authentication required to access the target entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
           403
         );
       }
@@ -558,23 +684,28 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
     // If source and target are the same, return empty path
     if (fromEntity.id === toEntity.id) {
       return c.json(
-        response.success({
-          path: [
-            {
-              entity: {
-                id: fromEntity.id,
-                type_id: fromEntity.type_id,
-                properties: fromEntity.properties
-                  ? JSON.parse(fromEntity.properties as string)
-                  : {},
+        {
+          success: true as const,
+          data: {
+            path: [
+              {
+                entity: {
+                  id: fromEntity.id as string,
+                  type_id: fromEntity.type_id as string,
+                  properties: fromEntity.properties
+                    ? JSON.parse(fromEntity.properties as string)
+                    : {},
+                },
+                link: null,
               },
-              link: null,
-            },
-          ],
-          length: 0,
-          from: query.from,
-          to: query.to,
-        })
+            ],
+            length: 0,
+            from: query.from,
+            to: query.to,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        200
       );
     }
 
@@ -686,7 +817,13 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
                 .bind(step.entityId)
                 .first();
 
-              let link = null;
+              let link: {
+                id: string;
+                type_id: string;
+                source_entity_id: string;
+                target_entity_id: string;
+                properties: Record<string, unknown>;
+              } | null = null;
               if (step.linkId) {
                 const linkData = await db
                   .prepare('SELECT * FROM links WHERE id = ? AND is_latest = 1')
@@ -695,10 +832,10 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
 
                 if (linkData) {
                   link = {
-                    id: linkData.id,
-                    type_id: linkData.type_id,
-                    source_entity_id: linkData.source_entity_id,
-                    target_entity_id: linkData.target_entity_id,
+                    id: linkData.id as string,
+                    type_id: linkData.type_id as string,
+                    source_entity_id: linkData.source_entity_id as string,
+                    target_entity_id: linkData.target_entity_id as string,
                     properties: linkData.properties
                       ? JSON.parse(linkData.properties as string)
                       : {},
@@ -711,9 +848,11 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
               }
               return {
                 entity: {
-                  id: entity.id,
-                  type_id: entity.type_id,
-                  properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+                  id: entity.id as string,
+                  type_id: entity.type_id as string,
+                  properties: entity.properties
+                    ? (JSON.parse(entity.properties as string) as Record<string, unknown>)
+                    : {},
                 },
                 link,
               };
@@ -727,12 +866,17 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
           });
 
           return c.json(
-            response.success({
-              path: pathWithDetails,
-              length: fullPath.length - 1, // Number of hops (edges)
-              from: query.from,
-              to: query.to,
-            })
+            {
+              success: true as const,
+              data: {
+                path: pathWithDetails,
+                length: fullPath.length - 1, // Number of hops (edges)
+                from: query.from,
+                to: query.to,
+              },
+              timestamp: new Date().toISOString(),
+            },
+            200
           );
         }
 
@@ -751,7 +895,12 @@ graph.get('/path', optionalAuth(), validateQuery(shortestPathSchema), async c =>
     logger.info('No path found', { from: query.from, to: query.to });
 
     return c.json(
-      response.error('No path found between the specified entities', 'NO_PATH_FOUND'),
+      {
+        success: false as const,
+        error: 'No path found between the specified entities',
+        code: 'NO_PATH_FOUND',
+        timestamp: new Date().toISOString(),
+      },
       404
     );
   } catch (error) {
