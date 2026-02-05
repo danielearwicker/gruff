@@ -154,7 +154,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate bulk schemas** - Add `.openapi()` to bulk operation schemas in `src/schemas/` (create `src/schemas/bulk.ts` if needed)
+- [x] **Annotate bulk schemas** - Add `.openapi()` to bulk operation schemas in `src/schemas/` (create `src/schemas/bulk.ts` if needed)
 - [ ] **Convert bulk router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/bulk.ts`
 
 Convert endpoints:
