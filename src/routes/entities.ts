@@ -440,6 +440,81 @@ entities.use('/', async (c, next) => {
   return next();
 });
 
+// Path parameters schema for entity ID
+const EntityIdParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Entity ID (UUID)',
+    }),
+});
+
+// Query schema for field selection on single entity
+const EntityFieldSelectionQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,type_id,properties',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
+/**
+ * GET /api/entities/:id route definition
+ */
+const getEntityRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['Entities'],
+  summary: 'Get entity by ID',
+  description:
+    'Get the latest version of a specific entity. Supports field selection via the `fields` query parameter. Permission checking: Authenticated users must have read permission on the entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id.',
+  operationId: 'getEntityById',
+  request: {
+    params: EntityIdParamsSchema,
+    query: EntityFieldSelectionQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Entity found',
+      content: {
+        'application/json': {
+          schema: EntityResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/entities
  * List entities with optional filtering and cursor-based pagination
@@ -629,6 +704,15 @@ entities.openapi(listEntitiesRoute, async c => {
   }
 });
 
+// Apply optionalAuth middleware for the get entity by ID route
+entities.use('/:id', async (c, next) => {
+  // Only apply to GET requests (not PUT, DELETE, etc.)
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id
  * Get the latest version of a specific entity
@@ -645,18 +729,26 @@ entities.openapi(listEntitiesRoute, async c => {
  * - Entities with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access entities with NULL acl_id
  */
-entities.get('/:id', optionalAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityRoute, async c => {
+  const { id } = c.req.valid('param');
+  const { fields: fieldsParam } = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
-  const fieldsParam = c.req.query('fields');
   const user = c.get('user');
 
   try {
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -665,12 +757,28 @@ entities.get('/:id', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -687,28 +795,46 @@ entities.get('/:id', optionalAuth(), async c => {
         );
         if (!fieldSelection.success) {
           return c.json(
-            response.error(
-              `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-              'INVALID_FIELDS',
-              { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) }
-            ),
+            {
+              success: false as const,
+              error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+              code: 'INVALID_FIELDS',
+              data: { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) },
+              timestamp: new Date().toISOString(),
+            },
             400
           );
         }
-        return c.json(response.success(fieldSelection.data));
+        return c.json(
+          {
+            success: true as const,
+            data: fieldSelection.data as z.infer<typeof entityResponseSchema>,
+            timestamp: new Date().toISOString(),
+          },
+          200
+        );
       }
-      return c.json(cached);
+      return c.json(cached as z.infer<typeof EntityResponseSchema>, 200);
     }
 
     // Parse properties back to object
     const result = {
-      ...entity,
+      id: entity.id as string,
+      type_id: entity.type_id as string,
       properties: entity.properties ? JSON.parse(entity.properties as string) : {},
+      version: entity.version as number,
+      previous_version_id: (entity.previous_version_id as string) || null,
+      created_at: entity.created_at as number,
+      created_by: entity.created_by as string,
       is_deleted: entity.is_deleted === 1,
       is_latest: entity.is_latest === 1,
     };
 
-    const responseData = response.success(result);
+    const responseData = {
+      success: true as const,
+      data: result,
+      timestamp: new Date().toISOString(),
+    };
 
     // Cache the successful response (full data, field selection applied on retrieval)
     setCache(kv, cacheKey, responseData, CACHE_TTL.ENTITY).catch(() => {
@@ -724,18 +850,27 @@ entities.get('/:id', optionalAuth(), async c => {
       );
       if (!fieldSelection.success) {
         return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) }
-          ),
+          {
+            success: false as const,
+            error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            code: 'INVALID_FIELDS',
+            data: { allowed_fields: Array.from(ENTITY_ALLOWED_FIELDS) },
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
-      return c.json(response.success(fieldSelection.data));
+      return c.json(
+        {
+          success: true as const,
+          data: fieldSelection.data as z.infer<typeof entityResponseSchema>,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
-    return c.json(responseData);
+    return c.json(responseData, 200);
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
