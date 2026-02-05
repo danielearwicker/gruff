@@ -644,128 +644,248 @@ usersRouter.openapi(getUserRoute, async c => {
   }
 });
 
+// Response schema for user update
+const UserUpdateResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z
+      .object({
+        id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+        email: z.string().openapi({ example: 'jane@example.com' }),
+        display_name: z.unknown().openapi({ example: 'Jane Doe' }),
+        provider: z.string().openapi({ example: 'local' }),
+        created_at: z.unknown().openapi({ example: 1704067200 }),
+        updated_at: z.unknown().openapi({ example: 1704067200 }),
+        is_active: z.boolean().openapi({ example: true }),
+        is_admin: z.boolean().openapi({ example: false }),
+      })
+      .openapi({ description: 'Updated user object' }),
+    message: z.string().optional().openapi({ example: 'Resource updated successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserUpdateResponse');
+
+/**
+ * PUT /api/users/{id} route definition
+ */
+const updateUserRoute = createRoute({
+  method: 'put',
+  path: '/{id}',
+  tags: ['Users'],
+  summary: 'Update user',
+  description:
+    'Update a user profile. Users can update their own profile, admins can update any profile.',
+  operationId: 'updateUser',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdminOrSelf('id')] as const,
+  request: {
+    params: UserIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: updateUserSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'User updated',
+      content: {
+        'application/json': {
+          schema: UserUpdateResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - not admin or self, or non-admin tried to modify is_active',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Email already in use',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to update user profile',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * PUT /api/users/{id}
  *
  * Update a user's profile
  * Users can update their own profile, admins can update any profile
  */
-usersRouter.put(
-  '/:id',
-  requireAuth(),
-  requireAdminOrSelf('id'),
-  validateJson(updateUserSchema),
-  async c => {
-    const logger = getLogger(c);
-    const userId = c.req.param('id');
-    const currentUser = c.get('user');
-    const validated = c.get('validated_json') as {
-      display_name?: string;
-      email?: string;
-      is_active?: number;
-    };
+usersRouter.openapi(updateUserRoute, async c => {
+  const logger = getLogger(c);
+  const { id: userId } = c.req.valid('param');
+  const currentUser = c.get('user');
+  const validated = c.req.valid('json');
 
-    try {
-      // Check if non-admin user is trying to modify is_active (admin-only field)
-      if (validated.is_active !== undefined && !currentUser.is_admin) {
-        logger.warn('Non-admin user attempted to modify is_active field', {
-          userId: currentUser.user_id,
-          targetUserId: userId,
-        });
+  try {
+    // Check if non-admin user is trying to modify is_active (admin-only field)
+    if (validated.is_active !== undefined && !currentUser.is_admin) {
+      logger.warn('Non-admin user attempted to modify is_active field', {
+        userId: currentUser.user_id,
+        targetUserId: userId,
+      });
+      return c.json(
+        {
+          success: false as const,
+          error: 'Only administrators can modify the is_active field',
+          code: 'ADMIN_REQUIRED',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
+    }
+
+    // Check if user exists
+    const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
+      .bind(userId)
+      .first();
+
+    if (!existingUser) {
+      logger.warn('User not found for update', { userId });
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
+    }
+
+    // If email is being updated, check if it's already taken
+    if (validated.email && validated.email !== existingUser.email) {
+      const emailExists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?')
+        .bind(validated.email, userId)
+        .first();
+
+      if (emailExists) {
+        logger.warn('Email already in use', { email: validated.email });
         return c.json(
-          response.error('Only administrators can modify the is_active field', 'ADMIN_REQUIRED'),
-          403
+          {
+            success: false as const,
+            error: 'Email is already in use',
+            code: 'EMAIL_EXISTS',
+            timestamp: new Date().toISOString(),
+          },
+          409
         );
       }
+    }
 
-      // Check if user exists
-      const existingUser = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?')
-        .bind(userId)
-        .first();
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: unknown[] = [];
 
-      if (!existingUser) {
-        logger.warn('User not found for update', { userId });
-        return c.json(response.notFound('User'), 404);
-      }
+    if (validated.display_name !== undefined) {
+      updates.push('display_name = ?');
+      params.push(validated.display_name);
+    }
 
-      // If email is being updated, check if it's already taken
-      if (validated.email && validated.email !== existingUser.email) {
-        const emailExists = await c.env.DB.prepare(
-          'SELECT id FROM users WHERE email = ? AND id != ?'
-        )
-          .bind(validated.email, userId)
-          .first();
+    if (validated.email !== undefined) {
+      updates.push('email = ?');
+      params.push(validated.email);
+    }
 
-        if (emailExists) {
-          logger.warn('Email already in use', { email: validated.email });
-          return c.json(response.error('Email is already in use', 'EMAIL_EXISTS'), 409);
-        }
-      }
+    if (validated.is_active !== undefined) {
+      // Only admins can reach this point (checked above)
+      updates.push('is_active = ?');
+      params.push(validated.is_active ? 1 : 0);
+    }
 
-      // Build update query dynamically
-      const updates: string[] = [];
-      const params: unknown[] = [];
+    // Always update updated_at
+    updates.push('updated_at = ?');
+    params.push(Math.floor(Date.now() / 1000));
 
-      if (validated.display_name !== undefined) {
-        updates.push('display_name = ?');
-        params.push(validated.display_name);
-      }
+    // Add user ID as the final parameter
+    params.push(userId);
 
-      if (validated.email !== undefined) {
-        updates.push('email = ?');
-        params.push(validated.email);
-      }
+    // Execute update
+    const updateQuery = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+    await c.env.DB.prepare(updateQuery)
+      .bind(...params)
+      .run();
 
-      if (validated.is_active !== undefined) {
-        // Only admins can reach this point (checked above)
-        updates.push('is_active = ?');
-        params.push(validated.is_active ? 1 : 0);
-      }
+    // Fetch and return updated user
+    const updatedUser = await c.env.DB.prepare(
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
+    )
+      .bind(userId)
+      .first();
 
-      // Always update updated_at
-      updates.push('updated_at = ?');
-      params.push(Math.floor(Date.now() / 1000));
+    logger.info('User profile updated', {
+      userId,
+      updatedBy: currentUser.user_id,
+      isAdmin: currentUser.is_admin ?? false,
+    });
 
-      // Add user ID as the final parameter
-      params.push(userId);
-
-      // Execute update
-      const updateQuery = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-      await c.env.DB.prepare(updateQuery)
-        .bind(...params)
-        .run();
-
-      // Fetch and return updated user
-      const updatedUser = await c.env.DB.prepare(
-        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE id = ?'
-      )
-        .bind(userId)
-        .first();
-
-      logger.info('User profile updated', {
-        userId,
-        updatedBy: currentUser.user_id,
-        isAdmin: currentUser.is_admin ?? false,
-      });
-
-      return c.json(
-        response.updated({
-          id: updatedUser!.id,
-          email: updatedUser!.email,
+    return c.json(
+      {
+        success: true as const,
+        data: {
+          id: updatedUser!.id as string,
+          email: updatedUser!.email as string,
           display_name: updatedUser!.display_name,
-          provider: updatedUser!.provider,
+          provider: updatedUser!.provider as string,
           created_at: updatedUser!.created_at,
           updated_at: updatedUser!.updated_at,
           is_active: !!updatedUser!.is_active,
           is_admin: !!updatedUser!.is_admin,
-        })
-      );
-    } catch (error) {
-      logger.error('Error updating user profile', error as Error, { userId });
-      return c.json(response.error('Failed to update user profile', 'USER_UPDATE_FAILED'), 500);
-    }
+        },
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error updating user profile', error as Error, { userId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to update user profile',
+        code: 'USER_UPDATE_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * GET /api/users/{id}/activity
