@@ -7,7 +7,6 @@
  */
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createGroupSchema,
@@ -15,6 +14,7 @@ import {
   addGroupMemberSchema,
   groupSchema,
   groupMemberSchema,
+  groupMemberResponseSchema,
   listGroupsQuerySchema,
   listGroupMembersQuerySchema,
 } from '../schemas/index.js';
@@ -1489,111 +1489,211 @@ groupsRouter.openapi(removeGroupMemberRoute, async c => {
   }
 });
 
+// Paginated list response schema for group members
+const GroupMemberListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(groupMemberResponseSchema).openapi({
+      description: 'Array of group member objects',
+    }),
+    metadata: z
+      .object({
+        page: z.number().int().openapi({ example: 1, description: 'Current page number' }),
+        pageSize: z
+          .number()
+          .int()
+          .openapi({ example: 100, description: 'Number of items per page' }),
+        total: z
+          .number()
+          .int()
+          .openapi({ example: 5, description: 'Total number of matching members' }),
+        hasMore: z
+          .boolean()
+          .openapi({ example: false, description: 'Whether more results are available' }),
+      })
+      .optional(),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupMemberListResponse');
+
+/**
+ * GET /api/groups/:id/members route definition
+ */
+const listGroupMembersRoute = createRoute({
+  method: 'get',
+  path: '/{id}/members',
+  tags: ['Groups'],
+  summary: 'List group members',
+  description:
+    'List direct members of a group with optional filtering by member type and pagination',
+  operationId: 'listGroupMembers',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+    query: listGroupMembersQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Paginated list of group members',
+      content: {
+        'application/json': {
+          schema: GroupMemberListResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to list group members',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/groups/:id/members
  *
  * List direct members of a group
  */
-groupsRouter.get(
-  '/:id/members',
-  requireAuth(),
-  validateQuery(listGroupMembersQuerySchema),
-  async c => {
-    const logger = getLogger(c);
-    const groupId = c.req.param('id');
-    const validated = c.get('validated_query') as {
-      limit: number;
-      offset: number;
-      member_type?: 'user' | 'group';
-    };
+groupsRouter.openapi(listGroupMembersRoute, async c => {
+  const logger = getLogger(c);
+  const { id: groupId } = c.req.valid('param');
+  const validated = c.req.valid('query');
 
-    const { limit, offset, member_type } = validated;
+  const { limit, offset, member_type } = validated;
 
-    try {
-      // Check if group exists
-      const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-        .bind(groupId)
-        .first();
+  try {
+    // Check if group exists
+    const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+      .bind(groupId)
+      .first();
 
-      if (!existingGroup) {
-        logger.warn('Group not found for listing members', { groupId });
-        return c.json(response.notFound('Group'), 404);
-      }
-
-      // Build query to get members with their details
-      let query = `
-        SELECT
-          gm.member_type,
-          gm.member_id,
-          gm.created_at,
-          CASE
-            WHEN gm.member_type = 'user' THEN u.display_name
-            WHEN gm.member_type = 'group' THEN g.name
-          END as name,
-          CASE
-            WHEN gm.member_type = 'user' THEN u.email
-            ELSE NULL
-          END as email
-        FROM group_members gm
-        LEFT JOIN users u ON gm.member_type = 'user' AND gm.member_id = u.id
-        LEFT JOIN groups g ON gm.member_type = 'group' AND gm.member_id = g.id
-        WHERE gm.group_id = ?
-      `;
-      const params: unknown[] = [groupId];
-
-      if (member_type) {
-        query += ' AND gm.member_type = ?';
-        params.push(member_type);
-      }
-
-      query += ' ORDER BY gm.created_at DESC LIMIT ? OFFSET ?';
-      params.push(limit, offset);
-
-      const results = await c.env.DB.prepare(query)
-        .bind(...params)
-        .all<{
-          member_type: 'user' | 'group';
-          member_id: string;
-          created_at: number;
-          name: string | null;
-          email: string | null;
-        }>();
-
-      // Get total count
-      let countQuery = 'SELECT COUNT(*) as total FROM group_members WHERE group_id = ?';
-      const countParams: unknown[] = [groupId];
-
-      if (member_type) {
-        countQuery += ' AND member_type = ?';
-        countParams.push(member_type);
-      }
-
-      const countResult = await c.env.DB.prepare(countQuery)
-        .bind(...countParams)
-        .first<{ total: number }>();
-      const total = countResult?.total || 0;
-
-      logger.info('Group members listed', { groupId, count: results.results?.length || 0 });
-
-      // Format members
-      const members = (results.results || []).map(member => ({
-        member_type: member.member_type,
-        member_id: member.member_id,
-        created_at: member.created_at,
-        name: member.name,
-        email: member.email,
-      }));
-
-      const page = Math.floor(offset / limit) + 1;
-      const hasMore = offset + limit < total;
-
-      return c.json(response.paginated(members, total, page, limit, hasMore));
-    } catch (error) {
-      logger.error('Error listing group members', error as Error, { groupId });
-      return c.json(response.error('Failed to list group members', 'LIST_MEMBERS_FAILED'), 500);
+    if (!existingGroup) {
+      logger.warn('Group not found for listing members', { groupId });
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
+
+    // Build query to get members with their details
+    let query = `
+      SELECT
+        gm.member_type,
+        gm.member_id,
+        gm.created_at,
+        CASE
+          WHEN gm.member_type = 'user' THEN u.display_name
+          WHEN gm.member_type = 'group' THEN g.name
+        END as name,
+        CASE
+          WHEN gm.member_type = 'user' THEN u.email
+          ELSE NULL
+        END as email
+      FROM group_members gm
+      LEFT JOIN users u ON gm.member_type = 'user' AND gm.member_id = u.id
+      LEFT JOIN groups g ON gm.member_type = 'group' AND gm.member_id = g.id
+      WHERE gm.group_id = ?
+    `;
+    const params: unknown[] = [groupId];
+
+    if (member_type) {
+      query += ' AND gm.member_type = ?';
+      params.push(member_type);
+    }
+
+    query += ' ORDER BY gm.created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const results = await c.env.DB.prepare(query)
+      .bind(...params)
+      .all<{
+        member_type: 'user' | 'group';
+        member_id: string;
+        created_at: number;
+        name: string | null;
+        email: string | null;
+      }>();
+
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM group_members WHERE group_id = ?';
+    const countParams: unknown[] = [groupId];
+
+    if (member_type) {
+      countQuery += ' AND member_type = ?';
+      countParams.push(member_type);
+    }
+
+    const countResult = await c.env.DB.prepare(countQuery)
+      .bind(...countParams)
+      .first<{ total: number }>();
+    const total = countResult?.total || 0;
+
+    logger.info('Group members listed', { groupId, count: results.results?.length || 0 });
+
+    // Format members (convert null to undefined for optional fields)
+    const members = (results.results || []).map(member => ({
+      member_type: member.member_type,
+      member_id: member.member_id,
+      created_at: member.created_at,
+      name: member.name ?? undefined,
+      email: member.email ?? undefined,
+    }));
+
+    const page = Math.floor(offset / limit) + 1;
+    const hasMore = offset + limit < total;
+
+    return c.json(
+      {
+        success: true as const,
+        data: members,
+        metadata: {
+          page,
+          pageSize: limit,
+          total,
+          hasMore,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error listing group members', error as Error, { groupId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to list group members',
+        code: 'LIST_MEMBERS_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * Helper function to recursively get all effective members of a group
