@@ -7,13 +7,14 @@
  */
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createGroupSchema,
   updateGroupSchema,
   addGroupMemberSchema,
   groupSchema,
+  groupMemberSchema,
   listGroupsQuerySchema,
   listGroupMembersQuerySchema,
 } from '../schemas/index.js';
@@ -1050,145 +1051,277 @@ async function getGroupNestingDepth(
   return maxChildDepth + 1;
 }
 
+// Response schema for group member creation
+const GroupMemberCreatedResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: groupMemberSchema,
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupMemberCreatedResponse');
+
+/**
+ * POST /api/groups/:id/members route definition
+ */
+const addGroupMemberRoute = createRoute({
+  method: 'post',
+  path: '/{id}/members',
+  tags: ['Groups'],
+  summary: 'Add member to group',
+  description:
+    'Add a user or group as a member to a group (admin only). Validates against circular membership and maximum nesting depth.',
+  operationId: 'addGroupMember',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: addGroupMemberSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Member added to group',
+      content: {
+        'application/json': {
+          schema: GroupMemberCreatedResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group or member not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description:
+        'Conflict - member already exists, circular membership, or max nesting depth exceeded',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to add member to group',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * POST /api/groups/:id/members
  *
  * Add member (user or group) to group (admin only)
  */
-groupsRouter.post(
-  '/:id/members',
-  requireAuth(),
-  requireAdmin(),
-  validateJson(addGroupMemberSchema),
-  async c => {
-    const logger = getLogger(c);
-    const groupId = c.req.param('id');
-    const currentUser = c.get('user');
-    const validated = c.get('validated_json') as {
-      member_type: 'user' | 'group';
-      member_id: string;
-    };
+groupsRouter.openapi(addGroupMemberRoute, async c => {
+  const logger = getLogger(c);
+  const { id: groupId } = c.req.valid('param');
+  const currentUser = c.get('user');
+  const validated = c.req.valid('json');
 
-    try {
-      // Check if group exists
-      const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-        .bind(groupId)
+  try {
+    // Check if group exists
+    const existingGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+      .bind(groupId)
+      .first();
+
+    if (!existingGroup) {
+      logger.warn('Group not found for adding member', { groupId });
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
+    }
+
+    // Check if member exists (user or group)
+    if (validated.member_type === 'user') {
+      const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
+        .bind(validated.member_id)
         .first();
-
-      if (!existingGroup) {
-        logger.warn('Group not found for adding member', { groupId });
-        return c.json(response.notFound('Group'), 404);
+      if (!user) {
+        logger.warn('User not found for membership', { userId: validated.member_id });
+        return c.json(
+          {
+            success: false as const,
+            error: 'User not found',
+            code: 'NOT_FOUND',
+            timestamp: new Date().toISOString(),
+          },
+          404
+        );
+      }
+    } else {
+      const memberGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
+        .bind(validated.member_id)
+        .first();
+      if (!memberGroup) {
+        logger.warn('Member group not found', { memberId: validated.member_id });
+        return c.json(
+          {
+            success: false as const,
+            error: 'Member group not found',
+            code: 'NOT_FOUND',
+            timestamp: new Date().toISOString(),
+          },
+          404
+        );
       }
 
-      // Check if member exists (user or group)
-      if (validated.member_type === 'user') {
-        const user = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?')
-          .bind(validated.member_id)
-          .first();
-        if (!user) {
-          logger.warn('User not found for membership', { userId: validated.member_id });
-          return c.json(response.notFound('User'), 404);
-        }
-      } else {
-        const memberGroup = await c.env.DB.prepare('SELECT id FROM groups WHERE id = ?')
-          .bind(validated.member_id)
-          .first();
-        if (!memberGroup) {
-          logger.warn('Member group not found', { memberId: validated.member_id });
-          return c.json(response.notFound('Member group'), 404);
-        }
-
-        // Check for cycles when adding a group as a member
-        const createsCycle = await wouldCreateCycle(c.env.DB, groupId, validated.member_id);
-        if (createsCycle) {
-          logger.warn('Adding member would create cycle', {
-            groupId,
-            memberId: validated.member_id,
-          });
-          return c.json(
-            response.error(
-              'Cannot add group as member: would create a circular membership',
-              'CIRCULAR_MEMBERSHIP'
-            ),
-            409
-          );
-        }
-
-        // Check nesting depth
-        const memberDepth = await getGroupNestingDepth(c.env.DB, validated.member_id);
-        const parentDepth = await getGroupNestingDepth(c.env.DB, groupId);
-
-        // The new nesting depth would be the parent's position + 1 + member's depth
-        // We need to check from the top-level parent to avoid exceeding MAX_NESTING_DEPTH
-        if (memberDepth + 1 > MAX_NESTING_DEPTH) {
-          logger.warn('Adding member would exceed max nesting depth', {
-            groupId,
-            memberId: validated.member_id,
-            memberDepth,
-            parentDepth,
-          });
-          return c.json(
-            response.error(
-              `Cannot add group as member: would exceed maximum nesting depth of ${MAX_NESTING_DEPTH}`,
-              'MAX_NESTING_DEPTH_EXCEEDED'
-            ),
-            409
-          );
-        }
-      }
-
-      // Check if member is already in the group
-      const existingMember = await c.env.DB.prepare(
-        'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
-      )
-        .bind(groupId, validated.member_type, validated.member_id)
-        .first();
-
-      if (existingMember) {
-        logger.warn('Member already in group', {
+      // Check for cycles when adding a group as a member
+      const createsCycle = await wouldCreateCycle(c.env.DB, groupId, validated.member_id);
+      if (createsCycle) {
+        logger.warn('Adding member would create cycle', {
           groupId,
-          memberType: validated.member_type,
           memberId: validated.member_id,
         });
         return c.json(
-          response.error('Member already exists in group', 'MEMBER_ALREADY_EXISTS'),
+          {
+            success: false as const,
+            error: 'Cannot add group as member: would create a circular membership',
+            code: 'CIRCULAR_MEMBERSHIP',
+            timestamp: new Date().toISOString(),
+          },
           409
         );
       }
 
-      // Add the member
-      const now = Math.floor(Date.now() / 1000);
-      await c.env.DB.prepare(
-        'INSERT INTO group_members (group_id, member_type, member_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
-      )
-        .bind(groupId, validated.member_type, validated.member_id, now, currentUser.user_id)
-        .run();
+      // Check nesting depth
+      const memberDepth = await getGroupNestingDepth(c.env.DB, validated.member_id);
+      const parentDepth = await getGroupNestingDepth(c.env.DB, groupId);
 
-      // Invalidate effective groups cache since membership changed
-      await invalidateAllEffectiveGroupsCache(c.env.KV);
+      // The new nesting depth would be the parent's position + 1 + member's depth
+      // We need to check from the top-level parent to avoid exceeding MAX_NESTING_DEPTH
+      if (memberDepth + 1 > MAX_NESTING_DEPTH) {
+        logger.warn('Adding member would exceed max nesting depth', {
+          groupId,
+          memberId: validated.member_id,
+          memberDepth,
+          parentDepth,
+        });
+        return c.json(
+          {
+            success: false as const,
+            error: `Cannot add group as member: would exceed maximum nesting depth of ${MAX_NESTING_DEPTH}`,
+            code: 'MAX_NESTING_DEPTH_EXCEEDED',
+            timestamp: new Date().toISOString(),
+          },
+          409
+        );
+      }
+    }
 
-      logger.info('Member added to group', {
+    // Check if member is already in the group
+    const existingMember = await c.env.DB.prepare(
+      'SELECT group_id FROM group_members WHERE group_id = ? AND member_type = ? AND member_id = ?'
+    )
+      .bind(groupId, validated.member_type, validated.member_id)
+      .first();
+
+    if (existingMember) {
+      logger.warn('Member already in group', {
         groupId,
         memberType: validated.member_type,
         memberId: validated.member_id,
       });
-
       return c.json(
-        response.created({
+        {
+          success: false as const,
+          error: 'Member already exists in group',
+          code: 'MEMBER_ALREADY_EXISTS',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
+    }
+
+    // Add the member
+    const now = Math.floor(Date.now() / 1000);
+    await c.env.DB.prepare(
+      'INSERT INTO group_members (group_id, member_type, member_id, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
+    )
+      .bind(groupId, validated.member_type, validated.member_id, now, currentUser.user_id)
+      .run();
+
+    // Invalidate effective groups cache since membership changed
+    await invalidateAllEffectiveGroupsCache(c.env.KV);
+
+    logger.info('Member added to group', {
+      groupId,
+      memberType: validated.member_type,
+      memberId: validated.member_id,
+    });
+
+    return c.json(
+      {
+        success: true as const,
+        data: {
           group_id: groupId,
           member_type: validated.member_type,
           member_id: validated.member_id,
           created_at: now,
           created_by: currentUser.user_id,
-        }),
-        201
-      );
-    } catch (error) {
-      logger.error('Error adding member to group', error as Error, { groupId });
-      return c.json(response.error('Failed to add member to group', 'ADD_MEMBER_FAILED'), 500);
-    }
+        },
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
+      201
+    );
+  } catch (error) {
+    logger.error('Error adding member to group', error as Error, { groupId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to add member to group',
+        code: 'ADD_MEMBER_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * DELETE /api/groups/:id/members/:memberType/:memberId
