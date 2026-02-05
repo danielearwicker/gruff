@@ -6,13 +6,14 @@
  * Maximum nesting depth of 10 levels to prevent performance issues.
  */
 
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createGroupSchema,
   updateGroupSchema,
   addGroupMemberSchema,
+  groupSchema,
   listGroupsQuerySchema,
   listGroupMembersQuerySchema,
 } from '../schemas/index.js';
@@ -49,20 +50,102 @@ interface GroupRow {
   created_by: string | null;
 }
 
+// Response schema for group operations
+const GroupResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: groupSchema,
+    message: z.string().optional().openapi({ example: 'Resource created successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupResponse');
+
+// Error response schema for group operations
+const GroupErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Group name already exists' }),
+    code: z.string().openapi({ example: 'GROUP_NAME_EXISTS' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupErrorResponse');
+
 const groupsRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 /**
+ * POST /api/groups route definition
+ */
+const createGroupRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Groups'],
+  summary: 'Create group',
+  description: 'Create a new group (admin only)',
+  operationId: 'createGroup',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: createGroupSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Group created',
+      content: {
+        'application/json': {
+          schema: GroupResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - group name already exists',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * POST /api/groups
- *
  * Create a new group (admin only)
  */
-groupsRouter.post('/', requireAuth(), requireAdmin(), validateJson(createGroupSchema), async c => {
+groupsRouter.openapi(createGroupRoute, async c => {
   const logger = getLogger(c);
   const currentUser = c.get('user');
-  const validated = c.get('validated_json') as {
-    name: string;
-    description?: string;
-  };
+  const validated = c.req.valid('json');
 
   try {
     // Check if group name already exists
@@ -72,7 +155,15 @@ groupsRouter.post('/', requireAuth(), requireAdmin(), validateJson(createGroupSc
 
     if (existingGroup) {
       logger.warn('Group name already exists', { name: validated.name });
-      return c.json(response.error('Group name already exists', 'GROUP_NAME_EXISTS'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group name already exists',
+          code: 'GROUP_NAME_EXISTS',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     // Generate UUID for the new group
@@ -89,18 +180,23 @@ groupsRouter.post('/', requireAuth(), requireAdmin(), validateJson(createGroupSc
     logger.info('Group created', { groupId, name: validated.name });
 
     return c.json(
-      response.created({
-        id: groupId,
-        name: validated.name,
-        description: validated.description || null,
-        created_at: now,
-        created_by: currentUser.user_id,
-      }),
+      {
+        success: true as const,
+        data: {
+          id: groupId,
+          name: validated.name,
+          description: validated.description || null,
+          created_at: now,
+          created_by: currentUser.user_id,
+        },
+        message: 'Resource created successfully',
+        timestamp: new Date().toISOString(),
+      },
       201
     );
   } catch (error) {
     logger.error('Error creating group', error as Error);
-    return c.json(response.error('Failed to create group', 'GROUP_CREATE_FAILED'), 500);
+    throw error;
   }
 });
 
