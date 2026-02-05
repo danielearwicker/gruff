@@ -1491,15 +1491,96 @@ interface CachedEffectiveGroupsResult {
   count: number;
 }
 
+// Response schema for effective group membership
+const EffectiveGroupSchema = z.object({
+  id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+  name: z.string().openapi({ example: 'Engineering' }),
+  description: z.string().nullable().openapi({ example: 'Engineering team group' }),
+  paths: z.array(z.array(z.string())).openapi({
+    description: 'Membership paths showing how the user belongs to this group',
+    example: [['group-1', 'group-2']],
+  }),
+});
+
+const UserEffectiveGroupsResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user_id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+      groups: z.array(EffectiveGroupSchema).openapi({
+        description:
+          'Array of all groups the user belongs to (directly or through nested membership)',
+      }),
+      count: z
+        .number()
+        .int()
+        .openapi({ example: 3, description: 'Total number of effective group memberships' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserEffectiveGroupsResponse');
+
+/**
+ * GET /api/users/{id}/effective-groups route definition
+ */
+const getUserEffectiveGroupsRoute = createRoute({
+  method: 'get',
+  path: '/{id}/effective-groups',
+  tags: ['Users'],
+  summary: 'Get effective groups',
+  description:
+    'List all groups a user belongs to, including nested group memberships. Results are cached for performance.',
+  operationId: 'getUserEffectiveGroups',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: UserIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'List of all effective groups the user belongs to',
+      content: {
+        'application/json': {
+          schema: UserEffectiveGroupsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to retrieve user effective groups',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/users/{id}/effective-groups
  *
  * List all groups a user belongs to (directly or through nested group membership)
  * Results are cached in KV with TTL of 5 minutes
  */
-usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
+usersRouter.openapi(getUserEffectiveGroupsRoute, async c => {
   const logger = getLogger(c);
-  const userId = c.req.param('id');
+  const { id: userId } = c.req.valid('param');
 
   try {
     // Check if user exists
@@ -1507,7 +1588,15 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
 
     if (!user) {
       logger.warn('User not found for effective groups query', { userId });
-      return c.json(response.notFound('User'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Try to get from cache first using versioned key
@@ -1519,7 +1608,14 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
         userId,
         count: cachedResult.count,
       });
-      return c.json(response.success(cachedResult));
+      return c.json(
+        {
+          success: true as const,
+          data: cachedResult,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
     // Cache miss: compute effective groups
@@ -1563,11 +1659,23 @@ usersRouter.get('/:id/effective-groups', requireAuth(), async c => {
 
     logger.info('User effective groups retrieved and cached', { userId, count: result.count });
 
-    return c.json(response.success(result));
+    return c.json(
+      {
+        success: true as const,
+        data: result,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error retrieving user effective groups', error as Error, { userId });
     return c.json(
-      response.error('Failed to retrieve user effective groups', 'USER_EFFECTIVE_GROUPS_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to retrieve user effective groups',
+        code: 'USER_EFFECTIVE_GROUPS_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }
