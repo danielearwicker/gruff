@@ -6,7 +6,6 @@ import {
   typeQuerySchema,
   typeSchema,
 } from '../schemas/index.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
   getCache,
@@ -791,12 +790,80 @@ types.openapi(updateTypeRoute, async c => {
   }
 });
 
+// Delete response schema for type operations
+const TypeDeleteResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message: z.string().openapi({ example: 'Resource deleted successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('TypeDeleteResponse');
+
+/**
+ * DELETE /api/types/:id route definition
+ */
+const deleteTypeRoute = createRoute({
+  method: 'delete',
+  path: '/{id}',
+  tags: ['Types'],
+  summary: 'Delete type',
+  description: 'Delete a type (only if not in use) (admin only)',
+  operationId: 'deleteType',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: TypeIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Type deleted',
+      content: {
+        'application/json': {
+          schema: TypeDeleteResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Type not found',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - type is in use by entities or links',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * DELETE /api/types/:id
  * Delete a type (only if not in use) (admin only)
  */
-types.delete('/:id', requireAuth(), requireAdmin(), async c => {
-  const id = c.req.param('id');
+types.openapi(deleteTypeRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
 
   try {
@@ -804,7 +871,15 @@ types.delete('/:id', requireAuth(), requireAdmin(), async c => {
     const existing = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!existing) {
-      return c.json(response.notFound('Type'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Type not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check if type is in use by entities
@@ -815,7 +890,12 @@ types.delete('/:id', requireAuth(), requireAdmin(), async c => {
 
     if (entityCount && (entityCount.count as number) > 0) {
       return c.json(
-        response.error('Cannot delete type that is in use by entities', 'TYPE_IN_USE'),
+        {
+          success: false as const,
+          error: 'Cannot delete type that is in use by entities',
+          code: 'TYPE_IN_USE',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -828,7 +908,12 @@ types.delete('/:id', requireAuth(), requireAdmin(), async c => {
 
     if (linkCount && (linkCount.count as number) > 0) {
       return c.json(
-        response.error('Cannot delete type that is in use by links', 'TYPE_IN_USE'),
+        {
+          success: false as const,
+          error: 'Cannot delete type that is in use by links',
+          code: 'TYPE_IN_USE',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -844,11 +929,18 @@ types.delete('/:id', requireAuth(), requireAdmin(), async c => {
       logger.warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.deleted());
+    return c.json(
+      {
+        success: true as const,
+        message: 'Resource deleted successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error deleting type', error instanceof Error ? error : undefined, {
-      typeId: c.req.param('id'),
+      typeId: id,
     });
     throw error;
   }
