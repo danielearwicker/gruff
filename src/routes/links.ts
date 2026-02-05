@@ -91,6 +91,23 @@ const LinkVersionListResponseSchema = z
   })
   .openapi('LinkVersionListResponse');
 
+// Path params schema for link version
+const LinkVersionParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440100',
+      description: 'Link ID (UUID)',
+    }),
+  version: z.string().openapi({
+    param: { name: 'version', in: 'path' },
+    example: '1',
+    description: 'Version number (positive integer)',
+  }),
+});
+
 // Path params schema for link by ID
 const LinkIdParamsSchema = z.object({
   id: z
@@ -1778,6 +1795,65 @@ links.openapi(getLinkVersionsRoute, async c => {
 });
 
 /**
+ * GET /api/links/:id/versions/:version route definition
+ */
+const getLinkVersionRoute = createRoute({
+  method: 'get',
+  path: '/{id}/versions/{version}',
+  tags: ['Links'],
+  summary: 'Get specific version of a link',
+  description:
+    'Get a specific version of a link by version number. Permission checking: Authenticated users must have read permission on the link. Links with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access links with NULL acl_id (public).',
+  operationId: 'getLinkVersion',
+  request: {
+    params: LinkVersionParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Link version found',
+      content: {
+        'application/json': {
+          schema: LinkResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid version number',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link or version not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get link version route
+links.use('/:id/versions/:version', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
+/**
  * GET /api/links/:id/versions/:version
  * Get a specific version of a link
  *
@@ -1786,9 +1862,8 @@ links.openapi(getLinkVersionsRoute, async c => {
  * - Links with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access links with NULL acl_id (public)
  */
-links.get('/:id/versions/:version', optionalAuth(), async c => {
-  const id = c.req.param('id');
-  const versionParam = c.req.param('version');
+links.openapi(getLinkVersionRoute, async c => {
+  const { id, version: versionParam } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -1797,14 +1872,30 @@ links.get('/:id/versions/:version', optionalAuth(), async c => {
     // Parse version number
     const versionNumber = parseInt(versionParam, 10);
     if (isNaN(versionNumber) || versionNumber < 1) {
-      return c.json(response.error('Invalid version number', 'INVALID_VERSION'), 400);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid version number',
+          code: 'INVALID_VERSION',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
     }
 
     // First, find the latest version to ensure the link exists
     const latestVersion = await findLatestVersion(db, id);
 
     if (!latestVersion) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -1813,12 +1904,28 @@ links.get('/:id/versions/:version', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public links (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -1857,7 +1964,15 @@ links.get('/:id/versions/:version', optionalAuth(), async c => {
       .first();
 
     if (!link) {
-      return c.json(response.notFound('Version'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Version not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     const result = {
@@ -1867,7 +1982,14 @@ links.get('/:id/versions/:version', optionalAuth(), async c => {
       is_latest: link.is_latest === 1,
     };
 
-    return c.json(response.success(result));
+    return c.json(
+      {
+        success: true as const,
+        data: result as z.infer<typeof linkResponseSchema>,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })
