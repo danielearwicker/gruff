@@ -118,7 +118,7 @@ Convert endpoints:
 Prepare:
 
 - [x] **Annotate user schemas** - Add `.openapi()` to user-related schemas in `src/schemas/user.ts`
-- [ ] **Convert users router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/users.ts`
+- [x] **Convert users router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/users.ts`
 
 Convert endpoints:
 

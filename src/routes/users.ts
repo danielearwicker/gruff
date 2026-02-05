@@ -4,13 +4,12 @@
  * Handles listing users, getting user details, updating user profiles, and viewing user activity
  */
 
-import { Hono } from 'hono';
+import { OpenAPIHono, z } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
 import { updateUserSchema, adminRoleChangeSchema } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
-import { z } from 'zod';
 import {
   applyFieldSelection,
   applyFieldSelectionToArray,
@@ -43,7 +42,7 @@ interface UserRow {
   is_admin: number;
 }
 
-const usersRouter = new Hono<{ Bindings: Bindings }>();
+const usersRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Query schema for listing users
 const listUsersQuerySchema = z.object({
