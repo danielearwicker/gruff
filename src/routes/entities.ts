@@ -2502,6 +2502,120 @@ entities.openapi(getEntityOutboundRoute, async c => {
   }
 });
 
+// Schema for embedded source entity in inbound link response
+const InboundLinkSourceEntitySchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+    type_id: z.string().openapi({ example: 'Person' }),
+    properties: z.record(z.string(), z.unknown()).openapi({ example: { name: 'Jane Doe' } }),
+  })
+  .openapi('InboundLinkSourceEntity');
+
+// Schema for inbound link with embedded source entity
+const InboundLinkSchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440003' }),
+    type_id: z.string().openapi({ example: 'knows' }),
+    source_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+    target_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    properties: z.record(z.string(), z.unknown()).openapi({ example: { since: '2020-01-01' } }),
+    version: z.number().int().positive().openapi({ example: 1 }),
+    previous_version_id: z.string().uuid().nullable().openapi({ example: null }),
+    created_at: z.number().int().positive().openapi({ example: 1704067200 }),
+    created_by: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+    is_deleted: z.boolean().openapi({ example: false }),
+    is_latest: z.boolean().openapi({ example: true }),
+    source_entity: InboundLinkSourceEntitySchema,
+  })
+  .openapi('InboundLink');
+
+// Response schema for inbound links list
+const InboundLinksResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(InboundLinkSchema),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('InboundLinksResponse');
+
+// Query schema for inbound links (reuse outbound schema since it's identical)
+const InboundLinksQuerySchema = z.object({
+  type_id: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'type_id', in: 'query' },
+      example: 'knows',
+      description: 'Filter by link type ID',
+    }),
+  include_deleted: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'include_deleted', in: 'query' },
+      example: 'false',
+      description: 'Include soft-deleted links and entities',
+    }),
+});
+
+/**
+ * GET /api/entities/:id/inbound route definition
+ */
+const getEntityInboundRoute = createRoute({
+  method: 'get',
+  path: '/{id}/inbound',
+  tags: ['Entities'],
+  summary: 'Get inbound links',
+  description:
+    'Get all links where this entity is the target. Permission checking: Authenticated users must have read permission on the target entity. Entities with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access entities with NULL acl_id (public). Returned links and source entities are filtered by ACL permissions.',
+  operationId: 'getEntityInboundLinks',
+  request: {
+    params: EntityIdParamsSchema,
+    query: InboundLinksQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Inbound links',
+      content: {
+        'application/json': {
+          schema: InboundLinksResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get entity inbound route
+entities.use('/:id/inbound', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/entities/:id/inbound
  * Get all inbound links to an entity
@@ -2512,22 +2626,28 @@ entities.openapi(getEntityOutboundRoute, async c => {
  * - Unauthenticated requests can only access entities with NULL acl_id (public)
  * - Returned links and source entities are filtered by ACL permissions
  */
-entities.get('/:id/inbound', optionalAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityInboundRoute, async c => {
+  const { id } = c.req.valid('param');
+  const { type_id: typeId, include_deleted } = c.req.valid('query');
+  const includeDeleted = include_deleted === 'true';
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
-
-  // Optional query parameters for filtering
-  const typeId = c.req.query('type_id'); // Filter by link type
-  const includeDeleted = c.req.query('include_deleted') === 'true';
 
   try {
     // First, verify the entity exists
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission on the target entity
@@ -2536,12 +2656,28 @@ entities.get('/:id/inbound', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission on the target entity
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, entityAclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public entities (NULL acl_id)
       if (entityAclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this entity'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this entity',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -2627,25 +2763,37 @@ entities.get('/:id/inbound', optionalAuth(), async c => {
 
     // Parse properties for each link and source entity
     const linksData = filteredResults.map(link => ({
-      id: link.id,
-      type_id: link.type_id,
-      source_entity_id: link.source_entity_id,
-      target_entity_id: link.target_entity_id,
-      properties: link.properties ? JSON.parse(link.properties as string) : {},
-      version: link.version,
-      previous_version_id: link.previous_version_id,
-      created_at: link.created_at,
-      created_by: link.created_by,
+      id: link.id as string,
+      type_id: link.type_id as string,
+      source_entity_id: link.source_entity_id as string,
+      target_entity_id: link.target_entity_id as string,
+      properties: (link.properties ? JSON.parse(link.properties as string) : {}) as Record<
+        string,
+        unknown
+      >,
+      version: link.version as number,
+      previous_version_id: link.previous_version_id as string | null,
+      created_at: link.created_at as number,
+      created_by: link.created_by as string,
       is_deleted: link.is_deleted === 1,
       is_latest: link.is_latest === 1,
       source_entity: {
-        id: link.source_entity_id,
-        type_id: link.source_type_id,
-        properties: link.source_properties ? JSON.parse(link.source_properties as string) : {},
+        id: link.source_entity_id as string,
+        type_id: (link as Record<string, unknown>).source_type_id as string,
+        properties: ((link as Record<string, unknown>).source_properties
+          ? JSON.parse((link as Record<string, unknown>).source_properties as string)
+          : {}) as Record<string, unknown>,
       },
     }));
 
-    return c.json(response.success(linksData));
+    return c.json(
+      {
+        success: true as const,
+        data: linksData,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
