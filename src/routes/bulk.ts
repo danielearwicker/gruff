@@ -311,22 +311,55 @@ bulk.openapi(bulkCreateEntitiesRoute, async c => {
   }
 });
 
-/**
- * POST /api/bulk/links
- * Batch create multiple links in a single request
- * Uses D1 batch operations for consistency
- * Requires authentication
- */
-bulk.post('/links', requireAuth(), validateJson(bulkCreateLinksSchema), async c => {
-  const data = c.get('validated_json') as {
-    links: Array<{
-      type_id: string;
-      source_entity_id: string;
-      target_entity_id: string;
-      properties: Record<string, unknown>;
-      client_id?: string;
-    }>;
-  };
+const bulkCreateLinksRoute = createRoute({
+  method: 'post',
+  path: '/links',
+  tags: ['Bulk Operations'],
+  summary: 'Bulk create links',
+  description: 'Create multiple links in a single request (max 100)',
+  operationId: 'bulkCreateLinks',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: bulkCreateLinksSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Bulk create results',
+      content: {
+        'application/json': {
+          schema: BulkCreateSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+bulk.openapi(bulkCreateLinksRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const user = c.get('user');
   const userId = user.user_id;
@@ -495,8 +528,9 @@ bulk.post('/links', requireAuth(), validateJson(bulkCreateLinksSchema), async c 
     });
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           results,
           summary: {
             total: data.links.length,
@@ -504,8 +538,9 @@ bulk.post('/links', requireAuth(), validateJson(bulkCreateLinksSchema), async c 
             failed: failureCount,
           },
         },
-        'Bulk link creation completed'
-      ),
+        message: 'Bulk link creation completed',
+        timestamp: new Date().toISOString(),
+      },
       201
     );
   } catch (error) {
