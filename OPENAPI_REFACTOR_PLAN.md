@@ -122,7 +122,7 @@ Prepare:
 
 Convert endpoints:
 
-- [ ] **Convert GET /api/users** - Lists users (admin only). Test: List users with admin token
+- [x] **Convert GET /api/users** - Lists users (admin only). Test: List users with admin token
 - [ ] **Convert GET /api/users/search** - Searches users by email/name. Test: Search users
 - [ ] **Convert GET /api/users/:id** - Gets user profile. Test: Get user by ID
 - [ ] **Convert PUT /api/users/:id** - Updates user (admin or self). Test: Update user

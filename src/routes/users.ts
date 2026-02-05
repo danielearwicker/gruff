@@ -4,10 +4,11 @@
  * Handles listing users, getting user details, updating user profiles, and viewing user activity
  */
 
-import { OpenAPIHono, z } from '@hono/zod-openapi';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { validateJson } from '../middleware/validation.js';
 import { requireAuth, requireAdmin, requireAdminOrSelf } from '../middleware/auth.js';
 import { updateUserSchema, adminRoleChangeSchema } from '../schemas/index.js';
+import { ErrorResponseSchema } from '../schemas/openapi-common.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import {
@@ -44,26 +45,141 @@ interface UserRow {
 
 const usersRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
-// Query schema for listing users
+// Query schema for listing users (OpenAPI-annotated)
 const listUsersQuerySchema = z.object({
   limit: z
     .string()
     .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '20',
+      description: 'Maximum number of users to return (default: 20)',
+    })
     .transform(val => (val ? parseInt(val, 10) : 20)),
   offset: z
     .string()
     .optional()
+    .openapi({
+      param: { name: 'offset', in: 'query' },
+      example: '0',
+      description: 'Number of users to skip (default: 0)',
+    })
     .transform(val => (val ? parseInt(val, 10) : 0)),
   is_active: z
     .enum(['true', 'false', '1', '0'])
     .optional()
+    .openapi({
+      param: { name: 'is_active', in: 'query' },
+      example: 'true',
+      description: 'Filter by active status',
+    })
     .transform(val => {
       if (!val) return undefined;
       return val === 'true' || val === '1';
     }),
-  provider: z.enum(['google', 'github', 'local', 'microsoft', 'apple']).optional(),
+  provider: z
+    .enum(['google', 'github', 'local', 'microsoft', 'apple'])
+    .optional()
+    .openapi({
+      param: { name: 'provider', in: 'query' },
+      example: 'local',
+      description: 'Filter by authentication provider',
+    }),
   // Field selection: comma-separated list of fields to include in response
-  fields: z.string().optional(),
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,email,display_name',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
+// Paginated list response schema for user listing
+const UserListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(z.record(z.string(), z.unknown())).openapi({
+      description: 'Array of user objects (fields vary based on field selection)',
+    }),
+    metadata: z
+      .object({
+        page: z.number().int().openapi({ example: 1, description: 'Current page number' }),
+        pageSize: z
+          .number()
+          .int()
+          .openapi({ example: 20, description: 'Number of items per page' }),
+        total: z
+          .number()
+          .int()
+          .openapi({ example: 100, description: 'Total number of matching users' }),
+        hasMore: z
+          .boolean()
+          .openapi({ example: true, description: 'Whether more results are available' }),
+      })
+      .optional(),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserListResponse');
+
+/**
+ * GET /api/users route definition
+ */
+const listUsersRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Users'],
+  summary: 'List users',
+  description: 'List all users with optional filtering by active status and provider (admin only)',
+  operationId: 'listUsers',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    query: listUsersQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Paginated list of users',
+      content: {
+        'application/json': {
+          schema: UserListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid fields requested',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Admin access required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to list users',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
 });
 
 /**
@@ -72,108 +188,118 @@ const listUsersQuerySchema = z.object({
  * List all users (admin only)
  * This endpoint is restricted to admin users for security
  */
-usersRouter.get(
-  '/',
-  requireAuth(),
-  requireAdmin(),
-  validateQuery(listUsersQuerySchema),
-  async c => {
-    const logger = getLogger(c);
-    const validated = c.get('validated_query') as {
-      limit: number;
-      offset: number;
-      is_active?: boolean;
-      provider?: string;
-      fields?: string;
-    };
+usersRouter.openapi(listUsersRoute, async c => {
+  const logger = getLogger(c);
+  const validated = c.req.valid('query');
 
-    const { limit, offset, is_active, provider } = validated;
+  const { limit, offset, is_active, provider } = validated;
 
-    try {
-      // Build the query dynamically based on filters
-      let query =
-        'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE 1=1';
-      const params: unknown[] = [];
+  try {
+    // Build the query dynamically based on filters
+    let query =
+      'SELECT id, email, display_name, provider, created_at, updated_at, is_active, is_admin FROM users WHERE 1=1';
+    const params: unknown[] = [];
 
-      if (is_active !== undefined) {
-        query += ' AND is_active = ?';
-        params.push(is_active ? 1 : 0);
-      }
-
-      if (provider) {
-        query += ' AND provider = ?';
-        params.push(provider);
-      }
-
-      // Add ordering and pagination
-      query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-      params.push(limit, offset);
-
-      // Execute the query
-      const stmt = c.env.DB.prepare(query);
-      const results = await stmt.bind(...params).all();
-
-      // Get total count for pagination
-      let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
-      const countParams: unknown[] = [];
-
-      if (is_active !== undefined) {
-        countQuery += ' AND is_active = ?';
-        countParams.push(is_active ? 1 : 0);
-      }
-
-      if (provider) {
-        countQuery += ' AND provider = ?';
-        countParams.push(provider);
-      }
-
-      const countStmt = c.env.DB.prepare(countQuery);
-      const countResult = await countStmt.bind(...countParams).first<{ total: number }>();
-      const total = countResult?.total || 0;
-
-      logger.info('Users listed', { count: results.results?.length || 0, total });
-
-      // Format the users (exclude sensitive data)
-      const users = ((results.results || []) as unknown as UserRow[]).map(user => ({
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        provider: user.provider,
-        created_at: user.created_at,
-        updated_at: user.updated_at,
-        is_active: !!user.is_active,
-        is_admin: !!user.is_admin,
-      }));
-
-      // Apply field selection if requested
-      const fieldSelection = applyFieldSelectionToArray(
-        users as Record<string, unknown>[],
-        validated.fields,
-        USER_ALLOWED_FIELDS
-      );
-
-      if (!fieldSelection.success) {
-        return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
-          ),
-          400
-        );
-      }
-
-      // Calculate pagination metadata
-      const page = Math.floor(offset / limit) + 1;
-      const hasMore = offset + limit < total;
-
-      return c.json(response.paginated(fieldSelection.data, limit, page, total, hasMore));
-    } catch (error) {
-      logger.error('Error listing users', error as Error);
-      return c.json(response.error('Failed to list users', 'USER_LIST_FAILED'), 500);
+    if (is_active !== undefined) {
+      query += ' AND is_active = ?';
+      params.push(is_active ? 1 : 0);
     }
+
+    if (provider) {
+      query += ' AND provider = ?';
+      params.push(provider);
+    }
+
+    // Add ordering and pagination
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    // Execute the query
+    const stmt = c.env.DB.prepare(query);
+    const results = await stmt.bind(...params).all();
+
+    // Get total count for pagination
+    let countQuery = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
+    const countParams: unknown[] = [];
+
+    if (is_active !== undefined) {
+      countQuery += ' AND is_active = ?';
+      countParams.push(is_active ? 1 : 0);
+    }
+
+    if (provider) {
+      countQuery += ' AND provider = ?';
+      countParams.push(provider);
+    }
+
+    const countStmt = c.env.DB.prepare(countQuery);
+    const countResult = await countStmt.bind(...countParams).first<{ total: number }>();
+    const total = countResult?.total || 0;
+
+    logger.info('Users listed', { count: results.results?.length || 0, total });
+
+    // Format the users (exclude sensitive data)
+    const users = ((results.results || []) as unknown as UserRow[]).map(user => ({
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      provider: user.provider,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      is_active: !!user.is_active,
+      is_admin: !!user.is_admin,
+    }));
+
+    // Apply field selection if requested
+    const fieldSelection = applyFieldSelectionToArray(
+      users as Record<string, unknown>[],
+      validated.fields,
+      USER_ALLOWED_FIELDS
+    );
+
+    if (!fieldSelection.success) {
+      return c.json(
+        {
+          success: false as const,
+          error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          code: 'INVALID_FIELDS',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
+    }
+
+    // Calculate pagination metadata
+    const page = Math.floor(offset / limit) + 1;
+    const hasMore = offset + limit < total;
+
+    return c.json(
+      {
+        success: true as const,
+        data: fieldSelection.data,
+        metadata: {
+          page,
+          pageSize: limit,
+          total,
+          hasMore,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error listing users', error as Error);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to list users',
+        code: 'USER_LIST_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * GET /api/users/search
