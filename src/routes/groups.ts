@@ -18,7 +18,6 @@ import {
   listGroupsQuerySchema,
   listGroupMembersQuerySchema,
 } from '../schemas/index.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { applyFieldSelection, applyFieldSelectionToArray } from '../utils/field-selection.js';
 import { invalidateAllEffectiveGroupsCache } from '../utils/cache.js';
@@ -1695,6 +1694,51 @@ groupsRouter.openapi(listGroupMembersRoute, async c => {
   }
 });
 
+// Response schema for effective members (user entry)
+const EffectiveMemberUserSchema = z.object({
+  member_id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+  name: z.string().nullable().openapi({ example: 'John Doe' }),
+  email: z.string().nullable().openapi({ example: 'john@example.com' }),
+  paths: z.array(z.array(z.string())).openapi({
+    description: 'Membership paths showing how the user belongs to this group',
+    example: [['group-1', 'group-2']],
+  }),
+});
+
+// Response schema for effective members (group entry)
+const EffectiveMemberGroupSchema = z.object({
+  member_id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440003' }),
+  name: z.string().nullable().openapi({ example: 'Sub-team' }),
+  path: z.array(z.string()).openapi({
+    description: 'Membership path showing how this group is nested',
+    example: ['group-1'],
+  }),
+});
+
+// Response schema for effective members endpoint
+const GroupEffectiveMembersResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      users: z.array(EffectiveMemberUserSchema).openapi({
+        description: 'Deduplicated list of all users who are effective members of this group',
+      }),
+      groups: z.array(EffectiveMemberGroupSchema).openapi({
+        description: 'List of all nested groups that are members of this group',
+      }),
+      total_users: z
+        .number()
+        .int()
+        .openapi({ example: 5, description: 'Total number of unique effective user members' }),
+      total_groups: z
+        .number()
+        .int()
+        .openapi({ example: 2, description: 'Total number of nested group members' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupEffectiveMembersResponse');
+
 /**
  * Helper function to recursively get all effective members of a group
  */
@@ -1780,13 +1824,65 @@ async function getEffectiveMembers(
 }
 
 /**
+ * GET /api/groups/:id/effective-members route definition
+ */
+const getEffectiveMembersRoute = createRoute({
+  method: 'get',
+  path: '/{id}/effective-members',
+  tags: ['Groups'],
+  summary: 'List effective members',
+  description:
+    'List all members of a group recursively, including members of nested groups. Users are deduplicated with membership paths shown.',
+  operationId: 'getGroupEffectiveMembers',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Effective members of the group (recursive)',
+      content: {
+        'application/json': {
+          schema: GroupEffectiveMembersResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to list effective members',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * GET /api/groups/:id/effective-members
  *
  * List all members of a group (recursive, including nested group members)
  */
-groupsRouter.get('/:id/effective-members', requireAuth(), async c => {
+groupsRouter.openapi(getEffectiveMembersRoute, async c => {
   const logger = getLogger(c);
-  const groupId = c.req.param('id');
+  const { id: groupId } = c.req.valid('param');
 
   try {
     // Check if group exists
@@ -1796,7 +1892,15 @@ groupsRouter.get('/:id/effective-members', requireAuth(), async c => {
 
     if (!existingGroup) {
       logger.warn('Group not found for listing effective members', { groupId });
-      return c.json(response.notFound('Group'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     const allMembers = await getEffectiveMembers(c.env.DB, groupId);
@@ -1847,17 +1951,27 @@ groupsRouter.get('/:id/effective-members', requireAuth(), async c => {
     });
 
     return c.json(
-      response.success({
-        users: Array.from(uniqueUsers.values()),
-        groups,
-        total_users: uniqueUsers.size,
-        total_groups: groups.length,
-      })
+      {
+        success: true as const,
+        data: {
+          users: Array.from(uniqueUsers.values()),
+          groups,
+          total_users: uniqueUsers.size,
+          total_groups: groups.length,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error listing effective members', error as Error, { groupId });
     return c.json(
-      response.error('Failed to list effective members', 'EFFECTIVE_MEMBERS_FAILED'),
+      {
+        success: false as const,
+        error: 'Failed to list effective members',
+        code: 'EFFECTIVE_MEMBERS_FAILED',
+        timestamp: new Date().toISOString(),
+      },
       500
     );
   }

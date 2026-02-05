@@ -148,7 +148,7 @@ Convert endpoints:
 - [x] **Convert POST /api/groups/:id/members** - Adds member to group. Test: Add member
 - [x] **Convert DELETE /api/groups/:id/members/:member_id** - Removes member from group. Test: Remove member
 - [x] **Convert GET /api/groups/:id/members** - Lists direct members. Test: Get members
-- [ ] **Convert GET /api/groups/:id/effective-members** - Lists all members (nested groups). Test: Get effective members
+- [x] **Convert GET /api/groups/:id/effective-members** - Lists all members (nested groups). Test: Get effective members
 
 ### Bulk Operations API (`src/routes/bulk.ts`)
 
