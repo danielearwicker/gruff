@@ -135,7 +135,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate group schemas** - Add `.openapi()` to group schemas in `src/schemas/group.ts`
+- [x] **Annotate group schemas** - Add `.openapi()` to group schemas in `src/schemas/group.ts`
 - [ ] **Convert groups router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/groups.ts`
 
 Convert endpoints:
