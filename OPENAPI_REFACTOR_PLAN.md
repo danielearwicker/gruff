@@ -17,7 +17,7 @@ Before converting types routes, annotate schemas:
 Then convert each endpoint:
 
 - [x] **Convert POST /api/types** - Creates type (admin only). Test: Create type via curl with admin token
-- [ ] **Convert GET /api/types** - Lists all types with pagination. Test: `curl http://localhost:8787/api/types`
+- [x] **Convert GET /api/types** - Lists all types with pagination. Test: `curl http://localhost:8787/api/types`
 - [ ] **Convert GET /api/types/:id** - Gets single type by ID. Test: `curl http://localhost:8787/api/types/{uuid}`
 - [ ] **Convert PUT /api/types/:id** - Updates type (admin only). Test: Update type via curl
 - [ ] **Convert DELETE /api/types/:id** - Deletes type (admin only). Test: Delete type via curl

@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { validateJson } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createTypeSchema,
@@ -7,7 +7,6 @@ import {
   typeQuerySchema,
   typeSchema,
   UpdateType,
-  TypeQuery,
 } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -62,6 +61,28 @@ const TypeErrorResponseSchema = z
     timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
   })
   .openapi('TypeErrorResponse');
+
+// Paginated list response schema for type operations
+const TypeListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(typeSchema).openapi({ description: 'Array of types' }),
+    metadata: z
+      .object({
+        hasMore: z.boolean().openapi({ example: true }),
+        cursor: z
+          .string()
+          .optional()
+          .openapi({ example: '1704067200:550e8400-e29b-41d4-a716-446655440000' }),
+        total: z.number().int().optional().openapi({ example: 42 }),
+      })
+      .optional(),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('TypeListResponse');
+
+// Type for cached list response
+type TypeListResponse = z.infer<typeof TypeListResponseSchema>;
 
 /**
  * POST /api/types route definition
@@ -227,6 +248,39 @@ types.openapi(createTypeRoute, async c => {
 });
 
 /**
+ * GET /api/types route definition
+ */
+const listTypesRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Types'],
+  summary: 'List types',
+  description: 'Get a paginated list of types with optional filtering',
+  operationId: 'listTypes',
+  request: {
+    query: typeQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'List of types',
+      content: {
+        'application/json': {
+          schema: TypeListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * GET /api/types
  * List all types with optional filtering and cursor-based pagination
  *
@@ -234,8 +288,8 @@ types.openapi(createTypeRoute, async c => {
  * to avoid stale pagination issues while still benefiting from caching
  * for the most common case.
  */
-types.get('/', validateQuery(typeQuerySchema), async c => {
-  const query = c.get('validated_query') as TypeQuery;
+types.openapi(listTypesRoute, async c => {
+  const query = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
 
@@ -248,9 +302,9 @@ types.get('/', validateQuery(typeQuerySchema), async c => {
     if (canCache) {
       // Get versioned cache key (includes list version for invalidation)
       cacheKey = await getVersionedTypesListCacheKey(kv, query.category, query.name);
-      const cached = await getCache<unknown>(kv, cacheKey);
+      const cached = await getCache<TypeListResponse>(kv, cacheKey);
       if (cached) {
-        return c.json(cached);
+        return c.json(cached, 200);
       }
     }
 
@@ -316,11 +370,12 @@ types.get('/', validateQuery(typeQuerySchema), async c => {
 
     if (!fieldSelection.success) {
       return c.json(
-        response.error(
-          `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-          'INVALID_FIELDS',
-          { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
-        ),
+        {
+          success: false as const,
+          error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+          code: 'INVALID_FIELDS',
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -332,7 +387,17 @@ types.get('/', validateQuery(typeQuerySchema), async c => {
       nextCursor = `${lastItem.created_at}:${lastItem.id}`;
     }
 
-    const responseData = response.cursorPaginated(fieldSelection.data, nextCursor, hasMore);
+    // Build response with explicit literal type for success
+    // Note: field selection may return partial objects, but TypeScript types match schema
+    const responseData = {
+      success: true as const,
+      data: fieldSelection.data as z.infer<typeof typeSchema>[],
+      metadata: {
+        hasMore,
+        ...(nextCursor && { cursor: nextCursor }),
+      },
+      timestamp: new Date().toISOString(),
+    };
 
     // Cache the response (first page only, with full data - field selection not cached)
     // We only cache the full response to avoid caching different field combinations
@@ -342,7 +407,7 @@ types.get('/', validateQuery(typeQuerySchema), async c => {
       });
     }
 
-    return c.json(responseData);
+    return c.json(responseData, 200);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error listing types', error instanceof Error ? error : undefined);
