@@ -1016,6 +1016,15 @@ const updateLinkRoute = createRoute({
   },
 });
 
+// Delete success response schema
+const DeleteSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message: z.string().openapi({ example: 'Resource deleted successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkDeleteSuccessResponse');
+
 /**
  * PUT /api/links/:id
  * Update link (creates new version)
@@ -1193,13 +1202,73 @@ links.openapi(updateLinkRoute, async c => {
 });
 
 /**
+ * DELETE /api/links/:id route definition
+ */
+const deleteLinkRoute = createRoute({
+  method: 'delete',
+  path: '/{id}',
+  tags: ['Links'],
+  summary: 'Delete link',
+  description:
+    'Soft delete a link by creating a new version with is_deleted = true. Requires authentication and write permission on the link. The link can be restored later using the restore endpoint.',
+  operationId: 'deleteLink',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: LinkIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Link deleted successfully',
+      content: {
+        'application/json': {
+          schema: DeleteSuccessResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - link is already deleted',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * DELETE /api/links/:id
  * Soft delete link (creates new version with is_deleted = true)
  *
  * Requires authentication and write permission on the link.
  */
-links.delete('/:id', requireAuth(), async c => {
-  const id = c.req.param('id');
+links.openapi(deleteLinkRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -1211,19 +1280,43 @@ links.delete('/:id', requireAuth(), async c => {
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to delete this link'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to delete this link',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if already soft-deleted
     if (currentVersion.is_deleted === 1) {
-      return c.json(response.error('Link is already deleted', 'ALREADY_DELETED'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link is already deleted',
+          code: 'ALREADY_DELETED',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     const newVersion = (currentVersion.version as number) + 1;
@@ -1281,7 +1374,14 @@ links.delete('/:id', requireAuth(), async c => {
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.deleted());
+    return c.json(
+      {
+        success: true as const,
+        message: 'Resource deleted successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })
