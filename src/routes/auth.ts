@@ -5,7 +5,6 @@
  */
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   createUserSchema,
@@ -140,6 +139,17 @@ const RefreshSuccessResponseSchema = z
     timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
   })
   .openapi('RefreshSuccessResponse');
+
+// Success response for logout
+const LogoutSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      message: z.string().openapi({ example: 'Logged out successfully' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LogoutSuccessResponse');
 
 // =============================================================================
 // Route Definitions
@@ -283,6 +293,62 @@ const refreshRoute = createRoute({
       content: {
         'application/json': {
           schema: RefreshSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error - missing refresh token',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Invalid or expired refresh token',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * POST /api/auth/logout route definition
+ */
+const logoutRoute = createRoute({
+  method: 'post',
+  path: '/logout',
+  tags: ['Authentication'],
+  summary: 'Logout',
+  description: 'Invalidate the refresh token to log out the user.',
+  operationId: 'logout',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: logoutSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Logged out successfully',
+      content: {
+        'application/json': {
+          schema: LogoutSuccessResponseSchema,
         },
       },
     },
@@ -692,18 +758,24 @@ authRouter.openapi(refreshRoute, async c => {
  *
  * Logout by invalidating the refresh token
  */
-authRouter.post('/logout', validateJson(logoutSchema), async c => {
+authRouter.openapi(logoutRoute, async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as { refresh_token: string };
-
-  const { refresh_token } = validated;
+  const { refresh_token } = c.req.valid('json');
 
   try {
     // Get JWT secret from environment
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Server configuration error',
+          code: 'CONFIG_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     // Verify the refresh token JWT signature and expiration
@@ -711,7 +783,15 @@ authRouter.post('/logout', validateJson(logoutSchema), async c => {
 
     if (!payload) {
       logger.warn('Logout attempt with invalid or expired refresh token');
-      return c.json(response.error('Invalid or expired refresh token', 'INVALID_TOKEN'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid or expired refresh token',
+          code: 'INVALID_TOKEN',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     const { user_id } = payload;
@@ -723,13 +803,26 @@ authRouter.post('/logout', validateJson(logoutSchema), async c => {
 
     // Return success response
     return c.json(
-      response.success({
-        message: 'Logged out successfully',
-      })
+      {
+        success: true as const,
+        data: {
+          message: 'Logged out successfully',
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error during logout', error as Error);
-    return c.json(response.error('Failed to logout', 'LOGOUT_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to logout',
+        code: 'LOGOUT_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
