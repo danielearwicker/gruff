@@ -450,6 +450,99 @@ usersRouter.openapi(searchUsersRoute, async c => {
   }
 });
 
+// Path params schema for user ID endpoints
+const UserIdParamsSchema = z.object({
+  id: z.string().openapi({
+    param: { name: 'id', in: 'path' },
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'User ID (UUID)',
+  }),
+});
+
+// Query schema for field selection on single user
+const UserFieldSelectionQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,email,display_name',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
+// Response schema for single user details
+const UserDetailResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.record(z.string(), z.unknown()).openapi({
+      description: 'User object (fields vary based on field selection)',
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserDetailResponse');
+
+/**
+ * GET /api/users/{id} route definition
+ */
+const getUserRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['Users'],
+  summary: 'Get user by ID',
+  description:
+    'Get details of a specific user. Supports field selection via the `fields` query parameter.',
+  operationId: 'getUser',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: UserIdParamsSchema,
+    query: UserFieldSelectionQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'User details',
+      content: {
+        'application/json': {
+          schema: UserDetailResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid fields requested',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to retrieve user details',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/users/{id}
  *
@@ -460,10 +553,10 @@ usersRouter.openapi(searchUsersRoute, async c => {
  * Users can view their own profile, or any authenticated user can view others
  * (in production, you might want to restrict this)
  */
-usersRouter.get('/:id', requireAuth(), async c => {
+usersRouter.openapi(getUserRoute, async c => {
   const logger = getLogger(c);
-  const userId = c.req.param('id');
-  const fieldsParam = c.req.query('fields');
+  const { id: userId } = c.req.valid('param');
+  const { fields: fieldsParam } = c.req.valid('query');
 
   try {
     // Fetch the user from the database
@@ -475,7 +568,15 @@ usersRouter.get('/:id', requireAuth(), async c => {
 
     if (!user) {
       logger.warn('User not found', { userId });
-      return c.json(response.notFound('User'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     logger.info('User details retrieved', { userId });
@@ -501,22 +602,45 @@ usersRouter.get('/:id', requireAuth(), async c => {
       );
       if (!fieldSelection.success) {
         return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(USER_ALLOWED_FIELDS) }
-          ),
+          {
+            success: false as const,
+            error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            code: 'INVALID_FIELDS',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
-      return c.json(response.success(fieldSelection.data));
+      return c.json(
+        {
+          success: true as const,
+          data: fieldSelection.data,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
     // Return user details
-    return c.json(response.success(userData));
+    return c.json(
+      {
+        success: true as const,
+        data: userData,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error retrieving user details', error as Error, { userId });
-    return c.json(response.error('Failed to retrieve user details', 'USER_RETRIEVAL_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to retrieve user details',
+        code: 'USER_RETRIEVAL_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
