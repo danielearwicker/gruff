@@ -1,12 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
-import {
-  createEntitySchema,
-  updateEntitySchema,
-  entityResponseSchema,
-  UpdateEntity,
-} from '../schemas/index.js';
+import { createEntitySchema, updateEntitySchema, entityResponseSchema } from '../schemas/index.js';
 import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -880,14 +875,90 @@ entities.openapi(getEntityRoute, async c => {
 });
 
 /**
+ * PUT /api/entities/:id route definition
+ */
+const updateEntityRoute = createRoute({
+  method: 'put',
+  path: '/{id}',
+  tags: ['Entities'],
+  summary: 'Update entity',
+  description:
+    'Update an entity by creating a new version with the provided properties. Requires authentication and write permission on the entity. The original entity ID continues to work for lookups and will return the latest version.',
+  operationId: 'updateEntity',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: EntityIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: updateEntitySchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Entity updated (new version created)',
+      content: {
+        'application/json': {
+          schema: EntityResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or schema validation failed',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - entity is deleted (use restore endpoint first)',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * PUT /api/entities/:id
  * Update entity (creates new version)
  *
  * Requires authentication and write permission on the entity.
  */
-entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c => {
-  const id = c.req.param('id');
-  const data = c.get('validated_json') as UpdateEntity;
+entities.openapi(updateEntityRoute, async c => {
+  const { id } = c.req.valid('param');
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -899,23 +970,41 @@ entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c =>
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to update this entity'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to update this entity',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if entity is soft-deleted
     if (currentVersion.is_deleted === 1) {
       return c.json(
-        response.error(
-          'Cannot update deleted entity. Use restore endpoint first.',
-          'ENTITY_DELETED'
-        ),
+        {
+          success: false as const,
+          error: 'Cannot update deleted entity. Use restore endpoint first.',
+          code: 'ENTITY_DELETED',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -934,11 +1023,13 @@ entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c =>
 
     if (!schemaValidation.valid) {
       return c.json(
-        response.error(
-          `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
-          'SCHEMA_VALIDATION_FAILED',
-          { validation_errors: schemaValidation.errors }
-        ),
+        {
+          success: false as const,
+          error: `Property validation failed: ${formatValidationErrors(schemaValidation.errors)}`,
+          code: 'SCHEMA_VALIDATION_FAILED',
+          data: { validation_errors: schemaValidation.errors },
+          timestamp: new Date().toISOString(),
+        },
         400
       );
     }
@@ -977,9 +1068,14 @@ entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c =>
     // Fetch the new version
     const updated = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(newId).first();
 
-    const result = {
-      ...updated,
+    const entityData = {
+      id: updated?.id as string,
+      type_id: updated?.type_id as string,
       properties: updated?.properties ? JSON.parse(updated.properties as string) : {},
+      version: updated?.version as number,
+      previous_version_id: (updated?.previous_version_id as string) || null,
+      created_at: updated?.created_at as number,
+      created_by: updated?.created_by as string,
       is_deleted: updated?.is_deleted === 1,
       is_latest: updated?.is_latest === 1,
     };
@@ -1013,7 +1109,15 @@ entities.put('/:id', requireAuth(), validateJson(updateEntitySchema), async c =>
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.updated(result));
+    return c.json(
+      {
+        success: true as const,
+        data: entityData,
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })
