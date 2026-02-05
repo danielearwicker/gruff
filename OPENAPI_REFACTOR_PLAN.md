@@ -104,7 +104,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate search schemas** - Add `.openapi()` to `searchEntitiesSchema`, `searchLinksSchema`, `suggestionsSchema` in `src/schemas/search.ts`
+- [x] **Annotate search schemas** - Add `.openapi()` to `searchEntitiesSchema`, `searchLinksSchema`, `suggestionsSchema` in `src/schemas/search.ts`
 - [ ] **Convert search router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/search.ts`
 
 Convert endpoints:
