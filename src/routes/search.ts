@@ -1,9 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { ErrorResponseSchema } from '../schemas/openapi-common.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { buildPropertyFilters, buildFilterExpression } from '../utils/property-filters.js';
 import { buildAclFilterClause, filterByAclPermission } from '../utils/acl.js';
@@ -664,17 +662,66 @@ search.openapi(searchLinksRoute, async c => {
   }
 });
 
+// Response schema for type-ahead suggestions
+const SuggestResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(
+      z.object({
+        entity_id: z.string().openapi({ description: 'Entity ID' }),
+        type_id: z.string().openapi({ description: 'Entity type ID' }),
+        type_name: z.string().nullable().openapi({ description: 'Entity type name' }),
+        matched_value: z.unknown().openapi({ description: 'Matched property value' }),
+        property_path: z.string().openapi({ description: 'Property path that was searched' }),
+        properties: z.record(z.string(), z.unknown()).openapi({ description: 'Entity properties' }),
+      })
+    ),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('SuggestResponse');
+
+/**
+ * GET /api/search/suggest route definition
+ */
+const suggestRoute = createRoute({
+  method: 'get',
+  path: '/suggest',
+  tags: ['Search'],
+  summary: 'Type-ahead suggestions',
+  description:
+    'Get entity suggestions for autocomplete. ACL filtering is applied: authenticated users see entities they have read permission on, resources with NULL acl_id are visible to all authenticated users, unauthenticated requests only see resources with NULL acl_id (public).',
+  operationId: 'getSuggestions',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    query: suggestionsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Suggestions',
+      content: {
+        'application/json': {
+          schema: SuggestResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Suggestions failed',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/search/suggest
  * Type-ahead suggestions for entity properties
- *
- * ACL filtering is applied when authenticated:
- * - Authenticated users see entities they have read permission on
- * - Resources with NULL acl_id are visible to all authenticated users
- * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-search.get('/suggest', optionalAuth(), validateQuery(suggestionsSchema), async c => {
-  const params = c.get('validated_query') as z.infer<typeof suggestionsSchema>;
+search.openapi(suggestRoute, async c => {
+  const params = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -767,12 +814,11 @@ search.get('/suggest', optionalAuth(), validateQuery(suggestionsSchema), async c
 
     // Format the suggestions
     const suggestions = filteredResults.map((row: Record<string, unknown>) => ({
-      entity_id: row.id,
-      type_id: row.type_id,
-      type_name: row.type_name,
+      entity_id: row.id as string,
+      type_id: row.type_id as string,
+      type_name: (row.type_name as string) ?? null,
       matched_value: row.matched_value,
       property_path: propertyPath,
-      // Optionally include full properties for additional context
       properties: row.properties ? JSON.parse(row.properties as string) : {},
     }));
 
@@ -781,10 +827,25 @@ search.get('/suggest', optionalAuth(), validateQuery(suggestionsSchema), async c
       count: suggestions.length,
     });
 
-    return c.json(response.success(suggestions));
+    return c.json(
+      {
+        success: true as const,
+        data: suggestions,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Type-ahead suggestions failed', error as Error);
-    return c.json(response.error('Type-ahead suggestions failed', 'SUGGEST_ERROR'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Type-ahead suggestions failed',
+        code: 'SUGGEST_ERROR',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 

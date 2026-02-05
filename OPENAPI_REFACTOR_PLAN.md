@@ -111,7 +111,7 @@ Convert endpoints:
 
 - [x] **Convert POST /api/search/entities** - Searches entities with property filters. Test: Search with filters
 - [x] **Convert POST /api/search/links** - Searches links with filters. Test: Search links
-- [ ] **Convert GET /api/search/suggest** - Type-ahead suggestions. Test: Get suggestions for partial query
+- [x] **Convert GET /api/search/suggest** - Type-ahead suggestions. Test: Get suggestions for partial query
 
 ### Users API (`src/routes/users.ts`)
 
