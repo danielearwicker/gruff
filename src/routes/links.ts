@@ -1998,6 +1998,106 @@ links.openapi(getLinkVersionRoute, async c => {
   }
 });
 
+// Response schema for link history diff
+const LinkHistoryDiffSchema = z
+  .object({
+    added: z
+      .record(z.string(), z.unknown())
+      .openapi({ description: 'Properties that were added in this version' }),
+    removed: z
+      .record(z.string(), z.unknown())
+      .openapi({ description: 'Properties that were removed in this version' }),
+    changed: z
+      .record(z.string(), z.unknown())
+      .openapi({ description: 'Changed properties with old/new values' }),
+  })
+  .openapi('LinkHistoryDiff');
+
+const LinkHistoryVersionSchema = z
+  .object({
+    id: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    version: z.number().int().positive().openapi({ example: 1 }),
+    type_id: z.string().openapi({ example: 'knows' }),
+    source_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440001' }),
+    target_entity_id: z
+      .string()
+      .uuid()
+      .openapi({ example: '550e8400-e29b-41d4-a716-446655440002' }),
+    properties: z
+      .record(z.string(), z.unknown())
+      .openapi({ example: { since: '2020-01-01', strength: 0.8 } }),
+    created_at: z.number().int().openapi({ example: 1704067200 }),
+    created_by: z.string().uuid().openapi({ example: '550e8400-e29b-41d4-a716-446655440003' }),
+    is_deleted: z.boolean().openapi({ example: false }),
+    is_latest: z.boolean().openapi({ example: true }),
+    diff: LinkHistoryDiffSchema.nullable().openapi({
+      description: 'Diff from previous version. Null for first version.',
+    }),
+  })
+  .openapi('LinkHistoryVersion');
+
+const LinkHistoryListResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(LinkHistoryVersionSchema),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkHistoryListResponse');
+
+/**
+ * GET /api/links/:id/history route definition
+ */
+const getLinkHistoryRoute = createRoute({
+  method: 'get',
+  path: '/{id}/history',
+  tags: ['Links'],
+  summary: 'Get version history with diffs',
+  description:
+    'Get version history with diffs showing what changed between versions. Permission checking: Authenticated users must have read permission on the link. Links with NULL acl_id are accessible to all authenticated users. Unauthenticated requests can only access links with NULL acl_id (public).',
+  operationId: 'getLinkHistory',
+  request: {
+    params: LinkIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'List of all versions with diffs',
+      content: {
+        'application/json': {
+          schema: LinkHistoryListResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no permission to view this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// Apply optionalAuth middleware for the get link history route
+links.use('/:id/history', async (c, next) => {
+  // Only apply to GET requests
+  if (c.req.method === 'GET') {
+    return optionalAuth()(c, next);
+  }
+  return next();
+});
+
 /**
  * GET /api/links/:id/history
  * Get version history with diffs showing what changed between versions
@@ -2007,8 +2107,8 @@ links.openapi(getLinkVersionRoute, async c => {
  * - Links with NULL acl_id are accessible to all authenticated users
  * - Unauthenticated requests can only access links with NULL acl_id (public)
  */
-links.get('/:id/history', optionalAuth(), async c => {
-  const id = c.req.param('id');
+links.openapi(getLinkHistoryRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -2018,7 +2118,15 @@ links.get('/:id/history', optionalAuth(), async c => {
     const latestVersion = await findLatestVersion(db, id);
 
     if (!latestVersion) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check permission
@@ -2027,12 +2135,28 @@ links.get('/:id/history', optionalAuth(), async c => {
       // Authenticated user: check if they have read permission
       const canRead = await hasPermissionByAclId(db, kv, user.user_id, aclId, 'read');
       if (!canRead) {
-        return c.json(response.forbidden('You do not have permission to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'You do not have permission to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     } else {
       // Unauthenticated: only allow access to public links (NULL acl_id)
       if (aclId !== null) {
-        return c.json(response.forbidden('Authentication required to view this link'), 403);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Authentication required to view this link',
+            code: 'FORBIDDEN',
+            timestamp: new Date().toISOString(),
+          },
+          403
+        );
       }
     }
 
@@ -2083,21 +2207,28 @@ links.get('/:id/history', optionalAuth(), async c => {
       }
 
       return {
-        id: link.id,
-        version: link.version,
-        type_id: link.type_id,
-        source_entity_id: link.source_entity_id,
-        target_entity_id: link.target_entity_id,
+        id: link.id as string,
+        version: link.version as number,
+        type_id: link.type_id as string,
+        source_entity_id: link.source_entity_id as string,
+        target_entity_id: link.target_entity_id as string,
         properties: parsedProps,
-        created_at: link.created_at,
-        created_by: link.created_by,
+        created_at: link.created_at as number,
+        created_by: link.created_by as string,
         is_deleted: link.is_deleted === 1,
         is_latest: link.is_latest === 1,
         diff: diff,
       };
     });
 
-    return c.json(response.success(history));
+    return c.json(
+      {
+        success: true as const,
+        data: history,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'links' })

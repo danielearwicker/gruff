@@ -83,7 +83,7 @@ Convert endpoints:
 - [x] **Convert POST /api/links/:id/restore** - Restores soft-deleted link. Test: Restore link
 - [x] **Convert GET /api/links/:id/versions** - Lists all versions. Test: Get version list
 - [x] **Convert GET /api/links/:id/versions/:version** - Gets specific version. Test: Get version by number
-- [ ] **Convert GET /api/links/:id/history** - Gets version history with diffs. Test: Get history
+- [x] **Convert GET /api/links/:id/history** - Gets version history with diffs. Test: Get history
 - [ ] **Convert GET /api/links/:id/acl** - Gets ACL permissions. Test: Get ACL
 - [ ] **Convert PUT /api/links/:id/acl** - Sets ACL permissions. Test: Update ACL
 
