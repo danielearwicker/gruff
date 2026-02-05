@@ -1,12 +1,10 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import {
   createTypeSchema,
   updateTypeSchema,
   typeQuerySchema,
   typeSchema,
-  UpdateType,
 } from '../schemas/index.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
@@ -599,12 +597,87 @@ types.openapi(getTypeRoute, async c => {
 });
 
 /**
+ * PUT /api/types/:id route definition
+ */
+const updateTypeRoute = createRoute({
+  method: 'put',
+  path: '/{id}',
+  tags: ['Types'],
+  summary: 'Update type',
+  description: "Update a type's metadata (admin only). Category cannot be changed.",
+  operationId: 'updateType',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: TypeIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: updateTypeSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Type updated',
+      content: {
+        'application/json': {
+          schema: TypeResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Type not found',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - type name already exists',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * PUT /api/types/:id
  * Update a type's metadata (admin only)
  */
-types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema), async c => {
-  const id = c.req.param('id');
-  const data = c.get('validated_json') as UpdateType;
+types.openapi(updateTypeRoute, async c => {
+  const { id } = c.req.valid('param');
+  const data = c.req.valid('json');
   const db = c.env.DB;
 
   try {
@@ -612,7 +685,15 @@ types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema),
     const existing = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!existing) {
-      return c.json(response.notFound('Type'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Type not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Build update query dynamically based on provided fields
@@ -627,7 +708,15 @@ types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema),
         .first();
 
       if (nameCheck) {
-        return c.json(response.error('Type name already exists', 'DUPLICATE_NAME'), 409);
+        return c.json(
+          {
+            success: false as const,
+            error: 'Type name already exists',
+            code: 'DUPLICATE_NAME',
+            timestamp: new Date().toISOString(),
+          },
+          409
+        );
       }
 
       updates.push('name = ?');
@@ -651,7 +740,14 @@ types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema),
         ...existing,
         json_schema: existing.json_schema ? JSON.parse(existing.json_schema as string) : null,
       };
-      return c.json(response.success(result));
+      return c.json(
+        {
+          success: true as const,
+          data: result as z.infer<typeof typeSchema>,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
     // Execute update
@@ -677,11 +773,19 @@ types.put('/:id', requireAuth(), requireAdmin(), validateJson(updateTypeSchema),
       logger.warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.updated(result));
+    return c.json(
+      {
+        success: true as const,
+        data: result as z.infer<typeof typeSchema>,
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error updating type', error instanceof Error ? error : undefined, {
-      typeId: c.req.param('id'),
+      typeId: id,
     });
     throw error;
   }
