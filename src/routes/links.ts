@@ -1,9 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { createLinkSchema, updateLinkSchema, linkResponseSchema } from '../schemas/index.js';
-import { setAclRequestSchema, SetAclRequest, aclResponseSchema } from '../schemas/acl.js';
-import * as response from '../utils/response.js';
+import { setAclRequestSchema, aclResponseSchema } from '../schemas/acl.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { logLinkOperation } from '../utils/audit.js';
@@ -2422,6 +2420,107 @@ links.openapi(getLinkAclRoute, async c => {
   }
 });
 
+// Response schema for ACL set operation (includes new_version_id)
+const LinkAclSetResponseDataSchema = z
+  .object({
+    entries: z.array(z.unknown()).openapi({ description: 'List of enriched ACL entries' }),
+    acl_id: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .openapi({ example: 1, description: 'ACL ID, null if public' }),
+    new_version_id: z.string().uuid().nullable().openapi({
+      example: '550e8400-e29b-41d4-a716-446655440001',
+      description: 'New version ID of the link, null if ACL unchanged',
+    }),
+  })
+  .openapi('LinkAclSetResponseData');
+
+const LinkAclSetResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: LinkAclSetResponseDataSchema,
+    message: z.string().optional().openapi({ example: 'ACL updated successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('LinkAclSetResponse');
+
+/**
+ * PUT /api/links/:id/acl route definition
+ */
+const setLinkAclRoute = createRoute({
+  method: 'put',
+  path: '/{id}/acl',
+  tags: ['Links'],
+  summary: 'Set link ACL',
+  description:
+    'Set the ACL (access control list) for a link. This endpoint allows setting permissions for users and groups on a link. Empty entries array removes the ACL (makes link public). Setting entries creates/reuses a deduplicated ACL. Creates a new version of the link with the updated ACL. Requires authentication and write permission on the link.',
+  operationId: 'setLinkAcl',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: LinkIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: setAclRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'ACL updated successfully',
+      content: {
+        'application/json': {
+          schema: LinkAclSetResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Bad request - invalid principals in ACL or validation error',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Link not found',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - cannot set ACL on deleted link',
+      content: {
+        'application/json': {
+          schema: LinkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * PUT /api/links/:id/acl
  * Set the ACL (access control list) for a link
@@ -2432,18 +2531,10 @@ links.openapi(getLinkAclRoute, async c => {
  * - Creates a new version of the link with the updated ACL
  *
  * Requires authentication and write permission on the link.
- *
- * ACL request format:
- * {
- *   "entries": [
- *     { "principal_type": "user", "principal_id": "uuid", "permission": "write" },
- *     { "principal_type": "group", "principal_id": "uuid", "permission": "read" }
- *   ]
- * }
  */
-links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c => {
-  const id = c.req.param('id');
-  const data = c.get('validated_json') as SetAclRequest;
+links.openapi(setLinkAclRoute, async c => {
+  const { id } = c.req.valid('param');
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -2454,23 +2545,41 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
     const link = await findLatestVersion(db, id);
 
     if (!link) {
-      return c.json(response.notFound('Link'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Link not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const currentAclId = link.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, currentAclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to modify this link'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to modify this link',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if link is soft-deleted
     if (link.is_deleted === 1) {
       return c.json(
-        response.error(
-          'Cannot set ACL on deleted link. Use restore endpoint first.',
-          'LINK_DELETED'
-        ),
+        {
+          success: false as const,
+          error: 'Cannot set ACL on deleted link. Use restore endpoint first.',
+          code: 'LINK_DELETED',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -2480,9 +2589,13 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
       const validation = await validateAclPrincipals(db, data.entries);
       if (!validation.valid) {
         return c.json(
-          response.error('Invalid principals in ACL', 'INVALID_PRINCIPALS', {
-            errors: validation.errors,
-          }),
+          {
+            success: false as const,
+            error: 'Invalid principals in ACL',
+            code: 'INVALID_PRINCIPALS',
+            data: { errors: validation.errors },
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
@@ -2514,14 +2627,17 @@ links.put('/:id/acl', requireAuth(), validateJson(setAclRequestSchema), async c 
     }
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           entries: responseEntries,
           acl_id: aclId,
           new_version_id: newVersionId,
         },
-        'ACL updated successfully'
-      )
+        message: 'ACL updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     getLogger(c)
