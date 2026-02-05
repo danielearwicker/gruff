@@ -144,7 +144,7 @@ Convert endpoints:
 - [x] **Convert GET /api/groups** - Lists groups with pagination. Test: List groups
 - [x] **Convert GET /api/groups/:id** - Gets group details. Test: Get group by ID
 - [x] **Convert PUT /api/groups/:id** - Updates group (admin only). Test: Update group
-- [ ] **Convert DELETE /api/groups/:id** - Deletes group (admin only). Test: Delete group
+- [x] **Convert DELETE /api/groups/:id** - Deletes group (admin only). Test: Delete group
 - [ ] **Convert POST /api/groups/:id/members** - Adds member to group. Test: Add member
 - [ ] **Convert DELETE /api/groups/:id/members/:member_id** - Removes member from group. Test: Remove member
 - [ ] **Convert GET /api/groups/:id/members** - Lists direct members. Test: Get members

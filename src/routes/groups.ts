@@ -777,14 +777,92 @@ groupsRouter.openapi(updateGroupRoute, async c => {
   }
 });
 
+// Delete response schema for group operations
+const GroupDeleteResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message: z.string().openapi({ example: 'Resource deleted successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('GroupDeleteResponse');
+
+/**
+ * DELETE /api/groups/:id route definition
+ */
+const deleteGroupRoute = createRoute({
+  method: 'delete',
+  path: '/{id}',
+  tags: ['Groups'],
+  summary: 'Delete group',
+  description:
+    'Delete a group (admin only). Fails if the group has members, is a member of other groups, or is referenced in ACL entries.',
+  operationId: 'deleteGroup',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Group deleted',
+      content: {
+        'application/json': {
+          schema: GroupDeleteResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description:
+        'Conflict - group has members, is a member of other groups, or is referenced in ACLs',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to delete group',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * DELETE /api/groups/:id
  *
  * Delete group (fails if has members) (admin only)
  */
-groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
+groupsRouter.openapi(deleteGroupRoute, async c => {
   const logger = getLogger(c);
-  const groupId = c.req.param('id');
+  const { id: groupId } = c.req.valid('param');
 
   try {
     // Check if group exists
@@ -794,7 +872,15 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
 
     if (!existingGroup) {
       logger.warn('Group not found for deletion', { groupId });
-      return c.json(response.notFound('Group'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check if group has members
@@ -807,10 +893,12 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
     if (memberCount && memberCount.count > 0) {
       logger.warn('Cannot delete group with members', { groupId, memberCount: memberCount.count });
       return c.json(
-        response.error(
-          'Cannot delete group that has members. Remove all members first.',
-          'GROUP_HAS_MEMBERS'
-        ),
+        {
+          success: false as const,
+          error: 'Cannot delete group that has members. Remove all members first.',
+          code: 'GROUP_HAS_MEMBERS',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -828,10 +916,13 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
         parentCount: parentMemberships.count,
       });
       return c.json(
-        response.error(
-          'Cannot delete group that is a member of other groups. Remove it from parent groups first.',
-          'GROUP_IS_MEMBER'
-        ),
+        {
+          success: false as const,
+          error:
+            'Cannot delete group that is a member of other groups. Remove it from parent groups first.',
+          code: 'GROUP_IS_MEMBER',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -849,10 +940,13 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
         aclReferenceCount: aclReferences.count,
       });
       return c.json(
-        response.error(
-          'Cannot delete group that is referenced in access control lists. Remove the group from entity/link ACLs first.',
-          'GROUP_IN_ACL'
-        ),
+        {
+          success: false as const,
+          error:
+            'Cannot delete group that is referenced in access control lists. Remove the group from entity/link ACLs first.',
+          code: 'GROUP_IN_ACL',
+          timestamp: new Date().toISOString(),
+        },
         409
       );
     }
@@ -862,10 +956,25 @@ groupsRouter.delete('/:id', requireAuth(), requireAdmin(), async c => {
 
     logger.info('Group deleted', { groupId });
 
-    return c.json(response.deleted());
+    return c.json(
+      {
+        success: true as const,
+        message: 'Resource deleted successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error deleting group', error as Error, { groupId });
-    return c.json(response.error('Failed to delete group', 'GROUP_DELETE_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to delete group',
+        code: 'GROUP_DELETE_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
