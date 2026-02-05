@@ -124,6 +124,23 @@ const LoginSuccessResponseSchema = z
   })
   .openapi('LoginSuccessResponse');
 
+// Success response for token refresh
+const RefreshSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      access_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      refresh_token: z.string().openapi({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }),
+      expires_in: z
+        .number()
+        .int()
+        .openapi({ example: 900, description: 'Token expiration in seconds' }),
+      token_type: z.literal('Bearer'),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('RefreshSuccessResponse');
+
 // =============================================================================
 // Route Definitions
 // =============================================================================
@@ -223,6 +240,62 @@ const loginRoute = createRoute({
     },
     401: {
       description: 'Invalid credentials, account inactive, or wrong authentication method',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Server error',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * POST /api/auth/refresh route definition
+ */
+const refreshRoute = createRoute({
+  method: 'post',
+  path: '/refresh',
+  tags: ['Authentication'],
+  summary: 'Refresh access token',
+  description: 'Use a valid refresh token to obtain a new access token.',
+  operationId: 'refreshToken',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: refreshTokenSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Token refreshed successfully',
+      content: {
+        'application/json': {
+          schema: RefreshSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error - missing refresh token',
+      content: {
+        'application/json': {
+          schema: AuthErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Invalid or expired refresh token',
       content: {
         'application/json': {
           schema: AuthErrorResponseSchema,
@@ -512,18 +585,24 @@ authRouter.openapi(loginRoute, async c => {
  *
  * Refresh access token using a valid refresh token
  */
-authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
+authRouter.openapi(refreshRoute, async c => {
   const logger = getLogger(c);
-  const validated = c.get('validated_json') as { refresh_token: string };
-
-  const { refresh_token } = validated;
+  const { refresh_token } = c.req.valid('json');
 
   try {
     // Get JWT secret from environment
     const jwtSecret = c.env.JWT_SECRET;
     if (!jwtSecret) {
       logger.error('JWT_SECRET not configured');
-      return c.json(response.error('Server configuration error', 'CONFIG_ERROR'), 500);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Server configuration error',
+          code: 'CONFIG_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     // Verify the refresh token JWT signature and expiration
@@ -531,7 +610,15 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
 
     if (!payload) {
       logger.warn('Invalid or expired refresh token');
-      return c.json(response.error('Invalid or expired refresh token', 'INVALID_TOKEN'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Invalid or expired refresh token',
+          code: 'INVALID_TOKEN',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     const { user_id, email } = payload;
@@ -541,7 +628,15 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
 
     if (!isValid) {
       logger.warn('Refresh token not found in session store', { userId: user_id });
-      return c.json(response.error('Refresh token has been revoked', 'TOKEN_REVOKED'), 401);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Refresh token has been revoked',
+          code: 'TOKEN_REVOKED',
+          timestamp: new Date().toISOString(),
+        },
+        401
+      );
     }
 
     logger.info('Refresh token validated', { userId: user_id });
@@ -566,16 +661,29 @@ authRouter.post('/refresh', validateJson(refreshTokenSchema), async c => {
 
     // Return success response with new access token
     return c.json(
-      response.success({
-        access_token: newAccessToken,
-        refresh_token: refresh_token, // Return the same refresh token
-        expires_in: 15 * 60, // 15 minutes (should match ACCESS_TOKEN_EXPIRY)
-        token_type: 'Bearer',
-      })
+      {
+        success: true as const,
+        data: {
+          access_token: newAccessToken,
+          refresh_token: refresh_token, // Return the same refresh token
+          expires_in: 15 * 60, // 15 minutes (should match ACCESS_TOKEN_EXPIRY)
+          token_type: 'Bearer' as const,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error during token refresh', error as Error);
-    return c.json(response.error('Failed to refresh token', 'REFRESH_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to refresh token',
+        code: 'REFRESH_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
