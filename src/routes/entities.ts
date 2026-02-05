@@ -1126,14 +1126,83 @@ entities.openapi(updateEntityRoute, async c => {
   }
 });
 
+// Delete success response schema
+const DeleteSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message: z.string().openapi({ example: 'Resource deleted successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('DeleteSuccessResponse');
+
+/**
+ * DELETE /api/entities/:id route definition
+ */
+const deleteEntityRoute = createRoute({
+  method: 'delete',
+  path: '/{id}',
+  tags: ['Entities'],
+  summary: 'Delete entity',
+  description:
+    'Soft delete an entity by creating a new version with is_deleted = true. Requires authentication and write permission on the entity. The entity can be restored later using the restore endpoint.',
+  operationId: 'deleteEntity',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: EntityIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'Entity deleted successfully',
+      content: {
+        'application/json': {
+          schema: DeleteSuccessResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no write permission on this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - entity is already deleted',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * DELETE /api/entities/:id
  * Soft delete entity (creates new version with is_deleted = true)
  *
  * Requires authentication and write permission on the entity.
  */
-entities.delete('/:id', requireAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(deleteEntityRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const now = getCurrentTimestamp();
@@ -1145,19 +1214,43 @@ entities.delete('/:id', requireAuth(), async c => {
     const currentVersion = await findLatestVersion(db, id);
 
     if (!currentVersion) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check write permission
     const aclId = currentVersion.acl_id as number | null;
     const canWrite = await hasPermissionByAclId(db, kv, userId, aclId, 'write');
     if (!canWrite) {
-      return c.json(response.forbidden('You do not have permission to delete this entity'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to delete this entity',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // Check if already soft-deleted
     if (currentVersion.is_deleted === 1) {
-      return c.json(response.error('Entity is already deleted', 'ALREADY_DELETED'), 409);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity is already deleted',
+          code: 'ALREADY_DELETED',
+          timestamp: new Date().toISOString(),
+        },
+        409
+      );
     }
 
     const newVersion = (currentVersion.version as number) + 1;
@@ -1214,7 +1307,14 @@ entities.delete('/:id', requireAuth(), async c => {
         .warn('Failed to invalidate cache', { error: cacheError });
     }
 
-    return c.json(response.deleted());
+    return c.json(
+      {
+        success: true as const,
+        message: 'Resource deleted successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     getLogger(c)
       .child({ module: 'entities' })

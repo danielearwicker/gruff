@@ -55,7 +55,7 @@ Convert endpoints:
 - [x] **Convert GET /api/entities** - Lists entities with ACL filtering. Test: List entities
 - [x] **Convert GET /api/entities/:id** - Gets entity by ID. Test: Get specific entity
 - [x] **Convert PUT /api/entities/:id** - Updates entity (creates new version). Test: Update entity
-- [ ] **Convert DELETE /api/entities/:id** - Soft-deletes entity. Test: Delete entity
+- [x] **Convert DELETE /api/entities/:id** - Soft-deletes entity. Test: Delete entity
 - [ ] **Convert POST /api/entities/:id/restore** - Restores soft-deleted entity. Test: Restore entity
 - [ ] **Convert GET /api/entities/:id/versions** - Lists all versions. Test: Get version list
 - [ ] **Convert GET /api/entities/:id/versions/:version** - Gets specific version. Test: Get version by number
