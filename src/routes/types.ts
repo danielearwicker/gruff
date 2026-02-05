@@ -84,6 +84,30 @@ const TypeListResponseSchema = z
 // Type for cached list response
 type TypeListResponse = z.infer<typeof TypeListResponseSchema>;
 
+// Path parameters schema for type ID
+const TypeIdParamsSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '550e8400-e29b-41d4-a716-446655440000',
+      description: 'Type ID',
+    }),
+});
+
+// Query schema for field selection
+const FieldSelectionQuerySchema = z.object({
+  fields: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'fields', in: 'query' },
+      example: 'id,name,category',
+      description: 'Comma-separated list of fields to include in response',
+    }),
+});
+
 /**
  * POST /api/types route definition
  */
@@ -416,6 +440,49 @@ types.openapi(listTypesRoute, async c => {
 });
 
 /**
+ * GET /api/types/:id route definition
+ */
+const getTypeRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags: ['Types'],
+  summary: 'Get type by ID',
+  description:
+    'Retrieve a specific type by its ID. Supports field selection via the `fields` query parameter.',
+  operationId: 'getTypeById',
+  request: {
+    params: TypeIdParamsSchema,
+    query: FieldSelectionQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Type found',
+      content: {
+        'application/json': {
+          schema: TypeResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g., invalid fields requested)',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Type not found',
+      content: {
+        'application/json': {
+          schema: TypeErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * GET /api/types/:id
  * Get a specific type by ID
  *
@@ -425,11 +492,11 @@ types.openapi(listTypesRoute, async c => {
  * Caching: Individual type lookups are cached for fast repeated access.
  * Note: Field selection is applied after cache retrieval for consistency.
  */
-types.get('/:id', async c => {
-  const id = c.req.param('id');
+types.openapi(getTypeRoute, async c => {
+  const { id } = c.req.valid('param');
+  const { fields: fieldsParam } = c.req.valid('query');
   const db = c.env.DB;
   const kv = c.env.KV;
-  const fieldsParam = c.req.query('fields');
 
   try {
     // Try to get from cache first
@@ -441,23 +508,39 @@ types.get('/:id', async c => {
         const fieldSelection = applyFieldSelection(cached.data, fieldsParam, TYPE_ALLOWED_FIELDS);
         if (!fieldSelection.success) {
           return c.json(
-            response.error(
-              `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-              'INVALID_FIELDS',
-              { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
-            ),
+            {
+              success: false as const,
+              error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+              code: 'INVALID_FIELDS',
+              timestamp: new Date().toISOString(),
+            },
             400
           );
         }
-        return c.json(response.success(fieldSelection.data));
+        return c.json(
+          {
+            success: true as const,
+            data: fieldSelection.data as z.infer<typeof typeSchema>,
+            timestamp: new Date().toISOString(),
+          },
+          200
+        );
       }
-      return c.json(cached);
+      return c.json(cached as z.infer<typeof TypeResponseSchema>, 200);
     }
 
     const type = await db.prepare('SELECT * FROM types WHERE id = ?').bind(id).first();
 
     if (!type) {
-      return c.json(response.notFound('Type'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Type not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Parse json_schema back to object if it exists
@@ -466,7 +549,11 @@ types.get('/:id', async c => {
       json_schema: type.json_schema ? JSON.parse(type.json_schema as string) : null,
     };
 
-    const responseData = response.success(result);
+    const responseData = {
+      success: true as const,
+      data: result as z.infer<typeof typeSchema>,
+      timestamp: new Date().toISOString(),
+    };
 
     // Cache the successful response (full data, field selection applied on retrieval)
     setCache(kv, cacheKey, responseData, CACHE_TTL.TYPES).catch(() => {
@@ -482,22 +569,30 @@ types.get('/:id', async c => {
       );
       if (!fieldSelection.success) {
         return c.json(
-          response.error(
-            `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
-            'INVALID_FIELDS',
-            { allowed_fields: Array.from(TYPE_ALLOWED_FIELDS) }
-          ),
+          {
+            success: false as const,
+            error: `Invalid fields requested: ${fieldSelection.invalidFields.join(', ')}`,
+            code: 'INVALID_FIELDS',
+            timestamp: new Date().toISOString(),
+          },
           400
         );
       }
-      return c.json(response.success(fieldSelection.data));
+      return c.json(
+        {
+          success: true as const,
+          data: fieldSelection.data as z.infer<typeof typeSchema>,
+          timestamp: new Date().toISOString(),
+        },
+        200
+      );
     }
 
-    return c.json(responseData);
+    return c.json(responseData, 200);
   } catch (error) {
     const logger = getLogger(c).child({ module: 'types' });
     logger.error('Error fetching type', error instanceof Error ? error : undefined, {
-      typeId: c.req.param('id'),
+      typeId: id,
     });
     throw error;
   }
