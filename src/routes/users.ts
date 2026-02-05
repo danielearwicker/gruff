@@ -301,28 +301,107 @@ usersRouter.openapi(listUsersRoute, async c => {
   }
 });
 
+// Query schema for searching users (OpenAPI-annotated)
+const searchUsersQuerySchema = z.object({
+  q: z
+    .string()
+    .min(2)
+    .openapi({
+      param: { name: 'q', in: 'query' },
+      example: 'john',
+      description: 'Search query (min 2 characters). Searches email and display name.',
+    }),
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '10',
+      description: 'Maximum number of results to return (1-50, default: 10)',
+    })
+    .transform(val => Math.min(Math.max(parseInt(val || '10', 10) || 10, 1), 50)),
+});
+
+// Response schema for user search results
+const UserSearchResultSchema = z.object({
+  id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+  email: z.string().openapi({ example: 'john@example.com' }),
+  display_name: z.string().nullable().openapi({ example: 'John Doe' }),
+});
+
+const UserSearchResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.array(UserSearchResultSchema).openapi({
+      description: 'Array of matching users with limited profile info',
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserSearchResponse');
+
+/**
+ * GET /api/users/search route definition
+ */
+const searchUsersRoute = createRoute({
+  method: 'get',
+  path: '/search',
+  tags: ['Users'],
+  summary: 'Search users',
+  description:
+    'Search for users by email or display name. Returns limited user info for ACL management purposes.',
+  operationId: 'searchUsers',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    query: searchUsersQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'List of matching users',
+      content: {
+        'application/json': {
+          schema: UserSearchResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid search query',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to search users',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/users/search
  *
  * Search for users by email or display name (authenticated users only)
  * Returns limited user info for ACL management purposes.
- *
- * Query parameters:
- * - q: Search query (required, min 2 characters)
- * - limit: Max results to return (default 10, max 50)
  */
-usersRouter.get('/search', requireAuth(), async c => {
+usersRouter.openapi(searchUsersRoute, async c => {
   const logger = getLogger(c);
-  const query = c.req.query('q') || '';
-  const limitParam = c.req.query('limit');
-  const limit = Math.min(Math.max(parseInt(limitParam || '10', 10) || 10, 1), 50);
-
-  if (query.length < 2) {
-    return c.json(
-      response.error('Search query must be at least 2 characters', 'INVALID_QUERY'),
-      400
-    );
-  }
+  const validated = c.req.valid('query');
+  const query = validated.q;
+  const limit = validated.limit;
 
   try {
     const searchPattern = `%${query}%`;
@@ -342,17 +421,32 @@ usersRouter.get('/search', requireAuth(), async c => {
       .all();
 
     const users = results.map(user => ({
-      id: user.id,
-      email: user.email,
-      display_name: user.display_name,
+      id: user.id as string,
+      email: user.email as string,
+      display_name: user.display_name as string | null,
     }));
 
     logger.debug('User search completed', { query, resultCount: users.length });
 
-    return c.json(response.success(users));
+    return c.json(
+      {
+        success: true as const,
+        data: users,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error searching users', error as Error);
-    return c.json(response.error('Failed to search users', 'USER_SEARCH_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to search users',
+        code: 'USER_SEARCH_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
