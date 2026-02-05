@@ -1207,14 +1207,91 @@ usersRouter.openapi(getUserActivityRoute, async c => {
   }
 });
 
+// Response schema for user group membership
+const UserGroupSchema = z.object({
+  id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+  name: z.string().openapi({ example: 'Engineering' }),
+  description: z.string().nullable().openapi({ example: 'Engineering team group' }),
+  created_at: z.number().openapi({ example: 1704067200 }),
+  joined_at: z.number().openapi({ example: 1704067200 }),
+});
+
+const UserGroupsResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      user_id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+      groups: z.array(UserGroupSchema).openapi({
+        description: 'Array of groups the user directly belongs to',
+      }),
+      count: z
+        .number()
+        .int()
+        .openapi({ example: 2, description: 'Number of direct group memberships' }),
+    }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('UserGroupsResponse');
+
+/**
+ * GET /api/users/{id}/groups route definition
+ */
+const getUserGroupsRoute = createRoute({
+  method: 'get',
+  path: '/{id}/groups',
+  tags: ['Users'],
+  summary: 'Get user groups',
+  description: 'List groups a user directly belongs to (does not include nested group memberships)',
+  operationId: 'getUserGroups',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: UserIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'List of groups the user belongs to',
+      content: {
+        'application/json': {
+          schema: UserGroupsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'User not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to retrieve user groups',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/users/{id}/groups
  *
  * List groups a user directly belongs to
  */
-usersRouter.get('/:id/groups', requireAuth(), async c => {
+usersRouter.openapi(getUserGroupsRoute, async c => {
   const logger = getLogger(c);
-  const userId = c.req.param('id');
+  const { id: userId } = c.req.valid('param');
 
   try {
     // Check if user exists
@@ -1222,7 +1299,15 @@ usersRouter.get('/:id/groups', requireAuth(), async c => {
 
     if (!user) {
       logger.warn('User not found for groups query', { userId });
-      return c.json(response.notFound('User'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'User not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Get groups the user directly belongs to
@@ -1245,15 +1330,28 @@ usersRouter.get('/:id/groups', requireAuth(), async c => {
     logger.info('User groups retrieved', { userId, count: groups.results?.length || 0 });
 
     return c.json(
-      response.success({
-        user_id: userId,
-        groups: groups.results || [],
-        count: groups.results?.length || 0,
-      })
+      {
+        success: true as const,
+        data: {
+          user_id: userId,
+          groups: groups.results || [],
+          count: groups.results?.length || 0,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error retrieving user groups', error as Error, { userId });
-    return c.json(response.error('Failed to retrieve user groups', 'USER_GROUPS_FAILED'), 500);
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to retrieve user groups',
+        code: 'USER_GROUPS_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 });
 
