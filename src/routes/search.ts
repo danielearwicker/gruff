@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { validateJson, validateQuery } from '../middleware/validation.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { searchEntitiesSchema, searchLinksSchema, suggestionsSchema } from '../schemas/index.js';
@@ -14,7 +14,7 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
-const search = new Hono<{ Bindings: Bindings }>();
+const search = new OpenAPIHono<{ Bindings: Bindings }>();
 
 /**
  * POST /api/search/entities
