@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { createEntitySchema, updateEntitySchema, entityResponseSchema } from '../schemas/index.js';
-import { setAclRequestSchema, SetAclRequest } from '../schemas/acl.js';
+import { setAclRequestSchema, SetAclRequest, aclResponseSchema } from '../schemas/acl.js';
 import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
@@ -3253,6 +3253,67 @@ entities.openapi(getEntityNeighborsRoute, async c => {
   }
 });
 
+// Response schema for ACL get operation
+const AclGetResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: aclResponseSchema,
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('EntityAclGetResponse');
+
+/**
+ * GET /api/entities/:id/acl route definition
+ */
+const getEntityAclRoute = createRoute({
+  method: 'get',
+  path: '/{id}/acl',
+  tags: ['Entities'],
+  summary: 'Get entity ACL',
+  description:
+    'Get the current ACL (access control list) for an entity. Returns the list of principals (users and groups) that have read or write permission on this entity. If the entity has no ACL (null acl_id), it means the entity is public and accessible to all authenticated users. Requires authentication and read permission on the entity.',
+  operationId: 'getEntityAcl',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    params: EntityIdParamsSchema,
+  },
+  responses: {
+    200: {
+      description: 'ACL retrieved successfully',
+      content: {
+        'application/json': {
+          schema: AclGetResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - no read permission on this entity',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Entity not found',
+      content: {
+        'application/json': {
+          schema: EntityErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
 /**
  * GET /api/entities/:id/acl
  * Get the current ACL (access control list) for an entity
@@ -3263,8 +3324,8 @@ entities.openapi(getEntityNeighborsRoute, async c => {
  *
  * Requires authentication and read permission on the entity.
  */
-entities.get('/:id/acl', requireAuth(), async c => {
-  const id = c.req.param('id');
+entities.openapi(getEntityAclRoute, async c => {
+  const { id } = c.req.valid('param');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -3275,23 +3336,44 @@ entities.get('/:id/acl', requireAuth(), async c => {
     const entity = await findLatestVersion(db, id);
 
     if (!entity) {
-      return c.json(response.notFound('Entity'), 404);
+      return c.json(
+        {
+          success: false as const,
+          error: 'Entity not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
     }
 
     // Check read permission
     const aclId = entity.acl_id as number | null;
     const canRead = await hasPermissionByAclId(db, kv, userId, aclId, 'read');
     if (!canRead) {
-      return c.json(response.forbidden('You do not have permission to view this entity'), 403);
+      return c.json(
+        {
+          success: false as const,
+          error: 'You do not have permission to view this entity',
+          code: 'FORBIDDEN',
+          timestamp: new Date().toISOString(),
+        },
+        403
+      );
     }
 
     // If no ACL, return empty entries (public)
     if (aclId === null) {
       return c.json(
-        response.success({
-          entries: [],
-          acl_id: null,
-        })
+        {
+          success: true as const,
+          data: {
+            entries: [],
+            acl_id: null,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        200
       );
     }
 
@@ -3299,10 +3381,15 @@ entities.get('/:id/acl', requireAuth(), async c => {
     const entries = await getEnrichedAclEntries(db, aclId);
 
     return c.json(
-      response.success({
-        entries,
-        acl_id: aclId,
-      })
+      {
+        success: true as const,
+        data: {
+          entries,
+          acl_id: aclId,
+        },
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     getLogger(c)
