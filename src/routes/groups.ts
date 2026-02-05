@@ -570,102 +570,212 @@ groupsRouter.openapi(getGroupRoute, async c => {
 });
 
 /**
+ * PUT /api/groups/:id route definition
+ */
+const updateGroupRoute = createRoute({
+  method: 'put',
+  path: '/{id}',
+  tags: ['Groups'],
+  summary: 'Update group',
+  description: 'Update group name and/or description (admin only)',
+  operationId: 'updateGroup',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth(), requireAdmin()] as const,
+  request: {
+    params: GroupIdParamsSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: updateGroupSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Group updated',
+      content: {
+        'application/json': {
+          schema: GroupResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or no fields to update',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden - admin role required',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Group not found',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Conflict - group name already exists',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Failed to update group',
+      content: {
+        'application/json': {
+          schema: GroupErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
  * PUT /api/groups/:id
  *
  * Update group name/description (admin only)
  */
-groupsRouter.put(
-  '/:id',
-  requireAuth(),
-  requireAdmin(),
-  validateJson(updateGroupSchema),
-  async c => {
-    const logger = getLogger(c);
-    const groupId = c.req.param('id');
-    const validated = c.get('validated_json') as {
-      name?: string;
-      description?: string | null;
-    };
+groupsRouter.openapi(updateGroupRoute, async c => {
+  const logger = getLogger(c);
+  const { id: groupId } = c.req.valid('param');
+  const validated = c.req.valid('json');
 
-    try {
-      // Check if group exists
-      const existingGroup = await c.env.DB.prepare('SELECT id, name FROM groups WHERE id = ?')
-        .bind(groupId)
-        .first<GroupRow>();
+  try {
+    // Check if group exists
+    const existingGroup = await c.env.DB.prepare('SELECT id, name FROM groups WHERE id = ?')
+      .bind(groupId)
+      .first<GroupRow>();
 
-      if (!existingGroup) {
-        logger.warn('Group not found for update', { groupId });
-        return c.json(response.notFound('Group'), 404);
+    if (!existingGroup) {
+      logger.warn('Group not found for update', { groupId });
+      return c.json(
+        {
+          success: false as const,
+          error: 'Group not found',
+          code: 'NOT_FOUND',
+          timestamp: new Date().toISOString(),
+        },
+        404
+      );
+    }
+
+    // If name is being updated, check if it's already taken
+    if (validated.name && validated.name !== existingGroup.name) {
+      const nameExists = await c.env.DB.prepare('SELECT id FROM groups WHERE name = ? AND id != ?')
+        .bind(validated.name, groupId)
+        .first();
+
+      if (nameExists) {
+        logger.warn('Group name already in use', { name: validated.name });
+        return c.json(
+          {
+            success: false as const,
+            error: 'Group name already exists',
+            code: 'GROUP_NAME_EXISTS',
+            timestamp: new Date().toISOString(),
+          },
+          409
+        );
       }
+    }
 
-      // If name is being updated, check if it's already taken
-      if (validated.name && validated.name !== existingGroup.name) {
-        const nameExists = await c.env.DB.prepare(
-          'SELECT id FROM groups WHERE name = ? AND id != ?'
-        )
-          .bind(validated.name, groupId)
-          .first();
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: unknown[] = [];
 
-        if (nameExists) {
-          logger.warn('Group name already in use', { name: validated.name });
-          return c.json(response.error('Group name already exists', 'GROUP_NAME_EXISTS'), 409);
-        }
-      }
+    if (validated.name !== undefined) {
+      updates.push('name = ?');
+      params.push(validated.name);
+    }
 
-      // Build update query dynamically
-      const updates: string[] = [];
-      const params: unknown[] = [];
+    if (validated.description !== undefined) {
+      updates.push('description = ?');
+      params.push(validated.description);
+    }
 
-      if (validated.name !== undefined) {
-        updates.push('name = ?');
-        params.push(validated.name);
-      }
+    if (updates.length === 0) {
+      return c.json(
+        {
+          success: false as const,
+          error: 'No fields to update',
+          code: 'NO_UPDATE_FIELDS',
+          timestamp: new Date().toISOString(),
+        },
+        400
+      );
+    }
 
-      if (validated.description !== undefined) {
-        updates.push('description = ?');
-        params.push(validated.description);
-      }
+    // Add group ID as the final parameter
+    params.push(groupId);
 
-      if (updates.length === 0) {
-        return c.json(response.error('No fields to update', 'NO_UPDATE_FIELDS'), 400);
-      }
+    // Execute update
+    const updateQuery = `UPDATE groups SET ${updates.join(', ')} WHERE id = ?`;
+    await c.env.DB.prepare(updateQuery)
+      .bind(...params)
+      .run();
 
-      // Add group ID as the final parameter
-      params.push(groupId);
-
-      // Execute update
-      const updateQuery = `UPDATE groups SET ${updates.join(', ')} WHERE id = ?`;
-      await c.env.DB.prepare(updateQuery)
-        .bind(...params)
-        .run();
-
-      // Fetch and return updated group
-      const updatedGroup = await c.env.DB.prepare(
-        `SELECT g.id, g.name, g.description, g.created_at, g.created_by,
+    // Fetch and return updated group
+    const updatedGroup = await c.env.DB.prepare(
+      `SELECT g.id, g.name, g.description, g.created_at, g.created_by,
               (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
        FROM groups g WHERE g.id = ?`
-      )
-        .bind(groupId)
-        .first<GroupRow & { member_count: number }>();
+    )
+      .bind(groupId)
+      .first<GroupRow & { member_count: number }>();
 
-      logger.info('Group updated', { groupId });
+    logger.info('Group updated', { groupId });
 
-      return c.json(
-        response.updated({
+    return c.json(
+      {
+        success: true as const,
+        data: {
           id: updatedGroup!.id,
           name: updatedGroup!.name,
           description: updatedGroup!.description,
           created_at: updatedGroup!.created_at,
           created_by: updatedGroup!.created_by,
           member_count: updatedGroup!.member_count,
-        })
-      );
-    } catch (error) {
-      logger.error('Error updating group', error as Error, { groupId });
-      return c.json(response.error('Failed to update group', 'GROUP_UPDATE_FAILED'), 500);
-    }
+        },
+        message: 'Resource updated successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
+  } catch (error) {
+    logger.error('Error updating group', error as Error, { groupId });
+    return c.json(
+      {
+        success: false as const,
+        error: 'Failed to update group',
+        code: 'GROUP_UPDATE_FAILED',
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
-);
+});
 
 /**
  * DELETE /api/groups/:id
