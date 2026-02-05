@@ -1,4 +1,4 @@
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
@@ -6,6 +6,8 @@ import {
   bulkCreateLinksSchema,
   bulkUpdateEntitiesSchema,
   bulkUpdateLinksSchema,
+  bulkCreateResultItemSchema,
+  bulkSummarySchema,
   type BulkCreateResultItem,
   type BulkUpdateResultItem,
 } from '../schemas/index.js';
@@ -97,16 +99,78 @@ async function findLatestLinkVersion(
   return result || null;
 }
 
-/**
- * POST /api/bulk/entities
- * Batch create multiple entities in a single request
- * Uses D1 batch operations for consistency
- * Requires authentication
- */
-bulk.post('/entities', requireAuth(), validateJson(bulkCreateEntitiesSchema), async c => {
-  const data = c.get('validated_json') as {
-    entities: Array<{ type_id: string; properties: Record<string, unknown>; client_id?: string }>;
-  };
+// Response schema for bulk create operations
+const BulkCreateSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      results: z.array(bulkCreateResultItemSchema),
+      summary: bulkSummarySchema,
+    }),
+    message: z.string().optional().openapi({ example: 'Bulk entity creation completed' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('BulkCreateSuccessResponse');
+
+// Error response schema for bulk operations
+const BulkErrorResponseSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.string().openapi({ example: 'Validation error' }),
+    code: z.string().openapi({ example: 'VALIDATION_ERROR' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('BulkErrorResponse');
+
+const bulkCreateEntitiesRoute = createRoute({
+  method: 'post',
+  path: '/entities',
+  tags: ['Bulk Operations'],
+  summary: 'Bulk create entities',
+  description: 'Create multiple entities in a single request (max 100)',
+  operationId: 'bulkCreateEntities',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: bulkCreateEntitiesSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Bulk create results',
+      content: {
+        'application/json': {
+          schema: BulkCreateSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+bulk.openapi(bulkCreateEntitiesRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const user = c.get('user');
   const userId = user.user_id;
@@ -226,8 +290,9 @@ bulk.post('/entities', requireAuth(), validateJson(bulkCreateEntitiesSchema), as
     });
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           results,
           summary: {
             total: data.entities.length,
@@ -235,8 +300,9 @@ bulk.post('/entities', requireAuth(), validateJson(bulkCreateEntitiesSchema), as
             failed: failureCount,
           },
         },
-        'Bulk entity creation completed'
-      ),
+        message: 'Bulk entity creation completed',
+        timestamp: new Date().toISOString(),
+      },
       201
     );
   } catch (error) {
