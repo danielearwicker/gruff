@@ -11,33 +11,42 @@ npm i hono zod @hono/zod-openapi
 ## Basic Setup Pattern
 
 ```typescript
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 
 // Create app instance
-const app = new OpenAPIHono()
+const app = new OpenAPIHono();
 
 // Define route
 const route = createRoute({
   method: 'get',
   path: '/users/{id}',
-  request: { /* validation schemas */ },
-  responses: { /* response schemas */ }
-})
+  request: {
+    /* validation schemas */
+  },
+  responses: {
+    /* response schemas */
+  },
+});
 
 // Register handler
-app.openapi(route, (c) => {
+app.openapi(route, c => {
   // Handler implementation
-  return c.json({ /* response */ }, 200)
-})
+  return c.json(
+    {
+      /* response */
+    },
+    200
+  );
+});
 
 // Expose OpenAPI docs
 app.doc('/doc', {
   openapi: '3.0.0',
   info: {
     version: '1.0.0',
-    title: 'My API'
-  }
-})
+    title: 'My API',
+  },
+});
 ```
 
 ## Schema Annotations with .openapi()
@@ -45,7 +54,7 @@ app.doc('/doc', {
 **Import z from @hono/zod-openapi** (not from standard zod):
 
 ```typescript
-import { z } from '@hono/zod-openapi'
+import { z } from '@hono/zod-openapi';
 ```
 
 **Add metadata to schemas:**
@@ -55,14 +64,16 @@ import { z } from '@hono/zod-openapi'
 const UserSchema = z.object({
   id: z.string().openapi({ example: '123' }),
   name: z.string().openapi({ example: 'John Doe' }),
-  age: z.number().openapi({ example: 42 })
-})
+  age: z.number().openapi({ example: 42 }),
+});
 
 // Register as reusable component (creates #/components/schemas/User)
-const UserSchema = z.object({
-  id: z.string().openapi({ example: '123' }),
-  name: z.string().openapi({ example: 'John Doe' })
-}).openapi('User')
+const UserSchema = z
+  .object({
+    id: z.string().openapi({ example: '123' }),
+    name: z.string().openapi({ example: 'John Doe' }),
+  })
+  .openapi('User');
 ```
 
 ## Request Validation Patterns
@@ -71,60 +82,75 @@ const UserSchema = z.object({
 
 ```typescript
 const ParamsSchema = z.object({
-  id: z.string().min(3).openapi({
-    param: { name: 'id', in: 'path' },
-    example: '1212121'
-  })
-})
+  id: z
+    .string()
+    .min(3)
+    .openapi({
+      param: { name: 'id', in: 'path' },
+      example: '1212121',
+    }),
+});
 
 const route = createRoute({
   method: 'get',
   path: '/users/{id}',
   request: {
-    params: ParamsSchema
+    params: ParamsSchema,
   },
-  responses: { /* ... */ }
-})
+  responses: {
+    /* ... */
+  },
+});
 ```
 
 **Access in handler:**
+
 ```typescript
-app.openapi(route, (c) => {
-  const { id } = c.req.valid('param')
+app.openapi(route, c => {
+  const { id } = c.req.valid('param');
   // ...
-})
+});
 ```
 
 ### Query Parameters
 
 ```typescript
 const QuerySchema = z.object({
-  page: z.string().optional().openapi({
-    param: { name: 'page', in: 'query' },
-    example: '1'
-  }),
-  limit: z.string().optional().openapi({
-    param: { name: 'limit', in: 'query' },
-    example: '10'
-  })
-})
+  page: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'page', in: 'query' },
+      example: '1',
+    }),
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '10',
+    }),
+});
 
 const route = createRoute({
   method: 'get',
   path: '/users',
   request: {
-    query: QuerySchema
+    query: QuerySchema,
   },
-  responses: { /* ... */ }
-})
+  responses: {
+    /* ... */
+  },
+});
 ```
 
 **Access in handler:**
+
 ```typescript
-app.openapi(route, (c) => {
-  const { page, limit } = c.req.valid('query')
+app.openapi(route, c => {
+  const { page, limit } = c.req.valid('query');
   // ...
-})
+});
 ```
 
 ### Request Body
@@ -132,8 +158,8 @@ app.openapi(route, (c) => {
 ```typescript
 const CreateUserSchema = z.object({
   name: z.string().openapi({ example: 'John Doe' }),
-  email: z.string().email().openapi({ example: 'john@example.com' })
-})
+  email: z.string().email().openapi({ example: 'john@example.com' }),
+});
 
 const route = createRoute({
   method: 'post',
@@ -143,23 +169,26 @@ const route = createRoute({
       content: {
         'application/json': {
           schema: CreateUserSchema,
-          required: true  // Force validation even without Content-Type
-        }
-      }
-    }
+          required: true, // Force validation even without Content-Type
+        },
+      },
+    },
   },
-  responses: { /* ... */ }
-})
+  responses: {
+    /* ... */
+  },
+});
 ```
 
 **Important:** Request must have proper `Content-Type` header for validation. Use `required: true` to enforce validation regardless.
 
 **Access in handler:**
+
 ```typescript
-app.openapi(route, (c) => {
-  const body = c.req.valid('json')
+app.openapi(route, c => {
+  const body = c.req.valid('json');
   // ...
-})
+});
 ```
 
 ## Response Definitions
@@ -168,35 +197,38 @@ app.openapi(route, (c) => {
 const route = createRoute({
   method: 'get',
   path: '/users/{id}',
-  request: { /* ... */ },
+  request: {
+    /* ... */
+  },
   responses: {
     200: {
       content: {
         'application/json': {
-          schema: UserSchema
-        }
+          schema: UserSchema,
+        },
       },
-      description: 'Successfully retrieved user'
+      description: 'Successfully retrieved user',
     },
     404: {
       content: {
         'application/json': {
           schema: z.object({
-            error: z.string().openapi({ example: 'User not found' })
-          })
-        }
+            error: z.string().openapi({ example: 'User not found' }),
+          }),
+        },
       },
-      description: 'User not found'
-    }
-  }
-})
+      description: 'User not found',
+    },
+  },
+});
 ```
 
 **Handler must specify status code explicitly:**
+
 ```typescript
-app.openapi(route, (c) => {
-  return c.json({ id: '123', name: 'John' }, 200)  // Must include 200
-})
+app.openapi(route, c => {
+  return c.json({ id: '123', name: 'John' }, 200); // Must include 200
+});
 ```
 
 ## Error Response Patterns
@@ -206,21 +238,29 @@ app.openapi(route, (c) => {
 ```typescript
 app.openapi(
   route,
-  (c) => {
+  c => {
     // Normal handler
-    return c.json({ /* ... */ }, 200)
+    return c.json(
+      {
+        /* ... */
+      },
+      200
+    );
   },
   (result, c) => {
     // Validation error hook
     if (!result.success) {
-      return c.json({
-        code: 400,
-        message: 'Validation Error',
-        errors: result.error.errors
-      }, 400)
+      return c.json(
+        {
+          code: 400,
+          message: 'Validation Error',
+          errors: result.error.errors,
+        },
+        400
+      );
     }
   }
-)
+);
 ```
 
 ### Default Error Handler
@@ -229,16 +269,19 @@ app.openapi(
 const app = new OpenAPIHono({
   defaultHook: (result, c) => {
     if (!result.success) {
-      return c.json({
-        ok: false,
-        errors: result.error.errors.map(err => ({
-          path: err.path.join('.'),
-          message: err.message
-        }))
-      }, 422)
+      return c.json(
+        {
+          ok: false,
+          errors: result.error.errors.map(err => ({
+            path: err.path.join('.'),
+            message: err.message,
+          })),
+        },
+        422
+      );
     }
-  }
-})
+  },
+});
 ```
 
 **Note:** Route-level hooks override the default handler.
@@ -280,8 +323,8 @@ responses: {
 app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
-  bearerFormat: 'JWT'
-})
+  bearerFormat: 'JWT',
+});
 ```
 
 ### Apply to Routes
@@ -292,90 +335,98 @@ const route = createRoute({
   path: '/protected',
   security: [
     {
-      Bearer: []
-    }
+      Bearer: [],
+    },
   ],
-  request: { /* ... */ },
-  responses: { /* ... */ }
-})
+  request: {
+    /* ... */
+  },
+  responses: {
+    /* ... */
+  },
+});
 ```
 
 ## Complete Example
 
 ```typescript
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 
-const app = new OpenAPIHono()
+const app = new OpenAPIHono();
 
 // Define schemas
 const ParamsSchema = z.object({
   id: z.string().openapi({
     param: { name: 'id', in: 'path' },
-    example: '123'
+    example: '123',
+  }),
+});
+
+const UserSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    email: z.string().email(),
   })
-})
+  .openapi('User');
 
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().email()
-}).openapi('User')
-
-const ErrorSchema = z.object({
-  error: z.string()
-}).openapi('Error')
+const ErrorSchema = z
+  .object({
+    error: z.string(),
+  })
+  .openapi('Error');
 
 // Create route
 const getUserRoute = createRoute({
   method: 'get',
   path: '/users/{id}',
   request: {
-    params: ParamsSchema
+    params: ParamsSchema,
   },
   responses: {
     200: {
       content: {
         'application/json': {
-          schema: UserSchema
-        }
+          schema: UserSchema,
+        },
       },
-      description: 'Retrieve user'
+      description: 'Retrieve user',
     },
     404: {
       content: {
         'application/json': {
-          schema: ErrorSchema
-        }
+          schema: ErrorSchema,
+        },
       },
-      description: 'User not found'
-    }
-  }
-})
+      description: 'User not found',
+    },
+  },
+});
 
 // Register handler
-app.openapi(getUserRoute, (c) => {
-  const { id } = c.req.valid('param')
+app.openapi(getUserRoute, c => {
+  const { id } = c.req.valid('param');
 
   // Your logic here
-  const user = findUser(id)
+  const user = findUser(id);
 
   if (!user) {
-    return c.json({ error: 'User not found' }, 404)
+    return c.json({ error: 'User not found' }, 404);
   }
 
-  return c.json(user, 200)
-})
+  return c.json(user, 200);
+});
 
 // Expose docs
 app.doc('/doc', {
   openapi: '3.0.0',
   info: {
     version: '1.0.0',
-    title: 'My API'
-  }
-})
+    title: 'My API',
+  },
+});
 
-export default app
+export default app;
 ```
 
 ## Key Points to Remember

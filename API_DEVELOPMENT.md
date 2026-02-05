@@ -432,6 +432,7 @@ npm run db:setup:remote        # Migrations + seed on remote DB
 **How it works:**
 
 The migration runner (`scripts/migrate.js`):
+
 - Auto-discovers all `.sql` files in `migrations/`
 - Sorts them alphabetically (0001, 0002, 0003, ...)
 - Runs them in order

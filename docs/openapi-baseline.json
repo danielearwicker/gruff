@@ -66,9 +66,7 @@
   "paths": {
     "/health": {
       "get": {
-        "tags": [
-          "Health"
-        ],
+        "tags": ["Health"],
         "summary": "Health check",
         "description": "Check the health status of the API, database, and KV store",
         "operationId": "healthCheck",
@@ -142,9 +140,7 @@
     },
     "/api/version": {
       "get": {
-        "tags": [
-          "Health"
-        ],
+        "tags": ["Health"],
         "summary": "API version information",
         "description": "Get version and runtime information about the API",
         "operationId": "getVersion",
@@ -195,9 +191,7 @@
     },
     "/api/auth/register": {
       "post": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Register a new user",
         "description": "Create a new user account with email and password",
         "operationId": "registerUser",
@@ -247,9 +241,7 @@
     },
     "/api/auth/login": {
       "post": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Login",
         "description": "Authenticate with email and password to obtain access and refresh tokens",
         "operationId": "login",
@@ -289,9 +281,7 @@
     },
     "/api/auth/refresh": {
       "post": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Refresh access token",
         "description": "Use a refresh token to obtain a new access token",
         "operationId": "refreshToken",
@@ -353,9 +343,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Logout",
         "description": "Invalidate the refresh token",
         "operationId": "logout",
@@ -390,9 +378,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "Get current user",
         "description": "Get the profile of the currently authenticated user",
         "operationId": "getCurrentUser",
@@ -436,9 +422,7 @@
     },
     "/api/auth/providers": {
       "get": {
-        "tags": [
-          "Authentication"
-        ],
+        "tags": ["Authentication"],
         "summary": "List authentication providers",
         "description": "Returns a list of all available authentication providers, including local authentication and configured OAuth2 providers",
         "operationId": "listAuthProviders",
@@ -474,10 +458,7 @@
                               },
                               "type": {
                                 "type": "string",
-                                "enum": [
-                                  "local",
-                                  "oauth2"
-                                ],
+                                "enum": ["local", "oauth2"],
                                 "description": "Type of authentication provider",
                                 "example": "oauth2"
                               },
@@ -492,12 +473,7 @@
                                 "example": "/api/auth/google"
                               }
                             },
-                            "required": [
-                              "id",
-                              "name",
-                              "type",
-                              "enabled"
-                            ]
+                            "required": ["id", "name", "type", "enabled"]
                           }
                         }
                       }
@@ -549,9 +525,7 @@
     },
     "/api/users": {
       "get": {
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "summary": "List users",
         "description": "Get a paginated list of users (admin only)",
         "operationId": "listUsers",
@@ -584,9 +558,7 @@
     },
     "/api/users/{id}": {
       "get": {
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "summary": "Get user by ID",
         "description": "Get details of a specific user",
         "operationId": "getUser",
@@ -633,9 +605,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "summary": "Update user",
         "description": "Update user profile",
         "operationId": "updateUser",
@@ -684,9 +654,7 @@
     },
     "/api/users/{id}/activity": {
       "get": {
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "summary": "Get user activity",
         "description": "Get a user's creation and edit history",
         "operationId": "getUserActivity",
@@ -745,9 +713,7 @@
     },
     "/api/types": {
       "post": {
-        "tags": [
-          "Types"
-        ],
+        "tags": ["Types"],
         "summary": "Create type",
         "description": "Create a new entity or link type",
         "operationId": "createType",
@@ -789,9 +755,7 @@
         }
       },
       "get": {
-        "tags": [
-          "Types"
-        ],
+        "tags": ["Types"],
         "summary": "List types",
         "description": "Get a paginated list of types",
         "operationId": "listTypes",
@@ -807,10 +771,7 @@
             "description": "Filter by category (entity or link)",
             "schema": {
               "type": "string",
-              "enum": [
-                "entity",
-                "link"
-              ]
+              "enum": ["entity", "link"]
             }
           },
           {
@@ -844,9 +805,7 @@
     },
     "/api/types/{id}": {
       "get": {
-        "tags": [
-          "Types"
-        ],
+        "tags": ["Types"],
         "summary": "Get type by ID",
         "description": "Get details of a specific type",
         "operationId": "getType",
@@ -893,9 +852,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Types"
-        ],
+        "tags": ["Types"],
         "summary": "Update type",
         "description": "Update type metadata (name, description, schema)",
         "operationId": "updateType",
@@ -942,9 +899,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Types"
-        ],
+        "tags": ["Types"],
         "summary": "Delete type",
         "description": "Delete a type (only if unused)",
         "operationId": "deleteType",
@@ -984,9 +939,7 @@
     },
     "/api/entities": {
       "post": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Create entity",
         "description": "Create a new entity with the specified type and properties",
         "operationId": "createEntity",
@@ -1028,9 +981,7 @@
         }
       },
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "List entities",
         "description": "Get a paginated list of entities with optional filters",
         "operationId": "listEntities",
@@ -1100,9 +1051,7 @@
     },
     "/api/entities/{id}": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get entity by ID",
         "description": "Get the latest version of an entity",
         "operationId": "getEntity",
@@ -1149,9 +1098,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Update entity",
         "description": "Update entity properties (creates a new version)",
         "operationId": "updateEntity",
@@ -1198,9 +1145,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Delete entity",
         "description": "Soft delete an entity",
         "operationId": "deleteEntity",
@@ -1230,9 +1175,7 @@
     },
     "/api/entities/{id}/restore": {
       "post": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Restore entity",
         "description": "Restore a soft-deleted entity",
         "operationId": "restoreEntity",
@@ -1271,9 +1214,7 @@
     },
     "/api/entities/{id}/versions": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get entity versions",
         "description": "Get all versions of an entity",
         "operationId": "getEntityVersions",
@@ -1309,9 +1250,7 @@
     },
     "/api/entities/{id}/versions/{version}": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get specific entity version",
         "description": "Get a specific version of an entity",
         "operationId": "getEntityVersion",
@@ -1360,9 +1299,7 @@
     },
     "/api/entities/{id}/history": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get entity history with diffs",
         "description": "Get version history with property changes between versions",
         "operationId": "getEntityHistory",
@@ -1417,11 +1354,7 @@
                                   "properties": {
                                     "type": {
                                       "type": "string",
-                                      "enum": [
-                                        "added",
-                                        "removed",
-                                        "changed"
-                                      ]
+                                      "enum": ["added", "removed", "changed"]
                                     },
                                     "path": {
                                       "type": "string"
@@ -1446,9 +1379,7 @@
     },
     "/api/entities/{id}/outbound": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get outbound links",
         "description": "Get all links where this entity is the source",
         "operationId": "getEntityOutboundLinks",
@@ -1493,9 +1424,7 @@
     },
     "/api/entities/{id}/inbound": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get inbound links",
         "description": "Get all links where this entity is the target",
         "operationId": "getEntityInboundLinks",
@@ -1540,9 +1469,7 @@
     },
     "/api/entities/{id}/neighbors": {
       "get": {
-        "tags": [
-          "Entities"
-        ],
+        "tags": ["Entities"],
         "summary": "Get neighboring entities",
         "description": "Get all entities connected to this entity",
         "operationId": "getEntityNeighbors",
@@ -1561,11 +1488,7 @@
             "description": "Direction of links to follow",
             "schema": {
               "type": "string",
-              "enum": [
-                "outbound",
-                "inbound",
-                "both"
-              ],
+              "enum": ["outbound", "inbound", "both"],
               "default": "both"
             }
           },
@@ -1622,10 +1545,7 @@
                               },
                               "direction": {
                                 "type": "string",
-                                "enum": [
-                                  "outbound",
-                                  "inbound"
-                                ]
+                                "enum": ["outbound", "inbound"]
                               }
                             }
                           }
@@ -1646,9 +1566,7 @@
     },
     "/api/links": {
       "post": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Create link",
         "description": "Create a new link between two entities",
         "operationId": "createLink",
@@ -1690,9 +1608,7 @@
         }
       },
       "get": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "List links",
         "description": "Get a paginated list of links with optional filters",
         "operationId": "listLinks",
@@ -1755,9 +1671,7 @@
     },
     "/api/links/{id}": {
       "get": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Get link by ID",
         "description": "Get the latest version of a link",
         "operationId": "getLink",
@@ -1794,9 +1708,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Update link",
         "description": "Update link properties (creates a new version)",
         "operationId": "updateLink",
@@ -1843,9 +1755,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Delete link",
         "description": "Soft delete a link",
         "operationId": "deleteLink",
@@ -1875,9 +1785,7 @@
     },
     "/api/links/{id}/restore": {
       "post": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Restore link",
         "description": "Restore a soft-deleted link",
         "operationId": "restoreLink",
@@ -1916,9 +1824,7 @@
     },
     "/api/links/{id}/versions": {
       "get": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Get link versions",
         "description": "Get all versions of a link",
         "operationId": "getLinkVersions",
@@ -1948,9 +1854,7 @@
     },
     "/api/links/{id}/versions/{version}": {
       "get": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Get specific link version",
         "description": "Get a specific version of a link",
         "operationId": "getLinkVersion",
@@ -1999,9 +1903,7 @@
     },
     "/api/links/{id}/history": {
       "get": {
-        "tags": [
-          "Links"
-        ],
+        "tags": ["Links"],
         "summary": "Get link history with diffs",
         "description": "Get version history with property changes between versions",
         "operationId": "getLinkHistory",
@@ -2052,9 +1954,7 @@
     },
     "/api/graph/traverse": {
       "post": {
-        "tags": [
-          "Graph"
-        ],
+        "tags": ["Graph"],
         "summary": "Traverse graph",
         "description": "Perform multi-hop graph traversal from a starting entity",
         "operationId": "traverseGraph",
@@ -2148,9 +2048,7 @@
     },
     "/api/graph/path": {
       "get": {
-        "tags": [
-          "Graph"
-        ],
+        "tags": ["Graph"],
         "summary": "Find shortest path",
         "description": "Find the shortest path between two entities",
         "operationId": "findShortestPath",
@@ -2251,9 +2149,7 @@
     },
     "/api/search/entities": {
       "post": {
-        "tags": [
-          "Search"
-        ],
+        "tags": ["Search"],
         "summary": "Search entities",
         "description": "Search entities by JSON properties with advanced filtering",
         "operationId": "searchEntities",
@@ -2288,9 +2184,7 @@
     },
     "/api/search/links": {
       "post": {
-        "tags": [
-          "Search"
-        ],
+        "tags": ["Search"],
         "summary": "Search links",
         "description": "Search links by JSON properties with advanced filtering",
         "operationId": "searchLinks",
@@ -2325,9 +2219,7 @@
     },
     "/api/search/suggest": {
       "get": {
-        "tags": [
-          "Search"
-        ],
+        "tags": ["Search"],
         "summary": "Type-ahead suggestions",
         "description": "Get entity suggestions for autocomplete",
         "operationId": "getSuggestions",
@@ -2423,9 +2315,7 @@
     },
     "/api/bulk/entities": {
       "post": {
-        "tags": [
-          "Bulk Operations"
-        ],
+        "tags": ["Bulk Operations"],
         "summary": "Bulk create entities",
         "description": "Create multiple entities in a single request (max 100)",
         "operationId": "bulkCreateEntities",
@@ -2458,9 +2348,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Bulk Operations"
-        ],
+        "tags": ["Bulk Operations"],
         "summary": "Bulk update entities",
         "description": "Update multiple entities in a single request (max 100)",
         "operationId": "bulkUpdateEntities",
@@ -2495,9 +2383,7 @@
     },
     "/api/bulk/links": {
       "post": {
-        "tags": [
-          "Bulk Operations"
-        ],
+        "tags": ["Bulk Operations"],
         "summary": "Bulk create links",
         "description": "Create multiple links in a single request (max 100)",
         "operationId": "bulkCreateLinks",
@@ -2530,9 +2416,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Bulk Operations"
-        ],
+        "tags": ["Bulk Operations"],
         "summary": "Bulk update links",
         "description": "Update multiple links in a single request (max 100)",
         "operationId": "bulkUpdateLinks",
@@ -2567,9 +2451,7 @@
     },
     "/api/export": {
       "get": {
-        "tags": [
-          "Export/Import"
-        ],
+        "tags": ["Export/Import"],
         "summary": "Export data",
         "description": "Export graph data as JSON",
         "operationId": "exportData",
@@ -2645,9 +2527,7 @@
         }
       },
       "post": {
-        "tags": [
-          "Export/Import"
-        ],
+        "tags": ["Export/Import"],
         "summary": "Import data",
         "description": "Import graph data from JSON",
         "operationId": "importData",
@@ -2682,9 +2562,7 @@
     },
     "/api/audit": {
       "get": {
-        "tags": [
-          "Audit"
-        ],
+        "tags": ["Audit"],
         "summary": "Query audit logs",
         "description": "Get audit logs with optional filters",
         "operationId": "getAuditLogs",
@@ -2709,12 +2587,7 @@
             "description": "Filter by resource type",
             "schema": {
               "type": "string",
-              "enum": [
-                "entity",
-                "link",
-                "type",
-                "user"
-              ]
+              "enum": ["entity", "link", "type", "user"]
             }
           },
           {
@@ -2732,12 +2605,7 @@
             "description": "Filter by operation type",
             "schema": {
               "type": "string",
-              "enum": [
-                "create",
-                "update",
-                "delete",
-                "restore"
-              ]
+              "enum": ["create", "update", "delete", "restore"]
             }
           },
           {
@@ -2779,9 +2647,7 @@
     },
     "/api/audit/resource/{resource_type}/{resource_id}": {
       "get": {
-        "tags": [
-          "Audit"
-        ],
+        "tags": ["Audit"],
         "summary": "Get resource audit history",
         "description": "Get audit history for a specific resource",
         "operationId": "getResourceAuditHistory",
@@ -2798,12 +2664,7 @@
             "description": "Resource type",
             "schema": {
               "type": "string",
-              "enum": [
-                "entity",
-                "link",
-                "type",
-                "user"
-              ]
+              "enum": ["entity", "link", "type", "user"]
             }
           },
           {
@@ -2839,9 +2700,7 @@
     },
     "/api/audit/user/{user_id}": {
       "get": {
-        "tags": [
-          "Audit"
-        ],
+        "tags": ["Audit"],
         "summary": "Get user audit history",
         "description": "Get all actions performed by a user",
         "operationId": "getUserAuditHistory",
@@ -2933,10 +2792,7 @@
     "schemas": {
       "RegisterUser": {
         "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
+        "required": ["email", "password"],
         "properties": {
           "email": {
             "type": "string",
@@ -2958,10 +2814,7 @@
       },
       "Login": {
         "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
+        "required": ["email", "password"],
         "properties": {
           "email": {
             "type": "string",
@@ -2976,9 +2829,7 @@
       },
       "RefreshToken": {
         "type": "object",
-        "required": [
-          "refresh_token"
-        ],
+        "required": ["refresh_token"],
         "properties": {
           "refresh_token": {
             "type": "string"
@@ -3033,13 +2884,7 @@
           },
           "provider": {
             "type": "string",
-            "enum": [
-              "local",
-              "google",
-              "github",
-              "microsoft",
-              "apple"
-            ]
+            "enum": ["local", "google", "github", "microsoft", "apple"]
           },
           "created_at": {
             "type": "integer",
@@ -3068,10 +2913,7 @@
       },
       "CreateType": {
         "type": "object",
-        "required": [
-          "name",
-          "category"
-        ],
+        "required": ["name", "category"],
         "properties": {
           "name": {
             "type": "string",
@@ -3081,10 +2923,7 @@
           },
           "category": {
             "type": "string",
-            "enum": [
-              "entity",
-              "link"
-            ]
+            "enum": ["entity", "link"]
           },
           "description": {
             "type": "string",
@@ -3127,10 +2966,7 @@
           },
           "category": {
             "type": "string",
-            "enum": [
-              "entity",
-              "link"
-            ]
+            "enum": ["entity", "link"]
           },
           "description": {
             "type": "string",
@@ -3152,9 +2988,7 @@
       },
       "CreateEntity": {
         "type": "object",
-        "required": [
-          "type_id"
-        ],
+        "required": ["type_id"],
         "properties": {
           "type_id": {
             "type": "string",
@@ -3170,9 +3004,7 @@
       },
       "UpdateEntity": {
         "type": "object",
-        "required": [
-          "properties"
-        ],
+        "required": ["properties"],
         "properties": {
           "properties": {
             "type": "object",
@@ -3220,11 +3052,7 @@
       },
       "CreateLink": {
         "type": "object",
-        "required": [
-          "type_id",
-          "source_entity_id",
-          "target_entity_id"
-        ],
+        "required": ["type_id", "source_entity_id", "target_entity_id"],
         "properties": {
           "type_id": {
             "type": "string",
@@ -3249,9 +3077,7 @@
       },
       "UpdateLink": {
         "type": "object",
-        "required": [
-          "properties"
-        ],
+        "required": ["properties"],
         "properties": {
           "properties": {
             "type": "object"
@@ -3402,10 +3228,7 @@
       },
       "PropertyFilter": {
         "type": "object",
-        "required": [
-          "path",
-          "operator"
-        ],
+        "required": ["path", "operator"],
         "properties": {
           "path": {
             "type": "string",
@@ -3438,9 +3261,7 @@
       },
       "TraversalRequest": {
         "type": "object",
-        "required": [
-          "start_entity_id"
-        ],
+        "required": ["start_entity_id"],
         "properties": {
           "start_entity_id": {
             "type": "string",
@@ -3448,11 +3269,7 @@
           },
           "direction": {
             "type": "string",
-            "enum": [
-              "outbound",
-              "inbound",
-              "both"
-            ],
+            "enum": ["outbound", "inbound", "both"],
             "default": "both"
           },
           "max_depth": {
@@ -3483,9 +3300,7 @@
       },
       "BulkCreateEntities": {
         "type": "object",
-        "required": [
-          "entities"
-        ],
+        "required": ["entities"],
         "properties": {
           "entities": {
             "type": "array",
@@ -3493,9 +3308,7 @@
             "maxItems": 100,
             "items": {
               "type": "object",
-              "required": [
-                "type_id"
-              ],
+              "required": ["type_id"],
               "properties": {
                 "type_id": {
                   "type": "string",
@@ -3516,9 +3329,7 @@
       },
       "BulkUpdateEntities": {
         "type": "object",
-        "required": [
-          "entities"
-        ],
+        "required": ["entities"],
         "properties": {
           "entities": {
             "type": "array",
@@ -3526,10 +3337,7 @@
             "maxItems": 100,
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "properties"
-              ],
+              "required": ["id", "properties"],
               "properties": {
                 "id": {
                   "type": "string",
@@ -3545,9 +3353,7 @@
       },
       "BulkCreateLinks": {
         "type": "object",
-        "required": [
-          "links"
-        ],
+        "required": ["links"],
         "properties": {
           "links": {
             "type": "array",
@@ -3555,11 +3361,7 @@
             "maxItems": 100,
             "items": {
               "type": "object",
-              "required": [
-                "type_id",
-                "source_entity_id",
-                "target_entity_id"
-              ],
+              "required": ["type_id", "source_entity_id", "target_entity_id"],
               "properties": {
                 "type_id": {
                   "type": "string",
@@ -3587,9 +3389,7 @@
       },
       "BulkUpdateLinks": {
         "type": "object",
-        "required": [
-          "links"
-        ],
+        "required": ["links"],
         "properties": {
           "links": {
             "type": "array",
@@ -3597,10 +3397,7 @@
             "maxItems": 100,
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "properties"
-              ],
+              "required": ["id", "properties"],
               "properties": {
                 "id": {
                   "type": "string",
@@ -3729,10 +3526,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "name",
-                "category"
-              ],
+              "required": ["name", "category"],
               "properties": {
                 "client_id": {
                   "type": "string"
@@ -3742,10 +3536,7 @@
                 },
                 "category": {
                   "type": "string",
-                  "enum": [
-                    "entity",
-                    "link"
-                  ]
+                  "enum": ["entity", "link"]
                 },
                 "description": {
                   "type": "string"
@@ -3761,9 +3552,7 @@
             "maxItems": 100,
             "items": {
               "type": "object",
-              "required": [
-                "client_id"
-              ],
+              "required": ["client_id"],
               "properties": {
                 "client_id": {
                   "type": "string"
@@ -3876,21 +3665,11 @@
           },
           "operation": {
             "type": "string",
-            "enum": [
-              "create",
-              "update",
-              "delete",
-              "restore"
-            ]
+            "enum": ["create", "update", "delete", "restore"]
           },
           "resource_type": {
             "type": "string",
-            "enum": [
-              "entity",
-              "link",
-              "type",
-              "user"
-            ]
+            "enum": ["entity", "link", "type", "user"]
           },
           "resource_id": {
             "type": "string",

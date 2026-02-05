@@ -38,19 +38,28 @@ export const SuccessResponseSchema = z
   .openapi('Success');
 
 export const PaginationQuerySchema = z.object({
-  limit: z.string().optional().openapi({
-    param: { name: 'limit', in: 'query' },
-    example: '20',
-    description: 'Maximum number of items to return (1-100, default: 20)',
-  }),
-  cursor: z.string().optional().openapi({
-    param: { name: 'cursor', in: 'query' },
-    example: 'eyJpZCI6IjEyMyJ9',
-    description: 'Cursor for pagination (from previous response)',
-  }),
-  include_deleted: z.string().optional().openapi({
-    param: { name: 'include_deleted', in: 'query' },
-    example: 'false',
-    description: 'Include soft-deleted items (default: false)',
-  }),
+  limit: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'limit', in: 'query' },
+      example: '20',
+      description: 'Maximum number of items to return (1-100, default: 20)',
+    }),
+  cursor: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'cursor', in: 'query' },
+      example: 'eyJpZCI6IjEyMyJ9',
+      description: 'Cursor for pagination (from previous response)',
+    }),
+  include_deleted: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'include_deleted', in: 'query' },
+      example: 'false',
+      description: 'Include soft-deleted items (default: false)',
+    }),
 });

@@ -24,14 +24,16 @@ export const entitySchema = z.object({
 });
 
 // Entity creation schema (with sanitization for XSS prevention)
-export const createEntitySchema = z.object({
-  type_id: typeIdSchema,
-  properties: sanitizedJsonPropertiesSchema.optional().default({}),
-  // Optional ACL to set at creation time
-  // If not provided, creator will get write permission by default
-  // If empty array is provided, resource will be public (no ACL)
-  acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
-}).openapi('CreateEntity');
+export const createEntitySchema = z
+  .object({
+    type_id: typeIdSchema,
+    properties: sanitizedJsonPropertiesSchema.optional().default({}),
+    // Optional ACL to set at creation time
+    // If not provided, creator will get write permission by default
+    // If empty array is provided, resource will be public (no ACL)
+    acl: z.array(aclEntrySchema).max(100, 'Maximum 100 ACL entries allowed').optional(),
+  })
+  .openapi('CreateEntity');
 
 // Entity update schema (with sanitization for XSS prevention)
 export const updateEntitySchema = z.object({
@@ -39,17 +41,19 @@ export const updateEntitySchema = z.object({
 });
 
 // Entity response schema (with parsed JSON properties)
-export const entityResponseSchema = z.object({
-  id: uuidSchema,
-  type_id: typeIdSchema,
-  properties: jsonPropertiesSchema,
-  version: z.number().int().positive(),
-  previous_version_id: uuidSchema.nullable(),
-  created_at: timestampSchema,
-  created_by: uuidSchema,
-  is_deleted: z.boolean(),
-  is_latest: z.boolean(),
-}).openapi('Entity');
+export const entityResponseSchema = z
+  .object({
+    id: uuidSchema,
+    type_id: typeIdSchema,
+    properties: jsonPropertiesSchema,
+    version: z.number().int().positive(),
+    previous_version_id: uuidSchema.nullable(),
+    created_at: timestampSchema,
+    created_by: uuidSchema,
+    is_deleted: z.boolean(),
+    is_latest: z.boolean(),
+  })
+  .openapi('Entity');
 
 // Entity query filters (for query parameters - handles string coercion)
 export const entityQuerySchema = paginationQuerySchema.extend({

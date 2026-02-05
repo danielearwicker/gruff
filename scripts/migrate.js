@@ -48,7 +48,7 @@ async function runMigrations() {
         'execute',
         DB_NAME,
         `--${mode}`,
-        `--file=${filePath}`
+        `--file=${filePath}`,
       ]);
     }
 
@@ -63,11 +63,10 @@ async function runMigrations() {
         'execute',
         DB_NAME,
         `--${mode}`,
-        '--file=./migrations/0004_seed_data.sql'
+        '--file=./migrations/0004_seed_data.sql',
       ]);
       console.log('\n✅ Seed data loaded successfully!\n');
     }
-
   } catch (error) {
     console.error('\n❌ Migration failed:', error.message);
     process.exit(1);
@@ -78,7 +77,7 @@ function runCommand(command, args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
       stdio: 'inherit',
-      shell: true
+      shell: true,
     });
 
     proc.on('close', code => {

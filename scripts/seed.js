@@ -17,7 +17,7 @@ async function runSeed() {
       'execute',
       DB_NAME,
       `--${mode}`,
-      `--file=${SEED_FILE}`
+      `--file=${SEED_FILE}`,
     ]);
 
     console.log('\n✅ Seed data loaded successfully!\n');
@@ -31,7 +31,7 @@ function runCommand(command, args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
       stdio: 'inherit',
-      shell: true
+      shell: true,
     });
 
     proc.on('close', code => {

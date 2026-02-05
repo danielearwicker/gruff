@@ -34,16 +34,19 @@ The server will start at `http://localhost:8787`
 ## Available Scripts
 
 **Development:**
+
 - `npm run dev` - Start local development server with Wrangler
 - `npm test` - Run integration test suite (resets DB, starts server, runs tests)
 
 **Database:**
+
 - `npm run db:setup:local` - Run migrations + load seed data (first time setup)
 - `npm run db:reset:local` - Nuke database and start fresh
 - `npm run migrate:local` - Run all migrations (auto-discovers from migrations/)
 - `npm run seed:local` - Load seed data only
 
 **Deployment:**
+
 - `npm run deploy` - Deploy to Cloudflare
 - `npm run migrate:remote` - Apply migrations to remote D1 database
 - `npm run db:setup:remote` - Run migrations + seed on remote database

@@ -12,17 +12,11 @@ import {
 import { etag } from './middleware/etag.js';
 import { responseTime } from './middleware/response-time.js';
 import { queryTracking } from './middleware/query-tracking.js';
-import {
-  createEntitySchema,
-  entityQuerySchema,
-  CreateEntity,
-  EntityQuery,
-} from './schemas/index.js';
+import { entityQuerySchema, CreateEntity, EntityQuery } from './schemas/index.js';
 import * as response from './utils/response.js';
 import { createLogger, LogLevel } from './utils/logger.js';
 import { validateEnvironment, DEFAULT_ENV_VALIDATION } from './utils/sensitive-data.js';
 import { createErrorTracker, AnalyticsEngineDataset } from './utils/error-tracking.js';
-import { z } from 'zod';
 import { ZodError } from 'zod';
 import typesRouter from './routes/types.js';
 import entitiesRouter from './routes/entities.js';
@@ -238,7 +232,7 @@ import { typeSchema, createTypeSchema } from './schemas/type.js';
   SuccessResponseSchema,
 ].forEach(schema => {
   // Schemas with .openapi() will be automatically registered
-  schema._def;
+  void schema._def;
 });
 
 // OpenAPI spec generation endpoint
@@ -470,19 +464,22 @@ app.openapi(healthRoute, async c => {
     // Check Analytics Engine availability
     const analyticsAvailable = !!c.env.ANALYTICS;
 
-    return c.json({
-      status: 'healthy',
-      environment: c.env.ENVIRONMENT,
-      database: dbResult ? 'connected' : 'disconnected',
-      kv: kvStatus,
-      analytics: analyticsAvailable ? 'available' : 'not_configured',
-      runtime: runtimeStatus,
-      timestamp: new Date().toISOString(),
-    });
+    return c.json(
+      {
+        status: 'healthy',
+        environment: c.env.ENVIRONMENT,
+        database: dbResult ? 'connected' : 'disconnected',
+        kv: kvStatus,
+        analytics: analyticsAvailable ? 'available' : 'not_configured',
+        runtime: runtimeStatus,
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     return c.json(
       {
-        status: 'unhealthy',
+        status: 'unhealthy' as const,
         error: error instanceof Error ? error.message : 'Unknown error',
       },
       500
