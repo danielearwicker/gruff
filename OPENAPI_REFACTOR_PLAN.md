@@ -70,7 +70,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate link schemas** - Add `.openapi()` to `createLinkSchema`, `updateLinkSchema`, `linkQuerySchema` in `src/schemas/link.ts`
+- [x] **Annotate link schemas** - Add `.openapi()` to `createLinkSchema`, `updateLinkSchema`, `linkQuerySchema` in `src/schemas/link.ts`
 - [ ] **Convert links router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/links.ts`
 
 Convert endpoints:
