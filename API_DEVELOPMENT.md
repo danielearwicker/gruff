@@ -753,36 +753,52 @@ npm test
 
 ### OpenAPI Specification
 
-The API is documented using OpenAPI 3.1.0. Update `src/openapi/spec.ts` when adding new endpoints:
+The API is documented using OpenAPI 3.1.0, auto-generated from route definitions via `@hono/zod-openapi`. There is no manually maintained spec file — the spec is derived directly from `createRoute()` definitions in `src/routes/*.ts` and Zod schemas in `src/schemas/*.ts`.
+
+To add a new endpoint to the spec, define it using `createRoute()` and register it with `router.openapi()`:
 
 ```typescript
-// Add to paths
-'/api/myresource': {
-  get: {
-    summary: 'List resources',
-    tags: ['MyResource'],
-    parameters: [
-      { $ref: '#/components/parameters/limit' },
-      { $ref: '#/components/parameters/cursor' },
-    ],
-    responses: {
-      200: {
-        description: 'List of resources',
-        content: {
-          'application/json': {
-            schema: { $ref: '#/components/schemas/MyResourceListResponse' }
-          }
-        }
-      }
-    }
-  }
-}
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+
+const myRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['MyResource'],
+  summary: 'List resources',
+  request: {
+    query: z.object({
+      limit: z
+        .string()
+        .optional()
+        .openapi({ param: { name: 'limit', in: 'query' } }),
+      cursor: z
+        .string()
+        .optional()
+        .openapi({ param: { name: 'cursor', in: 'query' } }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'List of resources',
+      content: {
+        'application/json': {
+          schema: MyResourceListSchema,
+        },
+      },
+    },
+  },
+});
+
+router.openapi(myRoute, async c => {
+  // Handler implementation
+});
 ```
 
 View documentation at:
 
 - Interactive UI: `http://localhost:8787/docs`
 - OpenAPI JSON: `http://localhost:8787/docs/openapi.json`
+- OpenAPI YAML: `http://localhost:8787/docs/openapi.yaml`
 
 ## Best Practices
 

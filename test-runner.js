@@ -7908,8 +7908,8 @@ async function testBulkUpdateEntities() {
     assertEquals(result.version, 2, 'Should be version 2');
   }
 
-  // Verify updates
-  const verifyEntity1 = await makeRequest('GET', `/api/entities/${entity1Id}`);
+  // Verify updates (must use auth since entities have default ACL)
+  const verifyEntity1 = await makeAuthRequest('GET', `/api/entities/${entity1Id}`);
   assertEquals(
     verifyEntity1.data.data.properties.name,
     'Updated 1',
@@ -8031,8 +8031,8 @@ async function testBulkUpdateLinks() {
     assertEquals(result.version, 2, 'Should be version 2');
   }
 
-  // Verify updates
-  const verifyLink1 = await makeRequest('GET', `/api/links/${link1Id}`);
+  // Verify updates (must use auth since links have default ACL)
+  const verifyLink1 = await makeAuthRequest('GET', `/api/links/${link1Id}`);
   assertEquals(verifyLink1.data.data.properties.weight, 100, 'Link 1 weight should be updated');
   assertEquals(verifyLink1.data.data.properties.label, 'Updated', 'Link 1 label should be set');
 }
@@ -9789,7 +9789,7 @@ async function testSanitizationBulkCreate() {
 
   for (const result of results) {
     if (result.success) {
-      const entityResponse = await makeRequest('GET', `/api/entities/${result.id}`);
+      const entityResponse = await makeAuthRequest('GET', `/api/entities/${result.id}`);
       const entity = entityResponse.data.data;
 
       assert(
@@ -10346,7 +10346,7 @@ async function testUIEntityDetailVersionHistory() {
   assert(response.text.includes('Version 2'), 'Should show version 2');
   assert(response.text.includes('Initial version'), 'Should indicate initial version');
   assert(
-    html.includes('Changed "name"') || html.includes('Changed "status"'),
+    response.text.includes('Changed "name"') || response.text.includes('Changed "status"'),
     'Should show property changes'
   );
 }
