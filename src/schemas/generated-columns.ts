@@ -96,17 +96,30 @@ export const queryTemplateSchema = z.enum([
 export type QueryTemplate = z.infer<typeof queryTemplateSchema>;
 
 /**
- * Schema for query plan analysis request body
+ * Schema for query plan analysis request body (base object, without refinements, for OpenAPI)
  */
-export const analyzeQueryPlanSchema = z
-  .object({
-    // Either provide a template or a custom SQL query
-    template: queryTemplateSchema.optional(),
-    // Parameters for the template (type_id, entity_id, property_path, etc.)
-    parameters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-    // Or provide a custom SQL query for analysis (restricted to SELECT statements)
-    sql: z.string().optional(),
-  })
+export const analyzeQueryPlanBodySchema = z.object({
+  template: queryTemplateSchema.optional().openapi({
+    description: 'Name of a predefined query template (e.g., entity_by_type)',
+    example: 'entity_by_type',
+  }),
+  parameters: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .optional()
+    .openapi({
+      description: 'Parameters for the template (type_id, entity_id, property_path, etc.)',
+      example: { type_id: 'your-type-uuid' },
+    }),
+  sql: z.string().optional().openapi({
+    description: 'Custom SQL query to analyze (SELECT statements only)',
+    example: 'SELECT * FROM entities WHERE is_latest = 1 LIMIT 10',
+  }),
+});
+
+/**
+ * Schema for query plan analysis request body (with refinements, for runtime validation)
+ */
+export const analyzeQueryPlanSchema = analyzeQueryPlanBodySchema
   .refine(data => data.template || data.sql, { message: 'Either template or sql must be provided' })
   .refine(data => !(data.template && data.sql), {
     message: 'Cannot provide both template and sql',
@@ -118,10 +131,12 @@ export type AnalyzeQueryPlanRequest = z.infer<typeof analyzeQueryPlanSchema>;
  * Schema for query plan step from EXPLAIN QUERY PLAN
  */
 export const queryPlanStepSchema = z.object({
-  id: z.number(),
-  parent: z.number(),
+  id: z.number().openapi({ example: 0 }),
+  parent: z.number().openapi({ example: 0 }),
   notUsed: z.number().optional(),
-  detail: z.string(),
+  detail: z
+    .string()
+    .openapi({ example: 'SEARCH entities USING INDEX idx_entities_type_latest_deleted' }),
 });
 
 export type QueryPlanStep = z.infer<typeof queryPlanStepSchema>;
@@ -130,17 +145,21 @@ export type QueryPlanStep = z.infer<typeof queryPlanStepSchema>;
  * Schema for query plan analysis response
  */
 export const queryPlanResponseSchema = z.object({
-  sql: z.string(),
-  template: queryTemplateSchema.optional(),
+  sql: z
+    .string()
+    .openapi({ example: 'SELECT e.* FROM entities e WHERE e.type_id = ? AND e.is_latest = 1' }),
+  template: queryTemplateSchema.optional().openapi({ example: 'entity_by_type' }),
   plan: z.array(queryPlanStepSchema),
   analysis: z.object({
-    uses_index: z.boolean(),
-    indexes_used: z.array(z.string()),
+    uses_index: z.boolean().openapi({ example: true }),
+    indexes_used: z.array(z.string()).openapi({ example: ['idx_entities_type_latest_deleted'] }),
     estimated_rows_scanned: z.string().optional(),
-    has_table_scan: z.boolean(),
-    tables_accessed: z.array(z.string()),
+    has_table_scan: z.boolean().openapi({ example: false }),
+    tables_accessed: z.array(z.string()).openapi({ example: ['entities'] }),
   }),
-  recommendations: z.array(z.string()),
+  recommendations: z.array(z.string()).openapi({
+    example: ['Query is well-optimized, using index(es): idx_entities_type_latest_deleted'],
+  }),
 });
 
 export type QueryPlanResponse = z.infer<typeof queryPlanResponseSchema>;

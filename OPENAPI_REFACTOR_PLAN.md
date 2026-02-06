@@ -201,10 +201,10 @@ Convert endpoints:
 
 **File: `src/routes/query-plan.ts`**
 
-- [ ] **Convert query-plan router to OpenAPIHono** - Change to `new OpenAPIHono()` in file
-- [ ] **Convert GET /api/schema/query-plan/templates** - Lists query templates (admin). Test list templates
-- [ ] **Convert GET /api/schema/query-plan/templates/:template** - Gets specific template query plan (admin). Test get template
-- [ ] **Convert POST /api/schema/query-plan/analyze** - Analyzes custom query (admin). Test analyze custom query
+- [x] **Convert query-plan router to OpenAPIHono** - Change to `new OpenAPIHono()` in file
+- [x] **Convert GET /api/schema/query-plan/templates** - Lists query templates (admin). Test list templates
+- [x] **Convert GET /api/schema/query-plan/templates/:template** - Gets specific template query plan (admin). Test get template
+- [x] **Convert POST /api/schema/query-plan/analyze** - Analyzes custom query (admin). Test analyze custom query
 
 ### Final Cleanup
 
