@@ -213,7 +213,7 @@ Convert endpoints:
 - [x] **Update docs route** - Ensure `src/routes/docs.ts` serves auto-generated spec correctly
 - [x] **Run full test suite** - Final `npm test` - all tests must pass
 - [x] **Generate TypeScript client** - Test: `npx @hey-api/openapi-ts --input http://localhost:8787/docs/openapi.json --output ./test-client --client fetch`
-- [ ] **Update README** - Document OpenAPI at `/docs`, spec at `/docs/openapi.json`, client generation
+- [x] **Update README** - Document OpenAPI at `/docs`, spec at `/docs/openapi.json`, client generation
 - [ ] **Merge to main** - Merge `openapi-refactor` branch after all tests pass
 
 ---
