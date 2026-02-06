@@ -1,14 +1,15 @@
-import { Hono } from 'hono';
-import { validateJson, validateQuery } from '../middleware/validation.js';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import {
   exportQuerySchema,
+  exportResponseSchema,
   importRequestSchema,
+  importResponseSchema,
   type ExportQuery,
   type ImportRequest,
   type ImportResultItem,
 } from '../schemas/index.js';
-import * as response from '../utils/response.js';
+import { ErrorResponseSchema } from '../schemas/openapi-common.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { buildAclFilterClause, filterByAclPermission, createResourceAcl } from '../utils/acl.js';
@@ -19,7 +20,7 @@ type Bindings = {
   ENVIRONMENT: string;
 };
 
-const exportRouter = new Hono<{ Bindings: Bindings }>();
+const exportRouter = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Helper function to generate UUID
 function generateUUID(): string {
@@ -31,6 +32,131 @@ function getCurrentTimestamp(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+// ============================================================================
+// Response schemas
+// ============================================================================
+
+const ExportSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: exportResponseSchema,
+    message: z.string().optional().openapi({ example: 'Export completed successfully' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('ExportSuccessResponse');
+
+const ImportSuccessResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: importResponseSchema,
+    message: z.string().optional().openapi({ example: 'Import completed' }),
+    timestamp: z.string().openapi({ example: '2024-01-15T10:30:00.000Z' }),
+  })
+  .openapi('ImportSuccessResponse');
+
+// ============================================================================
+// Route definitions
+// ============================================================================
+
+/**
+ * GET /api/export route definition
+ */
+const getExportRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Export/Import'],
+  summary: 'Export entities and links as JSON',
+  description:
+    'Export entities and links as JSON. Supports filtering by type, date range, and inclusion of deleted/versioned data. ACL filtering is applied based on authentication: authenticated users see entities/links they have read permission on, resources with NULL acl_id are visible to all authenticated users, unauthenticated requests only see resources with NULL acl_id (public).',
+  operationId: 'exportData',
+  security: [{ bearerAuth: [] }],
+  middleware: [optionalAuth()] as const,
+  request: {
+    query: exportQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Export completed successfully',
+      content: {
+        'application/json': {
+          schema: ExportSuccessResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Export failed',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+/**
+ * POST /api/export route definition
+ */
+const postImportRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Export/Import'],
+  summary: 'Import entities and links from JSON',
+  description:
+    'Import entities and links from JSON. Creates new records with new IDs, maintaining referential integrity. Authentication required. The authenticated user is recorded as the creator of all imported types, entities, and links, and automatically receives write permission on all created entities and links.',
+  operationId: 'importData',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: importRequestSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: 'Import completed',
+      content: {
+        'application/json': {
+          schema: ImportSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Authentication required',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Import failed',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// ============================================================================
+// Route handlers
+// ============================================================================
+
 /**
  * GET /api/export
  * Export entities and links as JSON
@@ -41,8 +167,8 @@ function getCurrentTimestamp(): number {
  * - Resources with NULL acl_id are visible to all authenticated users
  * - Unauthenticated requests only see resources with NULL acl_id (public)
  */
-exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c => {
-  const query = c.get('validated_query') as ExportQuery;
+exportRouter.openapi(getExportRoute, async c => {
+  const query = c.req.valid('query') as ExportQuery;
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -124,16 +250,16 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
     }
 
     const entities = filteredEntities.map((e: Record<string, unknown>) => ({
-      id: e.id,
-      type_id: e.type_id,
-      type_name: e.type_name || undefined,
-      properties: JSON.parse((e.properties as string) || '{}'),
-      version: e.version,
-      previous_version_id: e.previous_version_id,
-      created_at: e.created_at,
-      created_by: e.created_by,
-      is_deleted: e.is_deleted,
-      is_latest: e.is_latest,
+      id: e.id as string,
+      type_id: e.type_id as string,
+      type_name: (e.type_name as string) || undefined,
+      properties: JSON.parse((e.properties as string) || '{}') as Record<string, unknown>,
+      version: e.version as number,
+      previous_version_id: (e.previous_version_id as string | null) ?? null,
+      created_at: e.created_at as number,
+      created_by: (e.created_by as string | null) ?? null,
+      is_deleted: e.is_deleted as 0 | 1,
+      is_latest: e.is_latest as 0 | 1,
     }));
 
     // Get all entity IDs for link filtering
@@ -220,18 +346,18 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
     }
 
     const links = rawLinks.map((l: Record<string, unknown>) => ({
-      id: l.id,
-      type_id: l.type_id,
-      type_name: l.type_name || undefined,
-      source_entity_id: l.source_entity_id,
-      target_entity_id: l.target_entity_id,
-      properties: JSON.parse((l.properties as string) || '{}'),
-      version: l.version,
-      previous_version_id: l.previous_version_id,
-      created_at: l.created_at,
-      created_by: l.created_by,
-      is_deleted: l.is_deleted,
-      is_latest: l.is_latest,
+      id: l.id as string,
+      type_id: l.type_id as string,
+      type_name: (l.type_name as string) || undefined,
+      source_entity_id: l.source_entity_id as string,
+      target_entity_id: l.target_entity_id as string,
+      properties: JSON.parse((l.properties as string) || '{}') as Record<string, unknown>,
+      version: l.version as number,
+      previous_version_id: (l.previous_version_id as string | null) ?? null,
+      created_at: l.created_at as number,
+      created_by: (l.created_by as string | null) ?? null,
+      is_deleted: l.is_deleted as 0 | 1,
+      is_latest: l.is_latest as 0 | 1,
     }));
 
     // Get all used type IDs
@@ -241,14 +367,33 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
     ]);
 
     // Fetch used types with batching to avoid exceeding SQLite bind parameter limit
-    let types: Array<Record<string, unknown>> = [];
+    let types: Array<{
+      id: string;
+      name: string;
+      category: 'entity' | 'link';
+      description: string | null;
+      json_schema: string | null;
+      created_at: number;
+      created_by: string | null;
+    }> = [];
     if (usedTypeIds.size > 0) {
       const typeIdArray = Array.from(usedTypeIds);
       // Batch by 400 to stay well under SQLite's 999 bind parameter limit
       const batchSize = 400;
       const batches = Math.ceil(typeIdArray.length / batchSize);
 
-      const typeMap = new Map<string, Record<string, unknown>>();
+      const typeMap = new Map<
+        string,
+        {
+          id: string;
+          name: string;
+          category: 'entity' | 'link';
+          description: string | null;
+          json_schema: string | null;
+          created_at: number;
+          created_by: string | null;
+        }
+      >();
       for (let b = 0; b < batches; b++) {
         const start = b * batchSize;
         const end = Math.min(start + batchSize, typeIdArray.length);
@@ -262,13 +407,13 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
 
         for (const t of rawTypes as Record<string, unknown>[]) {
           typeMap.set(t.id as string, {
-            id: t.id,
-            name: t.name,
-            category: t.category,
-            description: t.description,
-            json_schema: t.json_schema,
-            created_at: t.created_at,
-            created_by: t.created_by,
+            id: t.id as string,
+            name: t.name as string,
+            category: t.category as 'entity' | 'link',
+            description: (t.description as string | null) ?? null,
+            json_schema: (t.json_schema as string | null) ?? null,
+            created_at: t.created_at as number,
+            created_by: (t.created_by as string | null) ?? null,
           });
         }
       }
@@ -296,7 +441,15 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
       type_count: types.length,
     });
 
-    return c.json(response.success(exportData, 'Export completed successfully'));
+    return c.json(
+      {
+        success: true as const,
+        data: exportData,
+        message: 'Export completed successfully',
+        timestamp: new Date().toISOString(),
+      },
+      200
+    );
   } catch (error) {
     logger.error('Error in export', error instanceof Error ? error : undefined);
     throw error;
@@ -312,8 +465,8 @@ exportRouter.get('/', optionalAuth(), validateQuery(exportQuerySchema), async c 
  * - Is recorded as the creator of all imported types, entities, and links
  * - Automatically receives write permission on all created entities and links
  */
-exportRouter.post('/', requireAuth(), validateJson(importRequestSchema), async c => {
-  const data = c.get('validated_json') as ImportRequest;
+exportRouter.openapi(postImportRoute, async c => {
+  const data = c.req.valid('json') as ImportRequest;
   const db = c.env.DB;
   const user = c.get('user');
   const logger = getLogger(c).child({ module: 'import' });
@@ -769,7 +922,15 @@ exportRouter.post('/', requireAuth(), validateJson(importRequestSchema), async c
       },
     };
 
-    return c.json(response.success(importResponse, 'Import completed'), 201);
+    return c.json(
+      {
+        success: true as const,
+        data: importResponse,
+        message: 'Import completed',
+        timestamp: new Date().toISOString(),
+      },
+      201
+    );
   } catch (error) {
     logger.error('Error in import', error instanceof Error ? error : undefined);
     throw error;

@@ -182,12 +182,12 @@ Convert endpoints:
 Prepare:
 
 - [x] **Annotate export schemas** - Add `.openapi()` to export/import schemas in `src/schemas/` (create `src/schemas/export.ts` if needed)
-- [ ] **Convert export router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/export.ts`
+- [x] **Convert export router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/export.ts`
 
 Convert endpoints:
 
-- [ ] **Convert GET /api/export** - Exports entities/links as JSON. Test: Export data with filters
-- [ ] **Convert POST /api/export** - Imports entities/links from JSON. Test: Import data payload
+- [x] **Convert GET /api/export** - Exports entities/links as JSON. Test: Export data with filters
+- [x] **Convert POST /api/export** - Imports entities/links from JSON. Test: Import data payload
 
 ### Admin/Schema APIs
 
