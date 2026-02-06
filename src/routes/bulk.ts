@@ -1,5 +1,4 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { validateJson } from '../middleware/validation.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   bulkCreateEntitiesSchema,
@@ -12,7 +11,6 @@ import {
   type BulkCreateResultItem,
   type BulkUpdateResultItem,
 } from '../schemas/index.js';
-import * as response from '../utils/response.js';
 import { getLogger } from '../middleware/request-context.js';
 import { validatePropertiesAgainstSchema, formatValidationErrors } from '../utils/json-schema.js';
 import { createResourceAcl, hasPermissionByAclId } from '../utils/acl.js';
@@ -811,16 +809,55 @@ bulk.openapi(bulkUpdateEntitiesRoute, async c => {
   }
 });
 
-/**
- * PUT /api/bulk/links
- * Batch update multiple links in a single request
- * Creates new versions for each updated link using D1 batch operations
- * Requires authentication and write permission on each link
- */
-bulk.put('/links', requireAuth(), validateJson(bulkUpdateLinksSchema), async c => {
-  const data = c.get('validated_json') as {
-    links: Array<{ id: string; properties: Record<string, unknown> }>;
-  };
+const bulkUpdateLinksRoute = createRoute({
+  method: 'put',
+  path: '/links',
+  tags: ['Bulk Operations'],
+  summary: 'Bulk update links',
+  description: 'Update multiple links in a single request (max 100)',
+  operationId: 'bulkUpdateLinks',
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth()] as const,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: bulkUpdateLinksSchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: 'Bulk update results',
+      content: {
+        'application/json': {
+          schema: BulkUpdateSuccessResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Unauthorized - authentication required',
+      content: {
+        'application/json': {
+          schema: BulkErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+bulk.openapi(bulkUpdateLinksRoute, async c => {
+  const data = c.req.valid('json');
   const db = c.env.DB;
   const kv = c.env.KV;
   const user = c.get('user');
@@ -1001,8 +1038,9 @@ bulk.put('/links', requireAuth(), validateJson(bulkUpdateLinksSchema), async c =
     });
 
     return c.json(
-      response.success(
-        {
+      {
+        success: true as const,
+        data: {
           results,
           summary: {
             total: data.links.length,
@@ -1010,8 +1048,10 @@ bulk.put('/links', requireAuth(), validateJson(bulkUpdateLinksSchema), async c =
             failed: failureCount,
           },
         },
-        'Bulk link update completed'
-      )
+        message: 'Bulk link update completed',
+        timestamp: new Date().toISOString(),
+      },
+      200
     );
   } catch (error) {
     logger.error('Error in bulk update links', error instanceof Error ? error : undefined);

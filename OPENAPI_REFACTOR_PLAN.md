@@ -162,7 +162,7 @@ Convert endpoints:
 - [x] **Convert POST /api/bulk/entities** - Batch creates entities. Test: Bulk create multiple entities
 - [x] **Convert POST /api/bulk/links** - Batch creates links. Test: Bulk create multiple links
 - [x] **Convert PUT /api/bulk/entities** - Batch updates entities. Test: Bulk update multiple entities
-- [ ] **Convert PUT /api/bulk/links** - Batch updates links. Test: Bulk update multiple links
+- [x] **Convert PUT /api/bulk/links** - Batch updates links. Test: Bulk update multiple links
 
 ### Audit Logs API (`src/routes/audit.ts`)
 
