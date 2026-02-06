@@ -181,7 +181,7 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate export schemas** - Add `.openapi()` to export/import schemas in `src/schemas/` (create `src/schemas/export.ts` if needed)
+- [x] **Annotate export schemas** - Add `.openapi()` to export/import schemas in `src/schemas/` (create `src/schemas/export.ts` if needed)
 - [ ] **Convert export router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/export.ts`
 
 Convert endpoints:
