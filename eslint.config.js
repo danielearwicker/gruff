@@ -44,7 +44,7 @@ export default [
     },
   },
   {
-    files: ['scripts/**/*.js'],
+    files: ['scripts/**/*.js', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         // Node.js script globals
@@ -60,6 +60,7 @@ export default [
       'dist/',
       '.wrangler/',
       'coverage/',
+      'test-client/',
       'eslint.config.js',
       'test-runner.js',
       'monitor-claude.ts',
