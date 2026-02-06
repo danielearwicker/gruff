@@ -208,7 +208,7 @@ Convert endpoints:
 
 ### Final Cleanup
 
-- [ ] **Compare OpenAPI specs** - Run `curl http://localhost:8787/docs/openapi.json > docs/openapi-new.json`, compare to `docs/openapi-baseline.json`, document breaking changes
+- [x] **Compare OpenAPI specs** - Run `curl http://localhost:8787/docs/openapi.json > docs/openapi-new.json`, compare to `docs/openapi-baseline.json`, document breaking changes
 - [ ] **Delete old OpenAPI code** - Delete `src/openapi/spec.ts` (2,624 lines) and unused code from `src/openapi/schemas.ts`
 - [ ] **Update docs route** - Ensure `src/routes/docs.ts` serves auto-generated spec correctly
 - [ ] **Run full test suite** - Final `npm test` - all tests must pass

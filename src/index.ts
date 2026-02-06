@@ -217,53 +217,27 @@ import { auditLogSchema, auditLogResponseSchema } from './schemas/audit.js';
 import { ErrorResponseSchema, SuccessResponseSchema } from './schemas/openapi-common.js';
 import { typeSchema, createTypeSchema } from './schemas/type.js';
 
-// Register schemas by referencing them (forces inclusion in OpenAPI spec)
-[
-  entityResponseSchema,
-  createEntitySchema,
-  linkResponseSchema,
-  createLinkSchema,
-  userResponseSchema,
-  createUserSchema,
-  typeSchema,
-  createTypeSchema,
-  auditLogSchema,
-  auditLogResponseSchema,
-  ErrorResponseSchema,
-  SuccessResponseSchema,
-].forEach(schema => {
-  // Schemas with .openapi() will be automatically registered
-  void schema._def;
-});
-
-// OpenAPI spec generation endpoint
-// TEMPORARILY COMMENTED OUT: Will be enabled once all routes are converted
-// This conflicts with the existing manual OpenAPI spec in routes/docs.ts
-// Once all routes use createRoute(), we'll remove routes/docs.ts and uncomment this
-/*
-app.doc('/docs/openapi.json', {
-  openapi: '3.1.0',
-  info: {
-    title: 'Gruff API',
-    version: '1.0.0',
-    description: 'Entity-Relationship Graph Database with Versioning',
-  },
-  servers: [
-    { url: 'http://localhost:8787', description: 'Local development server' },
-  ],
-  tags: [
-    { name: 'Health', description: 'Health check and system status endpoints' },
-    { name: 'Authentication', description: 'User registration, login, and token management' },
-    { name: 'Types', description: 'Type registry for entities and links' },
-    { name: 'Entities', description: 'Entity CRUD operations and versioning' },
-    { name: 'Links', description: 'Link CRUD operations and versioning' },
-    { name: 'Graph', description: 'Graph traversal and path finding operations' },
-    { name: 'Search', description: 'Search and type-ahead suggestions' },
-    { name: 'Users', description: 'User profile and management endpoints' },
-    { name: 'Groups', description: 'Group management endpoints' },
-  ],
-});
-*/
+// Explicitly register key schemas in the OpenAPI registry so they appear in the spec
+// even if not directly referenced by a createRoute() definition.
+// Schemas with .openapi('Name') are automatically included when referenced by routes,
+// but these core schemas should always be visible in the spec for client generation.
+const coreSchemas: [string, z.ZodTypeAny][] = [
+  ['Entity', entityResponseSchema],
+  ['CreateEntity', createEntitySchema],
+  ['Link', linkResponseSchema],
+  ['CreateLink', createLinkSchema],
+  ['User', userResponseSchema],
+  ['CreateUser', createUserSchema],
+  ['Type', typeSchema],
+  ['CreateType', createTypeSchema],
+  ['AuditLog', auditLogSchema],
+  ['AuditLogResponse', auditLogResponseSchema],
+  ['Error', ErrorResponseSchema],
+  ['Success', SuccessResponseSchema],
+];
+for (const [name, schema] of coreSchemas) {
+  app.openAPIRegistry.register(name, schema);
+}
 
 // Global error handler using Hono's onError
 app.onError((err, c) => {
@@ -610,6 +584,41 @@ app.route('/api/audit', auditRouter);
 // Mount schema information routes (generated columns, optimization info, query plan analysis)
 app.route('/api/schema/generated-columns', generatedColumnsRouter);
 app.route('/api/schema/query-plan', queryPlanRouter);
+
+// OpenAPI spec generation endpoint - auto-generated from route definitions
+// Must be registered AFTER all sub-routers are mounted so their schemas are included,
+// and BEFORE the docs router mount so it takes routing precedence
+app.doc('/docs/openapi.json', {
+  openapi: '3.1.0',
+  info: {
+    title: 'Gruff API',
+    version: '1.0.0',
+    description:
+      '\n# Entity-Relationship Graph Database with Versioning\n\nGruff is a graph database system built on Cloudflare D1 (SQLite) that supports versioned entities and relationships, user management, and flexible schema through JSON properties.\n\n## Core Concepts\n\n### Entities\n- Fundamental nodes in the graph\n- Have a type, custom JSON properties, and versioning\n- Support soft deletion\n- Every modification creates a new version\n\n### Links\n- Directed relationships between entities\n- Have a type, custom JSON properties, and versioning\n- Connect a source entity to a target entity\n\n### Versioning\n- Immutable history: updates create new records\n- Each version references its predecessor\n- Track user and timestamp for every change\n\n### Types\n- Centralized type registry for both entities and links\n- Enables type-based queries and validation\n- Optional JSON schema validation for properties\n\n## Authentication\n\nMost endpoints require authentication via JWT tokens. Include the token in the Authorization header:\n\n```\nAuthorization: Bearer <your-access-token>\n```\n\nObtain tokens via the `/api/auth/login` or `/api/auth/register` endpoints.\n\n## Rate Limiting\n\nThe API implements rate limiting per user/IP:\n- **Auth endpoints**: 20 requests/minute\n- **Read operations**: 100 requests/minute\n- **Write operations**: 60 requests/minute\n- **Bulk operations**: 20 requests/minute\n- **Search endpoints**: 60 requests/minute\n- **Graph traversal**: 40 requests/minute\n\nRate limit headers are included in all responses:\n- `X-RateLimit-Limit`: Maximum requests allowed\n- `X-RateLimit-Remaining`: Requests remaining\n- `X-RateLimit-Reset`: Time when the limit resets (Unix timestamp)\n',
+    contact: {
+      name: 'Gruff API Support',
+    },
+    license: {
+      name: 'ISC',
+    },
+  },
+  servers: [{ url: 'http://localhost:8787', description: 'Local development server' }],
+  tags: [
+    { name: 'Health', description: 'Health check and system status endpoints' },
+    { name: 'Authentication', description: 'User registration, login, and token management' },
+    { name: 'Users', description: 'User profile and management endpoints' },
+    { name: 'Types', description: 'Type registry for entities and links' },
+    { name: 'Entities', description: 'Entity CRUD operations and versioning' },
+    { name: 'Links', description: 'Link CRUD operations and versioning' },
+    { name: 'Graph', description: 'Graph traversal and path finding operations' },
+    { name: 'Search', description: 'Search and type-ahead suggestions' },
+    { name: 'Groups', description: 'Group management endpoints' },
+    { name: 'Bulk Operations', description: 'Batch create and update operations' },
+    { name: 'Export/Import', description: 'Data export and import functionality' },
+    { name: 'Audit', description: 'Audit log queries' },
+    { name: 'Schema', description: 'Database schema information and optimization' },
+  ],
+});
 
 // Mount API documentation routes (OpenAPI spec and Scalar UI)
 app.route('/docs', docsRouter);

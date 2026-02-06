@@ -94,17 +94,21 @@ type FilterExpression =
 
 // Create the recursive filter expression schema with Zod lazy
 // We need to build this carefully to allow PropertyFilter objects, and/or groups, and nested groups
-const baseFilterExpressionSchema: z.ZodType<FilterExpression> = z.lazy(() =>
-  z.union([
-    propertyFilterSchema,
-    z.object({
-      and: z.array(baseFilterExpressionSchema).min(1).max(50),
-    }),
-    z.object({
-      or: z.array(baseFilterExpressionSchema).min(1).max(50),
-    }),
-  ])
-);
+// The .openapi('FilterExpression') registration is required to break infinite recursion
+// during OpenAPI spec generation - it tells the generator to use a $ref instead of inlining
+const baseFilterExpressionSchema: z.ZodType<FilterExpression> = z
+  .lazy(() =>
+    z.union([
+      propertyFilterSchema,
+      z.object({
+        and: z.array(baseFilterExpressionSchema).min(1).max(50),
+      }),
+      z.object({
+        or: z.array(baseFilterExpressionSchema).min(1).max(50),
+      }),
+    ])
+  )
+  .openapi('FilterExpression');
 
 export const filterExpressionSchema = baseFilterExpressionSchema;
 

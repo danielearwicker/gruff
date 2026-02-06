@@ -72,12 +72,17 @@ export const adminRoleChangeSchema = z
   .openapi('AdminRoleChange');
 
 // User response schema (without sensitive data)
-export const userResponseSchema = userSchema
-  .omit({
-    password_hash: true,
-    provider_id: true,
-  })
-  .extend({
+// Defined explicitly (not via .omit().extend()) because Zod v4's .omit() creates a type
+// that doesn't propagate .openapi() registration to the OpenAPI spec generator
+export const userResponseSchema = z
+  .object({
+    id: uuidSchema.openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    email: z.string().email().openapi({ example: 'user@example.com' }),
+    display_name: z.string().nullable().openapi({ example: 'John Doe' }),
+    provider: providerSchema,
+    created_at: timestampSchema.openapi({ example: 1704067200 }),
+    updated_at: timestampSchema.openapi({ example: 1704067200 }),
+    is_active: sqliteBooleanSchema,
     is_admin: z.boolean().optional().openapi({ example: false }),
   })
   .openapi('User');
