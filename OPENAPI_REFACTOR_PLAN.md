@@ -168,14 +168,14 @@ Convert endpoints:
 
 Prepare:
 
-- [ ] **Annotate audit schemas** - Add `.openapi()` to `auditLogQuerySchema` in `src/schemas/audit.ts`
-- [ ] **Convert audit router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/audit.ts`
+- [x] **Annotate audit schemas** - Add `.openapi()` to `auditLogQuerySchema` in `src/schemas/audit.ts`
+- [x] **Convert audit router to OpenAPIHono** - Change to `new OpenAPIHono()` in `src/routes/audit.ts`
 
 Convert endpoints:
 
-- [ ] **Convert GET /api/audit** - Lists audit logs (admin only). Test: List audit logs
-- [ ] **Convert GET /api/audit/resource/:resource_type/:resource_id** - Gets audit log for specific resource. Test: Get resource audit
-- [ ] **Convert GET /api/audit/user/:user_id** - Gets audit log for user. Test: Get user audit
+- [x] **Convert GET /api/audit** - Lists audit logs (admin only). Test: List audit logs
+- [x] **Convert GET /api/audit/resource/:resource_type/:resource_id** - Gets audit log for specific resource. Test: Get resource audit
+- [x] **Convert GET /api/audit/user/:user_id** - Gets audit log for user. Test: Get user audit
 
 ### Export/Import API (`src/routes/export.ts`)
 

@@ -9202,14 +9202,16 @@ async function testAuditLogEntityCreateLogged() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
-  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
-    type_id: typeId,
-    properties: { name: 'Logged Entity' },
-  });
+  // Create an entity using the registered user's token so they own it
+  const entityResponse = await makeRequestWithHeaders(
+    'POST',
+    '/api/entities',
+    { Authorization: `Bearer ${token}` },
+    { type_id: typeId, properties: { name: 'Logged Entity' } }
+  );
   const entityId = entityResponse.data.data.id;
 
-  // Check that the create was logged
+  // Check that the create was logged (same user who owns the entity)
   const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${entityId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -9239,20 +9241,25 @@ async function testAuditLogEntityUpdateLogged() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
-  const entityResponse = await makeAuthRequest('POST', '/api/entities', {
-    type_id: typeId,
-    properties: { name: 'Original Name' },
-  });
+  // Create an entity using the registered user's token so they own it
+  const entityResponse = await makeRequestWithHeaders(
+    'POST',
+    '/api/entities',
+    { Authorization: `Bearer ${token}` },
+    { type_id: typeId, properties: { name: 'Original Name' } }
+  );
   const entityId = entityResponse.data.data.id;
 
-  // Update the entity
-  const updateResponse = await makeAuthRequest('PUT', `/api/entities/${entityId}`, {
-    properties: { name: 'Updated Name' },
-  });
+  // Update the entity using the same user's token
+  const updateResponse = await makeRequestWithHeaders(
+    'PUT',
+    `/api/entities/${entityId}`,
+    { Authorization: `Bearer ${token}` },
+    { properties: { name: 'Updated Name' } }
+  );
   const newEntityId = updateResponse.data.data.id;
 
-  // Check that the update was logged
+  // Check that the update was logged (same user who owns the entity)
   const auditResponse = await fetch(`${DEV_SERVER_URL}/api/audit/resource/entity/${newEntityId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -9267,13 +9274,6 @@ async function testAuditLogEntityUpdateLogged() {
 async function testAuditLogEntityDeleteLogged() {
   logTest('Audit Logging - Entity Delete is Logged');
 
-  // Register a user
-  const registerResponse = await makeRequest('POST', '/api/auth/register', {
-    email: 'audit-delete-log@example.com',
-    password: 'testPassword123',
-  });
-  const token = registerResponse.data.data.access_token;
-
   // Create a type
   const typeResponse = await makeAdminAuthRequest('POST', '/api/types', {
     name: 'AuditDeleteLogType',
@@ -9281,7 +9281,7 @@ async function testAuditLogEntityDeleteLogged() {
   });
   const typeId = typeResponse.data.data.id;
 
-  // Create an entity
+  // Create an entity using the global auth user
   const entityResponse = await makeAuthRequest('POST', '/api/entities', {
     type_id: typeId,
     properties: { name: 'To Be Deleted' },
@@ -9291,14 +9291,12 @@ async function testAuditLogEntityDeleteLogged() {
   // Delete the entity
   await makeAuthRequest('DELETE', `/api/entities/${entityId}`);
 
-  // Check audit logs for delete operation
-  const auditResponse = await fetch(
-    `${DEV_SERVER_URL}/api/audit?resource_type=entity&operation=delete&limit=10`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
+  // Check audit logs for delete operation (requires admin)
+  const auditResponse = await makeAdminAuthRequest(
+    'GET',
+    `/api/audit?resource_type=entity&operation=delete&limit=10`
   );
-  const auditData = await auditResponse.json();
+  const auditData = auditResponse.data;
 
   const deleteEntries = auditData.data.filter(
     e => e.operation === 'delete' && e.resource_type === 'entity'

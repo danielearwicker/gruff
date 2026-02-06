@@ -213,7 +213,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
 import { entityResponseSchema, createEntitySchema } from './schemas/entity.js';
 import { linkResponseSchema, createLinkSchema } from './schemas/link.js';
 import { userResponseSchema, createUserSchema } from './schemas/user.js';
-import { auditLogSchema } from './schemas/audit.js';
+import { auditLogSchema, auditLogResponseSchema } from './schemas/audit.js';
 import { ErrorResponseSchema, SuccessResponseSchema } from './schemas/openapi-common.js';
 import { typeSchema, createTypeSchema } from './schemas/type.js';
 
@@ -228,6 +228,7 @@ import { typeSchema, createTypeSchema } from './schemas/type.js';
   typeSchema,
   createTypeSchema,
   auditLogSchema,
+  auditLogResponseSchema,
   ErrorResponseSchema,
   SuccessResponseSchema,
 ].forEach(schema => {
