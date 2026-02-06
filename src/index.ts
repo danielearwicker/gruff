@@ -620,7 +620,18 @@ app.doc('/docs/openapi.json', {
   ],
 });
 
-// Mount API documentation routes (OpenAPI spec and Scalar UI)
+// Serve the OpenAPI spec as YAML (for compatibility)
+// Uses Hono's internal routing to fetch the auto-generated JSON spec
+app.get('/docs/openapi.yaml', async c => {
+  const jsonResponse = await app.request('/docs/openapi.json', undefined, c.env);
+  const spec = await jsonResponse.json();
+  const yamlContent = jsonToYaml(spec);
+  return new Response(yamlContent, {
+    headers: { 'Content-Type': 'text/yaml' },
+  });
+});
+
+// Mount API documentation routes (Scalar UI)
 app.route('/docs', docsRouter);
 
 // Mount UI routes (server-side rendered web interface)
@@ -724,5 +735,60 @@ app.get('/api/demo/response/forbidden', c => {
 
 // 404 handler - must be last
 app.notFound(notFoundHandler);
+
+// Simple JSON to YAML converter for the OpenAPI spec YAML endpoint
+function jsonToYaml(obj: unknown, indent = 0): string {
+  const spaces = '  '.repeat(indent);
+  let yaml = '';
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      if (typeof item === 'object' && item !== null) {
+        yaml += `${spaces}-\n${jsonToYaml(item, indent + 1)}`;
+      } else {
+        yaml += `${spaces}- ${formatYamlValue(item)}\n`;
+      }
+    }
+  } else if (typeof obj === 'object' && obj !== null) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value) && value.length === 0) {
+          yaml += `${spaces}${key}: []\n`;
+        } else if (Object.keys(value).length === 0) {
+          yaml += `${spaces}${key}: {}\n`;
+        } else {
+          yaml += `${spaces}${key}:\n${jsonToYaml(value, indent + 1)}`;
+        }
+      } else {
+        yaml += `${spaces}${key}: ${formatYamlValue(value)}\n`;
+      }
+    }
+  }
+
+  return yaml;
+}
+
+function formatYamlValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return '~';
+  if (typeof value === 'string') {
+    if (
+      value === '' ||
+      value.includes('\n') ||
+      value.includes(':') ||
+      value.includes('#') ||
+      value.startsWith(' ') ||
+      value.endsWith(' ') ||
+      /^[0-9]/.test(value) ||
+      ['true', 'false', 'null', 'yes', 'no'].includes(value.toLowerCase())
+    ) {
+      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+    }
+    return value;
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  return String(value);
+}
 
 export default app;
