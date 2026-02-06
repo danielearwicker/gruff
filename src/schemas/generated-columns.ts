@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 
 /**
  * Valid table names that can have generated columns
@@ -14,15 +14,15 @@ export const dataTypeSchema = z.enum(['TEXT', 'INTEGER', 'REAL', 'BOOLEAN']);
  * Schema for a generated column record
  */
 export const generatedColumnSchema = z.object({
-  id: z.string(),
-  table_name: tableNameSchema,
-  column_name: z.string(),
-  json_path: z.string(),
-  data_type: dataTypeSchema,
-  is_indexed: z.union([z.literal(0), z.literal(1)]),
-  created_at: z.number().int(),
-  created_by: z.string().nullable(),
-  description: z.string().nullable(),
+  id: z.string().openapi({ example: 'gc_001' }),
+  table_name: tableNameSchema.openapi({ example: 'entities' }),
+  column_name: z.string().openapi({ example: 'prop_name' }),
+  json_path: z.string().openapi({ example: '$.name' }),
+  data_type: dataTypeSchema.openapi({ example: 'TEXT' }),
+  is_indexed: z.union([z.literal(0), z.literal(1)]).openapi({ example: 1 }),
+  created_at: z.number().int().openapi({ example: 1704067200 }),
+  created_by: z.string().nullable().openapi({ example: null }),
+  description: z.string().nullable().openapi({ example: 'Name property column' }),
 });
 
 export type GeneratedColumn = z.infer<typeof generatedColumnSchema>;
@@ -31,10 +31,19 @@ export type GeneratedColumn = z.infer<typeof generatedColumnSchema>;
  * Schema for listing generated columns query parameters
  */
 export const listGeneratedColumnsQuerySchema = z.object({
-  table_name: tableNameSchema.optional(),
+  table_name: tableNameSchema.optional().openapi({
+    param: { name: 'table_name', in: 'query' },
+    example: 'entities',
+    description: 'Filter by table name',
+  }),
   is_indexed: z
     .string()
     .optional()
+    .openapi({
+      param: { name: 'is_indexed', in: 'query' },
+      example: 'true',
+      description: 'Filter by indexed status (true or false)',
+    })
     .transform(val => (val === 'true' ? 1 : val === 'false' ? 0 : undefined))
     .pipe(z.union([z.literal(0), z.literal(1)]).optional()),
 });
@@ -48,20 +57,20 @@ export type ListGeneratedColumnsQuery = z.infer<typeof listGeneratedColumnsQuery
 export const queryOptimizationInfoSchema = z.object({
   entities: z.array(
     z.object({
-      column_name: z.string(),
-      json_path: z.string(),
-      data_type: dataTypeSchema,
-      is_indexed: z.boolean(),
-      description: z.string().nullable(),
+      column_name: z.string().openapi({ example: 'prop_name' }),
+      json_path: z.string().openapi({ example: '$.name' }),
+      data_type: dataTypeSchema.openapi({ example: 'TEXT' }),
+      is_indexed: z.boolean().openapi({ example: true }),
+      description: z.string().nullable().openapi({ example: 'Name property column' }),
     })
   ),
   links: z.array(
     z.object({
-      column_name: z.string(),
-      json_path: z.string(),
-      data_type: dataTypeSchema,
-      is_indexed: z.boolean(),
-      description: z.string().nullable(),
+      column_name: z.string().openapi({ example: 'prop_role' }),
+      json_path: z.string().openapi({ example: '$.role' }),
+      data_type: dataTypeSchema.openapi({ example: 'TEXT' }),
+      is_indexed: z.boolean().openapi({ example: true }),
+      description: z.string().nullable().openapi({ example: 'Role property column' }),
     })
   ),
 });

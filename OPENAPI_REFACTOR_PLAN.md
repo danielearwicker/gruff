@@ -193,11 +193,11 @@ Convert endpoints:
 
 **File: `src/routes/generated-columns.ts`**
 
-- [ ] **Convert generated-columns router to OpenAPIHono** - Change to `new OpenAPIHono()` in file
-- [ ] **Convert GET /api/schema/generated-columns** - Lists generated columns (admin). Test with admin token
-- [ ] **Convert GET /api/schema/generated-columns/optimization** - Suggests optimizations (admin). Test optimization endpoint
-- [ ] **Convert GET /api/schema/generated-columns/analyze** - Analyzes column usage (admin). Test analyze endpoint
-- [ ] **Convert GET /api/schema/generated-columns/mappings** - Gets column mappings (admin). Test mappings endpoint
+- [x] **Convert generated-columns router to OpenAPIHono** - Change to `new OpenAPIHono()` in file
+- [x] **Convert GET /api/schema/generated-columns** - Lists generated columns (admin). Test with admin token
+- [x] **Convert GET /api/schema/generated-columns/optimization** - Suggests optimizations (admin). Test optimization endpoint
+- [x] **Convert GET /api/schema/generated-columns/analyze** - Analyzes column usage (admin). Test analyze endpoint
+- [x] **Convert GET /api/schema/generated-columns/mappings** - Gets column mappings (admin). Test mappings endpoint
 
 **File: `src/routes/query-plan.ts`**
 
