@@ -61,6 +61,7 @@ export default [
       '.wrangler/',
       'coverage/',
       'test-client/',
+      'ui/',
       'eslint.config.js',
       'test-runner.js',
       'monitor-claude.ts',

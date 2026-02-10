@@ -2,6 +2,12 @@ name = "gruff"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Static assets for React SPA (served from ui/dist/)
+# NOTE: Uncomment when ready to switch from SSR to SPA (Phase 11)
+# [assets]
+# directory = "ui/dist"
+# binding = "ASSETS"
+
 # D1 Database binding (local development uses automatic local DB)
 [[d1_databases]]
 binding = "DB"

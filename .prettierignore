@@ -3,6 +3,8 @@ dist/
 .wrangler/
 coverage/
 test-client/
+ui/src/client/
+ui/dist/
 package-lock.json
 pnpm-lock.yaml
 yarn.lock

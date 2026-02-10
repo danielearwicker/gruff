@@ -27,6 +27,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "generate:client": "openapi-ts --input http://localhost:8787/docs/openapi.json --output ./test-client --client fetch",
+    "ui:dev": "cd ui && npm run dev",
+    "ui:build": "cd ui && npm run build",
+    "ui:generate-client": "openapi-ts --input http://localhost:8787/docs/openapi.json --output ./ui/src/client --client fetch",
     "prepare": "husky"
   },
   "keywords": [
