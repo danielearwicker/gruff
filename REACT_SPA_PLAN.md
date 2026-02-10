@@ -11,6 +11,8 @@ Replace the server-side rendered UI (`src/routes/ui.ts` — 11,000 lines, `src/u
 3. **Feature parity** with the existing SSR UI — same pages, same functionality
 4. **Same deployment model** — served from the same Cloudflare Worker, no separate hosting
 
+**IMPORTANT:** It is _absolutely vital_ that the new UI uses the generated TS client. If this is not done, e.g. is worked around by manually building new wrapper code around raw `fetch` calls, etc., then this effort will be judged a **catastrophic failure**.
+
 ### Non-Goals
 
 - Adding new features beyond what the current UI provides
